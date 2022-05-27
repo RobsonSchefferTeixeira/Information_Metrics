@@ -10,11 +10,11 @@ from sklearn.feature_selection import mutual_info_classif
 class PlaceCell:
     def __init__(self,**kwargs):
         
-        kwargs.setdefault('Session', [])
-        kwargs.setdefault('day', [])
-        kwargs.setdefault('neuron', [])
-        kwargs.setdefault('trial', 0)
-        kwargs.setdefault('dataset', [])
+        kwargs.setdefault('animal_id', None)
+        kwargs.setdefault('day', None)
+        kwargs.setdefault('neuron', None)
+        kwargs.setdefault('trial', None)
+        kwargs.setdefault('dataset', None)
         kwargs.setdefault('mean_video_srate', 30.)
         kwargs.setdefault('mintimespent', 0.1)
         kwargs.setdefault('minvisits', 1)
@@ -27,9 +27,10 @@ class PlaceCell:
         kwargs.setdefault('num_surrogates', 200)
         kwargs.setdefault('saving_path', os.getcwd())
         kwargs.setdefault('saving', False)
-        kwargs.setdefault('saving_string', [])
+        kwargs.setdefault('saving_string', 'SpatialMetrics')
 
-        valid_kwargs = ['Session','day','neuron','dataset','trial', 'mean_video_srate','mintimespent','minvisits','speed_threshold',
+        valid_kwargs = ['animal_id','day','neuron','dataset','trial','mean_video_srate',
+                        'mintimespent','minvisits','speed_threshold',
                         'placefield_nbins_pos_x','placefield_nbins_pos_y','shuffling_shift','num_cores',
                         'num_surrogates','saving_path','saving','saving_string','environment_edges']
         
@@ -128,30 +129,42 @@ class PlaceCell:
             inputdict['place_cell_extension_relative'] = pixels_place_cell_relative
             inputdict['input_parameters'] = self.__dict__['input_parameters']
 
-
+            filename = self.filename_constructor(self.saving_string,self.animal_id,self.dataset,self.day,self.neuron,self.trial)
+            
         if self.saving == True:
-            if self.trial == 0:
-                filename = self.Session + '.' + self.saving_string + '.PlaceField.ModulationIndex.' + self.dataset + '.Day.' + str(self.day) + '.Neuron.' + str(self.neuron)
-                self.caller_saving(inputdict,filename,self.saving_path)
-
-            else:
-                filename = self.Session + '.' + self.saving_string + '.PlaceField.ModulationIndex.' + self.dataset + '.Day.' + str(self.day) + '.Neuron.' + str(self.neuron) + '.Trial.' + str(self.trial)
-                self.caller_saving(inputdict,filename,self.saving_path)
-
-
+            self.caller_saving(inputdict,filename,self.saving_path)
         else:
             print('File not saved!')
 
 
         return inputdict
     
+    
+    def filename_constructor(self,saving_string,animal_id,dataset,day,neuron,trial):
+
+        first_string =  saving_string
+        animal_id_string = '.' + animal_id
+        dataset_string = '.Dataset.' + dataset
+        day_string = '.Day.' + str(day)
+        neuron_string = '.Neuron.' + str(neuron)
+        trial_string = '.Trial.' + str(trial)
+
+        filename_checklist = np.array([first_string,animal_id, dataset, day, neuron, trial])
+        inlcude_this = np.where(filename_checklist != None)[0]
+
+        filename_backbone = [first_string, animal_id_string,dataset_string, day_string, neuron_string, trial_string]
+
+        filename = ''.join([filename_backbone[i] for i in inlcude_this])
+               
+        return filename
+    
             
     def caller_saving(self,inputdict,filename,saving_path):
-        print('Saving data file...')
         os.chdir(saving_path)
         output = open(filename, 'wb') 
         np.save(output,inputdict)
         output.close()
+        print('File saved.')
      
 
     def get_sparsity(self,place_field,position_occupancy):
