@@ -4,17 +4,19 @@ import os
 from scipy import stats as stats
 from joblib import Parallel, delayed
 from sklearn.naive_bayes import GaussianNB
-import detect_peaks as dp
+import spatial_metrics.detect_peaks as dp
 import spatial_metrics.helper_functions as hf
+import warnings
+
 
 class SpatialPrediction:
     def __init__(self,**kwargs):
            
-        kwargs.setdefault('session', [])  
-        kwargs.setdefault('day', [])  
-        kwargs.setdefault('ch', []) 
-        kwargs.setdefault('trial', 0) 
-        kwargs.setdefault('dataset', [])  
+        kwargs.setdefault('animal_id', None)  
+        kwargs.setdefault('day', None)  
+        kwargs.setdefault('neuron', None) 
+        kwargs.setdefault('trial', None) 
+        kwargs.setdefault('dataset', None)  
         kwargs.setdefault('mean_video_srate', 30.)  
         kwargs.setdefault('mintimespent', 0.1)  
         kwargs.setdefault('minvisits', 1)  
@@ -27,11 +29,11 @@ class SpatialPrediction:
         kwargs.setdefault('num_surrogates', 200)          
         kwargs.setdefault('saving_path', os.getcwd())  
         kwargs.setdefault('saving', False)  
-        kwargs.setdefault('saving_string', [])             
+        kwargs.setdefault('saving_string', 'SpatialPrediction')             
         kwargs.setdefault('num_of_folds', 10) 
         
         
-        valid_kwargs = ['session','day','ch','dataset','trial', 'mean_video_srate',
+        valid_kwargs = ['animal_id','day','neuron','dataset','trial', 'mean_video_srate',
                         'mintimespent','minvisits','speed_threshold',
                         'x_bin_size','y_bin_size','shuffling_shift','num_cores',
                         'num_surrogates','saving_path','saving','saving_string',
@@ -44,80 +46,90 @@ class SpatialPrediction:
             
         self.__dict__['input_parameters'] = kwargs
         
-    def main(self,calcium_signal,track_timevector,x_coordinates,y_coordinates):
+    def main(self,calcium_imag,track_timevector,x_coordinates,y_coordinates):
         
-        x_grid,y_grid,x_center_bins,y_center_bins,x_center_bins_repeated,y_center_bins_repeated = self.get_position_grid(x_coordinates,y_coordinates,self.x_bin_size,self.y_bin_size,environment_edges=self.environment_edges)
-
-        position_binned = self.get_binned_2Dposition(x_coordinates,y_coordinates,x_grid,y_grid)
-
-        Input_Variable,Target_Variable,x_coordinates_valid,y_coordinates_valid,I_valid = self.get_valid_timepoints(calcium_signal,position_binned,x_coordinates,y_coordinates)
-
-                    
-        concat_accuracy,concat_continuous_error,concat_mean_error_classic, concat_continuous_error_center_of_mass,concat_mean_error_center_of_mass, I_peaks = self.run_all_folds(Input_Variable,Target_Variable,x_coordinates_valid,y_coordinates_valid,self.num_of_folds, x_center_bins,y_center_bins,x_center_bins_repeated,y_center_bins_repeated,self.mean_video_srate)
-        
-
-        spatial_error_classic = self.get_spatial_error(concat_continuous_error,Target_Variable,x_center_bins,y_center_bins)
-        smoothed_spatial_error_classic = self.smooth_spatial_error(spatial_error_classic,spatial_bins=2)
-
-        spatial_error_center_of_mass = self.get_spatial_error(concat_continuous_error_center_of_mass,Target_Variable,x_center_bins,y_center_bins)
-        smoothed_spatial_center_of_mass = self.smooth_spatial_error(spatial_error_center_of_mass,spatial_bins=2)
-
-        
-    
-        inputdict = dict()
-        inputdict['concat_accuracy'] = concat_accuracy
-        inputdict['concat_continuous_error'] = concat_continuous_error
-        inputdict['concat_mean_error_classic'] = concat_mean_error_classic        
-        inputdict['spatial_error_classic'] = spatial_error_classic
-        inputdict['smoothed_spatial_error_classic'] = smoothed_spatial_error_classic
-        inputdict['concat_continuous_error_center_of_mass'] = concat_continuous_error_center_of_mass
-        inputdict['concat_mean_error_center_of_mass'] = concat_mean_error_center_of_mass
-        inputdict['spatial_error_center_of_mass'] = spatial_error_center_of_mass
-        inputdict['smoothed_spatial_center_of_mass'] = smoothed_spatial_center_of_mass
-        inputdict['x_grid'] = x_grid
-        inputdict['y_grid'] = y_grid
-        inputdict['x_center_bins'] = x_center_bins
-        inputdict['y_center_bins'] = y_center_bins
-        inputdict['numb_events'] = I_peaks.shape[0]
-        inputdict['events_index'] = I_peaks
-        inputdict['events_amp'] = Input_Variable[I_peaks]
-        inputdict['events_x_localization'] = x_coordinates_valid[I_peaks]
-        inputdict['events_y_localization'] = y_coordinates_valid[I_peaks]
-        
-        
-
-        
-        
-        if self.saving == True:
-            if self.trial == 0:
-                filename = self.session + '.' + self.saving_string + '.SpatialPrediction.Original.' + self.dataset + '.Day.' + str(self.day) + '.Ch.' + str(self.ch)
-                self.caller_saving(inputdict,filename,self.saving_path)
-
-                filename = self.session + '.' + self.saving_string + '.SpatialPrediction.Parameters.' + self.dataset + '.Day.' + str(self.day) + '.Ch.' + str(self.ch)
-                self.caller_saving(self.__dict__['input_parameters'],filename,self.saving_path)
-            else:
-                filename = self.session + '.' + self.saving_string + '.SpatialPrediction.Original.' + self.dataset + '.Day.' + str(self.day) + '.Ch.' + str(self.ch) + '.Trial.' + str(self.trial)
-                self.caller_saving(inputdict,filename,self.saving_path)
-
-                filename = self.session + '.' + self.saving_string + '.SpatialPrediction.Parameters.' + self.dataset + '.Day.' + str(self.day) + '.Ch.' + str(self.ch) + '.Trial.' + str(self.trial)
-                self.caller_saving(self.__dict__['input_parameters'],filename,self.saving_path)
-                
-                
-                
+        if np.all(np.isnan(calcium_imag)):
+            warnings.warn("Signal contains only NaN's")
+            inputdict = np.nan
         else:
-            print('File not saved!')
-        
-        
+
+            x_grid,y_grid,x_center_bins,y_center_bins,x_center_bins_repeated,y_center_bins_repeated = self.get_position_grid(x_coordinates,y_coordinates,self.x_bin_size,self.y_bin_size,environment_edges=self.environment_edges)
+
+            position_binned = self.get_binned_2Dposition(x_coordinates,y_coordinates,x_grid,y_grid)
+
+            Input_Variable,Target_Variable,x_coordinates_valid,y_coordinates_valid,I_valid = self.get_valid_timepoints(calcium_imag,position_binned,x_coordinates,y_coordinates)
+
+
+            concat_accuracy,concat_continuous_error,concat_mean_error_classic, concat_continuous_error_center_of_mass,concat_mean_error_center_of_mass, I_peaks = self.run_all_folds(Input_Variable,Target_Variable,x_coordinates_valid,y_coordinates_valid,self.num_of_folds, x_center_bins,y_center_bins,x_center_bins_repeated,y_center_bins_repeated,self.mean_video_srate)
+
+
+            spatial_error_classic = self.get_spatial_error(concat_continuous_error,Target_Variable,x_center_bins,y_center_bins)
+            smoothed_spatial_error_classic = self.smooth_spatial_error(spatial_error_classic,spatial_bins=2)
+
+            spatial_error_center_of_mass = self.get_spatial_error(concat_continuous_error_center_of_mass,Target_Variable,x_center_bins,y_center_bins)
+            smoothed_spatial_center_of_mass = self.smooth_spatial_error(spatial_error_center_of_mass,spatial_bins=2)
+
+
+
+            inputdict = dict()
+            inputdict['concat_accuracy'] = concat_accuracy
+            inputdict['concat_continuous_error'] = concat_continuous_error
+            inputdict['concat_mean_error_classic'] = concat_mean_error_classic        
+            inputdict['spatial_error_classic'] = spatial_error_classic
+            inputdict['smoothed_spatial_error_classic'] = smoothed_spatial_error_classic
+            inputdict['concat_continuous_error_center_of_mass'] = concat_continuous_error_center_of_mass
+            inputdict['concat_mean_error_center_of_mass'] = concat_mean_error_center_of_mass
+            inputdict['spatial_error_center_of_mass'] = spatial_error_center_of_mass
+            inputdict['smoothed_spatial_center_of_mass'] = smoothed_spatial_center_of_mass
+            inputdict['x_grid'] = x_grid
+            inputdict['y_grid'] = y_grid
+            inputdict['x_center_bins'] = x_center_bins
+            inputdict['y_center_bins'] = y_center_bins
+            inputdict['numb_events'] = I_peaks.shape[0]
+            inputdict['events_index'] = I_peaks
+            inputdict['events_amp'] = np.squeeze(Input_Variable[I_peaks])
+            inputdict['events_x_localization'] = x_coordinates_valid[I_peaks]
+            inputdict['events_y_localization'] = y_coordinates_valid[I_peaks]
+            inputdict['input_parameters'] = self.__dict__['input_parameters']
+
+
+
+            filename = self.filename_constructor(self.saving_string,self.animal_id,self.dataset,self.day,self.neuron,self.trial)
+
+            if self.saving == True:
+                self.caller_saving(inputdict,filename,self.saving_path)
+            else:
+                print('File not saved!')
+
         return inputdict
     
             
+ 
+    def filename_constructor(self,saving_string,animal_id,dataset,day,neuron,trial):
+
+        first_string =  saving_string
+        animal_id_string = '.' + animal_id
+        dataset_string = '.Dataset.' + dataset
+        day_string = '.Day.' + str(day)
+        neuron_string = '.Neuron.' + str(neuron)
+        trial_string = '.Trial.' + str(trial)
+
+        filename_checklist = np.array([first_string,animal_id, dataset, day, neuron, trial])
+        inlcude_this = np.where(filename_checklist != None)[0]
+
+        filename_backbone = [first_string, animal_id_string,dataset_string, day_string, neuron_string, trial_string]
+
+        filename = ''.join([filename_backbone[i] for i in inlcude_this])
+               
+        return filename
+    
+            
     def caller_saving(self,inputdict,filename,saving_path):
-        print('Saving data file...')
         os.chdir(saving_path)
         output = open(filename, 'wb') 
         np.save(output,inputdict)
         output.close()
-     
+        print('File saved.')
   
     
     def run_all_folds(self,Input_Variable,Target_Variable,x_coordinates_valid,y_coordinates_valid,num_of_folds,x_center_bins,y_center_bins,x_center_bins_repeated,y_center_bins_repeated,mean_video_srate):
@@ -355,89 +367,119 @@ class SpatialPrediction:
 
 class SpatialPredictionSurrogates(SpatialPrediction):
     
-    def main(self,calcium_signal,track_timevector,x_coordinates,y_coordinates):
+    def main(self,calcium_imag,track_timevector,x_coordinates,y_coordinates):
         
-        x_grid,y_grid,x_center_bins,y_center_bins,x_center_bins_repeated,y_center_bins_repeated = self.get_position_grid(x_coordinates,y_coordinates,self.x_bin_size,self.y_bin_size,environment_edges=self.environment_edges)
-
-        position_binned = self.get_binned_2Dposition(x_coordinates,y_coordinates,x_grid,y_grid)
-
-        Input_Variable,Target_Variable,x_coordinates_valid,y_coordinates_valid,I_valid = self.get_valid_timepoints(calcium_signal,position_binned,x_coordinates,y_coordinates)
-
-        
-        results = self.parallelize_surrogate(Input_Variable,Target_Variable,x_coordinates_valid,y_coordinates_valid,self.num_of_folds, x_center_bins,y_center_bins,self.x_bin_size,self.y_bin_size,x_center_bins_repeated,y_center_bins_repeated,self.mean_video_srate,self.num_cores,self.num_surrogates,self.shuffling_shift)
-        
-        concat_accuracy = []
-        concat_continuous_error = []
-        concat_mean_error_classic = []
-        concat_continuous_error_center_of_mass = []
-        concat_mean_error_center_of_mass = []
-        I_peaks = []
-        spatial_error_classic = []
-        smoothed_spatial_error_classic = []
-        spatial_error_center_of_mass = []
-        smoothed_spatial_center_of_mass = []
-        numb_events = []
-        events_amp = []
-        events_x_localization = []
-        events_y_localization = []    
-
-        for surr in range(self.num_surrogates):
-            concat_accuracy.append(results[surr][0])
-            concat_continuous_error.append(results[surr][1])
-            concat_mean_error_classic.append(results[surr][2])
-            concat_continuous_error_center_of_mass.append(results[surr][3])
-            concat_mean_error_center_of_mass.append(results[surr][4])
-            
-            I_peaks.append(results[surr][5])
-            numb_events.append(results[surr][5].shape[0])
-            events_x_localization.append(x_coordinates_valid[results[surr][5]])
-            events_y_localization.append(y_coordinates_valid[results[surr][5]])
-            
-            spatial_error_classic.append(results[surr][6])
-            smoothed_spatial_error_classic.append(results[surr][7])
-            spatial_error_center_of_mass.append(results[surr][8])
-            smoothed_spatial_center_of_mass.append(results[surr][9])
-            events_amp.append(results[surr][10])
-            
- 
-    
-        inputdict = dict()
-        inputdict['concat_accuracy'] = concat_accuracy
-        inputdict['concat_continuous_error'] = concat_continuous_error
-        inputdict['concat_mean_error_classic'] = concat_mean_error_classic        
-        inputdict['spatial_error_classic'] = spatial_error_classic
-        inputdict['smoothed_spatial_error_classic'] = smoothed_spatial_error_classic
-        inputdict['concat_continuous_error_center_of_mass'] = concat_continuous_error_center_of_mass
-        inputdict['concat_mean_error_center_of_mass'] = concat_mean_error_center_of_mass
-        inputdict['spatial_error_center_of_mass'] = spatial_error_center_of_mass
-        inputdict['smoothed_spatial_center_of_mass'] = smoothed_spatial_center_of_mass
-        inputdict['numb_events'] = numb_events
-        inputdict['events_index'] = I_peaks
-        inputdict['events_amp'] = events_amp
-        inputdict['events_x_localization'] = events_x_localization
-        inputdict['events_y_localization'] = events_y_localization
-        inputdict['x_grid'] = x_grid
-        inputdict['y_grid'] = y_grid
-        inputdict['x_center_bins'] = x_center_bins
-        inputdict['y_center_bins'] = y_center_bins
-        
-        if self.saving == True:
-            if self.trial == 0:
-                filename = self.session + '.' + self.saving_string + '.SpatialPrediction.Surrogates.' + self.dataset + '.Day.' + str(self.day) + '.Ch.' + str(self.ch)
-                self.caller_saving(inputdict,filename,self.saving_path)
-
-            else:
-                filename = self.session + '.' + self.saving_string + '.SpatialPrediction.Surrogates.' + self.dataset + '.Day.' + str(self.day) + '.Ch.' + str(self.ch) + '.Trial.' + str(self.trial)
-                self.caller_saving(inputdict,filename,self.saving_path)
-                
-                
+        if np.all(np.isnan(calcium_imag)):
+            warnings.warn("Signal contains only NaN's")
+            inputdict = np.nan
+           
         else:
-            print('File not saved!')
-        
-        
+
+            x_grid,y_grid,x_center_bins,y_center_bins,x_center_bins_repeated,y_center_bins_repeated = self.get_position_grid(x_coordinates,y_coordinates,self.x_bin_size,self.y_bin_size,environment_edges=self.environment_edges)
+
+            position_binned = self.get_binned_2Dposition(x_coordinates,y_coordinates,x_grid,y_grid)
+
+            Input_Variable,Target_Variable,x_coordinates_valid,y_coordinates_valid,I_valid = self.get_valid_timepoints(calcium_imag,position_binned,x_coordinates,y_coordinates)
+
+
+            results = self.parallelize_surrogate(Input_Variable,Target_Variable,x_coordinates_valid,y_coordinates_valid,self.num_of_folds, x_center_bins,y_center_bins,self.x_bin_size,self.y_bin_size,x_center_bins_repeated,y_center_bins_repeated,self.mean_video_srate,self.num_cores,self.num_surrogates,self.shuffling_shift)
+
+            concat_accuracy = []
+            concat_continuous_error = []
+            concat_mean_error_classic = []
+            concat_continuous_error_center_of_mass = []
+            concat_mean_error_center_of_mass = []
+            I_peaks = []
+            spatial_error_classic = []
+            smoothed_spatial_error_classic = []
+            spatial_error_center_of_mass = []
+            smoothed_spatial_center_of_mass = []
+            numb_events = []
+            events_amp = []
+            events_x_localization = []
+            events_y_localization = []    
+
+            for surr in range(self.num_surrogates):
+                concat_accuracy.append(results[surr][0])
+                concat_continuous_error.append(results[surr][1])
+                concat_mean_error_classic.append(results[surr][2])
+                concat_continuous_error_center_of_mass.append(results[surr][3])
+                concat_mean_error_center_of_mass.append(results[surr][4])
+
+                I_peaks.append(results[surr][5])
+                numb_events.append(results[surr][5].shape[0])
+                events_x_localization.append(x_coordinates_valid[results[surr][5]])
+                events_y_localization.append(y_coordinates_valid[results[surr][5]])
+
+                spatial_error_classic.append(results[surr][6])
+                smoothed_spatial_error_classic.append(results[surr][7])
+                spatial_error_center_of_mass.append(results[surr][8])
+                smoothed_spatial_center_of_mass.append(results[surr][9])
+                events_amp.append(results[surr][10])
+
+
+
+            inputdict = dict()
+            inputdict['concat_accuracy'] = concat_accuracy
+            inputdict['concat_continuous_error'] = concat_continuous_error
+            inputdict['concat_mean_error_classic'] = concat_mean_error_classic        
+            inputdict['spatial_error_classic'] = spatial_error_classic
+            inputdict['smoothed_spatial_error_classic'] = smoothed_spatial_error_classic
+            inputdict['concat_continuous_error_center_of_mass'] = concat_continuous_error_center_of_mass
+            inputdict['concat_mean_error_center_of_mass'] = concat_mean_error_center_of_mass
+            inputdict['spatial_error_center_of_mass'] = spatial_error_center_of_mass
+            inputdict['smoothed_spatial_center_of_mass'] = smoothed_spatial_center_of_mass
+            inputdict['numb_events'] = numb_events
+            inputdict['events_index'] = I_peaks
+            inputdict['events_amp'] = events_amp
+            inputdict['events_x_localization'] = events_x_localization
+            inputdict['events_y_localization'] = events_y_localization
+            inputdict['x_grid'] = x_grid
+            inputdict['y_grid'] = y_grid
+            inputdict['x_center_bins'] = x_center_bins
+            inputdict['y_center_bins'] = y_center_bins
+            inputdict['input_parameters'] = self.__dict__['input_parameters']
+
+
+            filename = self.filename_constructor(self.saving_string,self.animal_id,self.dataset,self.day,self.neuron,self.trial)
+
+            if self.saving == True:
+                self.caller_saving(inputdict,filename,self.saving_path)
+            else:
+                print('File not saved!')
+
         return inputdict
     
+            
+ 
+    def filename_constructor(self,saving_string,animal_id,dataset,day,neuron,trial):
+
+        first_string =  saving_string
+        animal_id_string = '.' + animal_id
+        dataset_string = '.Dataset.' + dataset
+        day_string = '.Day.' + str(day)
+        neuron_string = '.Neuron.' + str(neuron)
+        trial_string = '.Trial.' + str(trial)
+
+        filename_checklist = np.array([first_string,animal_id, dataset, day, neuron, trial])
+        inlcude_this = np.where(filename_checklist != None)[0]
+
+        filename_backbone = [first_string, animal_id_string,dataset_string, day_string, neuron_string, trial_string]
+
+        filename = ''.join([filename_backbone[i] for i in inlcude_this])
+               
+        return filename
     
+            
+    def caller_saving(self,inputdict,filename,saving_path):
+        os.chdir(saving_path)
+        output = open(filename, 'wb') 
+        np.save(output,inputdict)
+        output.close()
+        print('File saved.')
+        
+        
+        
 
     def parallelize_surrogate(self,Input_Variable,Target_Variable,x_coordinates_valid,y_coordinates_valid,num_of_folds,x_center_bins,y_center_bins,
         x_bin_size,y_bin_size,x_center_bins_repeated,y_center_bins_repeated,mean_video_srate,num_cores,num_surrogates,shuffling_shift):
@@ -464,7 +506,7 @@ class SpatialPredictionSurrogates(SpatialPrediction):
         spatial_error_center_of_mass = self.get_spatial_error(concat_continuous_error_center_of_mass,Target_Variable,x_center_bins,y_center_bins)
         smoothed_spatial_center_of_mass = self.smooth_spatial_error(spatial_error_center_of_mass,spatial_bins=2)
 
-        events_amp = Input_Variable_Shuffled[I_peaks]
+        events_amp = np.squeeze(Input_Variable_Shuffled[I_peaks])
         
         return concat_accuracy,concat_continuous_error,concat_mean_error_classic, concat_continuous_error_center_of_mass,concat_mean_error_center_of_mass, I_peaks,spatial_error_classic,smoothed_spatial_error_classic,spatial_error_center_of_mass,smoothed_spatial_center_of_mass,events_amp
         

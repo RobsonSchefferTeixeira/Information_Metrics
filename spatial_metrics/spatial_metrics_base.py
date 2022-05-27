@@ -5,7 +5,7 @@ import spatial_metrics.helper_functions as hf
 import spatial_metrics.detect_peaks as dp
 from joblib import Parallel, delayed
 from sklearn.feature_selection import mutual_info_classif
-
+import warnings
 
 class PlaceCell:
     def __init__(self,**kwargs):
@@ -19,8 +19,8 @@ class PlaceCell:
         kwargs.setdefault('mintimespent', 0.1)
         kwargs.setdefault('minvisits', 1)
         kwargs.setdefault('speed_threshold', 2.5)
-        kwargs.setdefault('placefield_nbins_pos_x', 50)
-        kwargs.setdefault('placefield_nbins_pos_y', 50)
+        kwargs.setdefault('x_bin_size', 1)
+        kwargs.setdefault('y_bin_size', 1)
         kwargs.setdefault('environment_edges', None)
         kwargs.setdefault('shuffling_shift', 10)
         kwargs.setdefault('num_cores', 1)
@@ -31,7 +31,7 @@ class PlaceCell:
 
         valid_kwargs = ['animal_id','day','neuron','dataset','trial','mean_video_srate',
                         'mintimespent','minvisits','speed_threshold',
-                        'placefield_nbins_pos_x','placefield_nbins_pos_y','shuffling_shift','num_cores',
+                        'x_bin_size','y_bin_size','shuffling_shift','num_cores',
                         'num_surrogates','saving_path','saving','saving_string','environment_edges']
         
         for k, v in kwargs.items():
@@ -45,29 +45,9 @@ class PlaceCell:
 
         
         if np.all(np.isnan(calcium_imag)):
-        
-
-            inputdict = dict()
-            inputdict['signal_map'] = np.nan
-            inputdict['place_field'] = np.nan
-            inputdict['place_field_smoothed'] = np.nan        
-            inputdict['ocuppancy_map'] = np.nan
-            inputdict['visits_map'] = np.nan
-            inputdict['x_grid'] = np.nan
-            inputdict['y_grid'] = np.nan
-            inputdict['x_center_bins'] = np.nan
-            inputdict['y_center_bins'] = np.nan
-            inputdict['numb_events'] = np.nan
-            inputdict['events_index'] = np.nan
-            inputdict['mutual_info_original'] = np.nan
-            inputdict['mutual_info_shuffled'] = np.nan
-            inputdict['mutual_info_zscored'] = np.nan
-            inputdict['mutual_info_centered'] = np.nan
-            inputdict['num_of_islands'] = np.nan
-            inputdict['place_cell_extension_absolute'] = np.nan
-            inputdict['place_cell_extension_relative'] = np.nan
-            inputdict['input_parameters'] = self.__dict__['input_parameters']
-
+            warnings.warn("Signal contains only NaN's")
+            inputdict = np.nan
+           
         else:
             speed = self.get_speed(x_coordinates,y_coordinates,track_timevector,self.mean_video_srate)
 
@@ -75,7 +55,7 @@ class PlaceCell:
 
             x_coordinates_valid, y_coordinates_valid, calcium_imag_valid, track_timevector_valid = self.get_valid_timepoints(calcium_imag,x_coordinates,y_coordinates,track_timevector,self.speed_threshold,self.mean_video_srate)
 
-            calcium_mean_occupancy,position_binned,x_grid,y_grid,x_center_bins,y_center_bins = self.get_spatial_statistics(calcium_imag_valid,x_coordinates_valid,y_coordinates_valid,self.environment_edges,self.placefield_nbins_pos_x,self.placefield_nbins_pos_y)
+            calcium_mean_occupancy,position_binned,x_grid,y_grid,x_center_bins,y_center_bins = self.get_spatial_statistics(calcium_imag_valid,x_coordinates_valid,y_coordinates_valid,self.environment_edges,self.x_bin_size,self.y_bin_size)
 
             mutual_info_original = self.get_mutual_information(calcium_imag_valid,position_binned)
 
@@ -267,8 +247,10 @@ class PlaceCell:
 
         return place_field,place_field_smoothed
                           
-    def get_spatial_statistics(self,calcium_imag,x_coordinates,y_coordinates,environment_edges,placefield_nbins_pos_x,placefield_nbins_pos_y):
+    def get_spatial_statistics(self,calcium_imag,x_coordinates,y_coordinates,environment_edges,x_bin_size,y_bin_size):
 
+        placefield_nbins_pos_x = (environment_edges[0][1] - environment_edges[0][0])/x_bin_size
+        placefield_nbins_pos_y = (environment_edges[1][1] - environment_edges[1][0])/y_bin_size
         results = stats.binned_statistic_2d(x_coordinates, y_coordinates, calcium_imag, statistic = 'mean',
                                             bins =[placefield_nbins_pos_x,placefield_nbins_pos_y], range = environment_edges,
                                             expand_binnumbers=False)
