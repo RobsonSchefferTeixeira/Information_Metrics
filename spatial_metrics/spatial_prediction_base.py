@@ -52,10 +52,11 @@ class SpatialPrediction:
             warnings.warn("Signal contains only NaN's")
             inputdict = np.nan
         else:
+            
 
-            x_grid,y_grid,x_center_bins,y_center_bins,x_center_bins_repeated,y_center_bins_repeated = self.get_position_grid(x_coordinates,y_coordinates,self.x_bin_size,self.y_bin_size,environment_edges=self.environment_edges)
+            x_grid,y_grid,x_center_bins,y_center_bins,x_center_bins_repeated,y_center_bins_repeated = self.get_position_grid(x_coordinates_valid,y_coordinates_valid,self.x_bin_size,self.y_bin_size,environment_edges=self.environment_edges)
 
-            position_binned = self.get_binned_2Dposition(x_coordinates,y_coordinates,x_grid,y_grid)
+            position_binned = self.get_binned_2Dposition(x_coordinates_valid,y_coordinates_valid,x_grid,y_grid)
 
             Input_Variable,Target_Variable,x_coordinates_valid,y_coordinates_valid,I_valid = self.get_valid_timepoints(calcium_imag,position_binned,x_coordinates,y_coordinates)
 
@@ -149,21 +150,18 @@ class SpatialPrediction:
         for fold in range(1,num_of_folds+1):
 
 
-            X_train,y_train,X_test,y_test,Trials_training_set,Trials_testing_set = self.get_fold_trials(Input_Variable,Target_Variable,
-                                                                                                      fold,num_of_folds)
+            X_train,y_train,X_test,y_test,Trials_training_set,Trials_testing_set = self.get_fold_trials(Input_Variable,Target_Variable,fold,num_of_folds)
 
             classifier_accuracy,y_pred,predict_proba = self.run_classifier(X_train,y_train,X_test,y_test)
 
             x_coordinates_test = x_coordinates_valid[Trials_testing_set].copy()
             y_coordinates_test = y_coordinates_valid[Trials_testing_set].copy()
 
-            continuous_error_classic,mean_error_classic = self.get_classic_continuous_error(y_test,y_pred,x_coordinates_test,y_coordinates_test,
-                                                                                          x_center_bins_repeated,y_center_bins_repeated)
+            continuous_error_classic,mean_error_classic = self.get_classic_continuous_error(y_test,y_pred,x_coordinates_test,y_coordinates_test,x_center_bins_repeated,y_center_bins_repeated)
 
             # pred_dist_grid_classic = self.get_spatial_error(continuous_error_classic,y_test,x_center_bins,y_center_bins)
 
-            continuous_error_center_of_mass,mean_error_center_of_mass = self.get_center_of_mass_continuous_error(y_train,predict_proba,                                                                                   x_coordinates_test,y_coordinates_test,x_center_bins,y_center_bins,
-                                                                      x_center_bins_repeated,y_center_bins_repeated)
+            continuous_error_center_of_mass,mean_error_center_of_mass = self.get_center_of_mass_continuous_error(y_train,predict_proba,x_coordinates_test,y_coordinates_test,x_center_bins, y_center_bins,x_center_bins_repeated,y_center_bins_repeated)
 
             # pred_dist_grid_center_of_mass = self.get_spatial_error(continuous_error_center_of_mass,y_test,x_center_bins,y_center_bins)
 

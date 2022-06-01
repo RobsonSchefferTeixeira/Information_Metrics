@@ -328,3 +328,54 @@ class PlaceCell:
 
         if j != col - 1:
             self.dfs(input_array,row,col,i,j+1)
+
+            
+            
+            
+class PlaceCellBinarized(PlaceCell):
+
+
+
+    def get_mutual_information(self,calcium_imag,position_binned):
+        
+        # I've translated this code to Python. 
+        # Originally I took it from https://github.com/etterguillaume/CaImDecoding/blob/master/extract_1D_information.m
+
+        # I'm calling the input variable as calcium_imag just for the sake of class inheritance, but a better name
+        # would be binarized_signal
+        bin_vector = np.unique(position_binned)
+
+        # Create bin vectors
+        prob_being_active = np.nansum(calcium_imag)/calcium_imag.shape[0] # Expressed in probability of firing (<1)
+
+         # Compute joint probabilities (of cell being active while being in a state bin)
+        likelihood = []
+        occupancy_vector = []
+
+        MI = 0
+        for i in range(bin_vector.shape[0]):
+            position_idx = position_binned == bin_vector[i]
+
+            if np.sum(position_idx)>0:
+                occupancy_vector.append(position_idx.shape[0]/calcium_imag.shape[0])
+
+                activity_in_bin_idx = np.where((calcium_imag == 1) & position_idx)[0]
+                inactivity_in_bin_idx = np.where((calcium_imag == 0) & position_idx)[0]
+                likelihood.append(activity_in_bin_idx.shape[0]/np.sum(position_idx))
+
+                joint_prob_active = activity_in_bin_idx.shape[0]/calcium_imag.shape[0]
+                joint_prob_inactive = inactivity_in_bin_idx.shape[0]/calcium_imag.shape[0]
+                prob_in_bin = np.sum(position_idx)/calcium_imag.shape[0]
+
+                if joint_prob_active > 0:
+                    MI = MI + joint_prob_active*np.log2(joint_prob_active/(prob_in_bin*prob_being_active))
+
+                if joint_prob_inactive > 0:
+                    MI = MI + joint_prob_inactive*np.log2(joint_prob_inactive/(prob_in_bin*(1-prob_being_active)))
+        occupancy_vector = np.array(occupancy_vector)
+        likelihood = np.array(likelihood)
+
+        posterior = likelihood*occupancy_vector/prob_being_active
+
+
+        return MI
