@@ -192,36 +192,29 @@ class SpatialPrediction:
 
         return concat_accuracy,concat_continuous_error,concat_mean_error_classic,                                                                                    concat_continuous_error_center_of_mass,concat_mean_error_center_of_mass,I_peaks
 
-    def get_position_grid(self,x_coordinates,y_coordinates,x_bin_size,y_bin_size,**kwargs):
+    def get_position_grid(self,x_coordinates,y_coordinates,x_bin_size,y_bin_size,environment_edges=None):
 
         # x_bin_size and y_bin_size in cm
         # environment_edges = [[x1, x2], [y1, y2]]
-    
-        environment_edges = kwargs.get('environment_edges')
-
-        if environment_edges:
-
-            x_grid = np.arange(environment_edges[0][0],environment_edges[0][1] + x_bin_size/2,x_bin_size)
-
-            y_grid = np.arange(environment_edges[1][0],environment_edges[1][1] + y_bin_size/2,y_bin_size)
-
-            x_center_bins = x_grid[0:-1] + x_bin_size/2
-            y_center_bins = y_grid[0:-1] + y_bin_size/2
-
-            x_center_bins_repeated = np.repeat(x_center_bins,y_center_bins.shape[0])
-            y_center_bins_repeated = np.tile(y_center_bins,x_center_bins.shape[0])
-
-        else:     
-
-            x_grid = np.arange(np.nanmin(x_coordinates),np.nanmax(x_coordinates) + x_bin_size/2,x_bin_size)
-            y_grid = np.arange(np.nanmin(y_coordinates),np.nanmax(y_coordinates) + y_bin_size/2,y_bin_size)
-
-            x_center_bins = x_grid[0:-1] + x_bin_size/2
-            y_center_bins = y_grid[0:-1] + y_bin_size/2
+        
+        if environment_edges==None:
+            x_min = np.nanmin(x_coordinates)
+            x_max = np.nanmax(x_coordinates)
+            y_min = np.nanmin(y_coordinates)
+            y_max = np.nanmax(y_coordinates)
+            
+            environment_edges = [[x_min,x_max],[y_min,y_max]]
 
 
-            x_center_bins_repeated = np.repeat(x_center_bins,y_center_bins.shape[0])
-            y_center_bins_repeated = np.tile(y_center_bins,x_center_bins.shape[0])
+        x_grid = np.arange(environment_edges[0][0]- x_bin_size,environment_edges[0][1] + x_bin_size,x_bin_size)
+
+        y_grid = np.arange(environment_edges[1][0]- y_bin_size,environment_edges[1][1] + y_bin_size,y_bin_size)
+
+        x_center_bins = x_grid[0:-1] + x_bin_size/2
+        y_center_bins = y_grid[0:-1] + y_bin_size/2
+
+        x_center_bins_repeated = np.repeat(x_center_bins,y_center_bins.shape[0])
+        y_center_bins_repeated = np.tile(y_center_bins,x_center_bins.shape[0])
 
 
         return x_grid,y_grid,x_center_bins,y_center_bins,x_center_bins_repeated,y_center_bins_repeated

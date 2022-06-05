@@ -173,7 +173,6 @@ def generate_random_walk(input_srate = 100.,input_total_Time = 500,head_directio
         if environment_edges:
             if y_coordinates[t] > environment_edges[1][1] or y_coordinates[t] < environment_edges[1][0] or x_coordinates[t] > environment_edges[0][1] or x_coordinates[t] < environment_edges[0][0]:
 
-
                 head_direction_new = head_direction_new+math.pi
 
                 y_coordinates[t] = y_coordinates[t-1] + speeds_new[t]*np.sin(head_direction_new[t]) + rho1*epsy[t]
@@ -186,7 +185,11 @@ def generate_random_walk(input_srate = 100.,input_total_Time = 500,head_directio
                 y_coordinates[t] = y_coordinates[t-1] + speeds_new[t]*np.sin(head_direction_new[t]) + rho1*epsy[t]
                 x_coordinates[t] = x_coordinates[t-1] + speeds_new[t]*np.cos(head_direction_new[t]) + rho1*epsx[t]
 
+    x_coordinates[x_coordinates < environment_edges[0][0]] = environment_edges[0][0]
+    x_coordinates[x_coordinates > environment_edges[0][1]] = environment_edges[0][1]
 
+    y_coordinates[y_coordinates < environment_edges[1][0]] = environment_edges[1][0]
+    y_coordinates[y_coordinates > environment_edges[1][1]] = environment_edges[1][1]
 
     x_coordinates = smooth(np.squeeze(x_coordinates),round_up_to_even(int(smooth_coeff*srate)))
     y_coordinates = smooth(np.squeeze(y_coordinates),round_up_to_even(int(smooth_coeff*srate)))
