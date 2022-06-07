@@ -7,7 +7,7 @@ from joblib import Parallel, delayed
 from sklearn.feature_selection import mutual_info_classif
 import warnings
 
-class PlaceCell:
+class PlaceCellBinarized:
     def __init__(self,**kwargs):
         
         kwargs.setdefault('animal_id', None)
@@ -29,14 +29,13 @@ class PlaceCell:
         kwargs.setdefault('saving_path', os.getcwd())
         kwargs.setdefault('saving', False)
         kwargs.setdefault('saving_string', 'SpatialMetrics')
-        kwargs.setdefault('nbins_cal', 10)
         
         
 
         valid_kwargs = ['animal_id','day','neuron','dataset','trial','mean_video_srate',
                         'mintimespent','minvisits','speed_threshold','smoothing_size',
                         'x_bin_size','y_bin_size','shift_time','num_cores',
-                        'num_surrogates','saving_path','saving','saving_string','environment_edges','nbins_cal']
+                        'num_surrogates','saving_path','saving','saving_string','environment_edges']
         
         for k, v in kwargs.items():
             if k not in valid_kwargs:
@@ -56,26 +55,19 @@ class PlaceCell:
             speed = self.get_speed(x_coordinates,y_coordinates,track_timevector)
 
 
-            x_coordinates_valid, y_coordinates_valid, calcium_imag_valid, track_timevector_valid = self.get_valid_timepoints(calcium_imag,x_coordinates,y_coordinates,track_timevector,speed,self.speed_threshold)
+            x_coordinates_valid, y_coordinates_valid, calcium_imag_valid, track_timevector_valid =                                                                     self.get_valid_timepoints(calcium_imag,x_coordinates,y_coordinates,track_timevector,speed,self.speed_threshold)
 
-#            calcium_mean_occupancy,position_binned,x_grid,y_grid,x_center_bins,y_center_bins = self.get_spatial_statistics(calcium_imag_valid,x_coordinates_valid,y_coordinates_valid,self.environment_edges,self.x_bin_size,self.y_bin_size)
 
-            x_grid,y_grid,x_center_bins,y_center_bins,x_center_bins_repeated,y_center_bins_repeated = self.get_position_grid(x_coordinates,y_coordinates,self.x_bin_size,self.y_bin_size,environment_edges = self.environment_edges)
+            x_grid,y_grid,x_center_bins,y_center_bins,x_center_bins_repeated,y_center_bins_repeated =                                                                 self.get_position_grid(x_coordinates,y_coordinates,self.x_bin_size,self.y_bin_size,environment_edges = self.environment_edges)
 
             position_binned = self.get_binned_2Dposition(x_coordinates_valid,y_coordinates_valid,x_grid,y_grid)
 
             calcium_mean_occupancy = self.get_calcium_occupancy(calcium_imag_valid,x_coordinates_valid,y_coordinates_valid,x_grid,y_grid)
 
-            # mutual_info_original = self.get_mutual_information(calcium_imag_valid,position_binned)
-            calcium_imag_valid_binned = self.get_binned_signal(calcium_imag_valid,self.nbins_cal)
-            nbins_pos = (x_grid.shape[0]-1)*(y_grid.shape[0]-1)
-            entropy1 = self.get_entropy(position_binned,nbins_pos)
-            entropy2 = self.get_entropy(calcium_imag_valid_binned,self.nbins_cal)
-            joint_entropy = self.get_joint_entropy(position_binned,calcium_imag_valid_binned,nbins_pos,self.nbins_cal)
-            mutual_info_original = self.get_mutual_information(entropy1,entropy2,joint_entropy)
+            mutual_info_original = self.get_mutual_information(calcium_imag_valid,position_binned)
 
 
-            mutual_info_shuffled = self.parallelize_surrogate(calcium_imag_valid,position_binned,self.nbins_cal,nbins_pos,                                                          self.mean_video_srate,self.num_cores,self.num_surrogates,self.shift_time)
+            mutual_info_shuffled = self.parallelize_surrogate(calcium_imag_valid,position_binned,self.mean_video_srate,                                                                                             self.num_cores,self.num_surrogates,self.shift_time)
 
             mutual_info_zscored,mutual_info_centered = self.get_mutual_information_zscored(mutual_info_original,mutual_info_shuffled)
 
@@ -102,18 +94,14 @@ class PlaceCell:
 
             num_of_islands = self.number_of_islands(np.copy(calcium_mean_occupancy_above_to_island))
 
-            I_peaks = dp.detect_peaks(calcium_imag_valid,mpd=0.5*self.mean_video_srate,mph=1.*np.nanstd(calcium_imag_valid))
+            I_peaks = np.where(calcium_imag_valid == 1)[0]
             peaks_amplitude = calcium_imag_valid[I_peaks]
             x_peaks_location = x_coordinates_valid[I_peaks]
             y_peaks_location = y_coordinates_valid[I_peaks]
                 
                 
-            kullback_leibler_mod_index = self.get_kullback_leibler_normalized(calcium_mean_occupancy)
-            
-            kullback_leibler_mod_index_shuffled = self.parallelize_surrogate_kullback_leibler(calcium_imag_valid,x_coordinates_valid,y_coordinates_valid,x_grid,                   y_grid,self.mean_video_srate,self.shift_time,self.num_cores,self.num_surrogates)
-            
-            kullback_leibler_mod_index_zscored,kullback_leibler_mod_index_centered = self.get_mutual_information_zscored(kullback_leibler_mod_index,                   kullback_leibler_mod_index_shuffled)
-   
+                
+                
             inputdict = dict()
             inputdict['signal_map'] = calcium_mean_occupancy
             inputdict['place_field'] = place_field
@@ -135,10 +123,6 @@ class PlaceCell:
             inputdict['num_of_islands'] = num_of_islands
             inputdict['place_cell_extension_absolute'] = pixels_place_cell_absolute
             inputdict['place_cell_extension_relative'] = pixels_place_cell_relative
-            inputdict['kullback_leibler_mod_index'] = kullback_leibler_mod_index     
-            inputdict['kullback_leibler_mod_index_shuffled'] = kullback_leibler_mod_index_shuffled     
-            inputdict['kullback_leibler_mod_index_zscored'] = kullback_leibler_mod_index_zscored     
-            inputdict['kullback_leibler_mod_index_centered'] = kullback_leibler_mod_index_centered     
             inputdict['input_parameters'] = self.__dict__['input_parameters']
 
             filename = self.filename_constructor(self.saving_string,self.animal_id,self.dataset,self.day,self.neuron,self.trial)
@@ -351,83 +335,7 @@ class PlaceCell:
 
         return place_field,place_field_smoothed
     
-   
-    
-    def get_spatial_statistics(self,calcium_imag,x_coordinates,y_coordinates,environment_edges,x_bin_size,y_bin_size):
 
-        placefield_nbins_pos_x = (environment_edges[0][1] - environment_edges[0][0])/x_bin_size
-        placefield_nbins_pos_y = (environment_edges[1][1] - environment_edges[1][0])/y_bin_size
-        results = stats.binned_statistic_2d(x_coordinates, y_coordinates, calcium_imag, statistic = 'mean',
-                                            bins =[placefield_nbins_pos_x,placefield_nbins_pos_y], range = environment_edges,
-                                            expand_binnumbers=False)
-        x_grid = results[1]
-        y_grid = results[2]
-        calcium_mean_occupancy = results[0].T
-
-        x_center_bins = x_grid[0:-1] + np.diff(x_grid)
-        y_center_bins = y_grid[0:-1] + np.diff(y_grid)
-        
-        position_binned = results[3]
-        return calcium_mean_occupancy,position_binned,x_grid,y_grid,x_center_bins,y_center_bins
-    
-
-    
-    
-    
-#     def get_mutual_information(self,calcium_imag,position_binned):
-#         mutual_info_original = mutual_info_classif(calcium_imag.reshape(-1,1),position_binned,                                                                     discrete_features=False,n_neighbors=5,random_state=1)[0]
-
-#         return mutual_info_original
-
-
-    
-    def get_binned_signal(self,calcium_imag,nbins_cal):
-
-        calcium_imag_bins = np.linspace(np.nanmin(calcium_imag),np.nanmax(calcium_imag),nbins_cal+1)
-        calcium_imag_binned = np.zeros(calcium_imag.shape[0])
-        for jj in range(calcium_imag_bins.shape[0]-1):
-            I_amp = (calcium_imag > calcium_imag_bins[jj]) & (calcium_imag <= calcium_imag_bins[jj+1])
-            calcium_imag_binned[I_amp] = jj
-
-        return calcium_imag_binned
-
-       
-    def get_joint_entropy(self,bin_vector1,bin_vector2,nbins_1,nbins_2):
-
-        eps = np.finfo(float).eps
-
-        bin_vector1 = np.copy(bin_vector1)
-        bin_vector2 = np.copy(bin_vector2)
-
-        jointprobs = np.zeros([nbins_1,nbins_2])
-        
-        for i1 in range(nbins_1):
-            for i2 in range(nbins_2):
-                jointprobs[i1,i2] = np.nansum((bin_vector1==i1) & (bin_vector2==i2))
-
-        jointprobs = jointprobs/np.nansum(jointprobs)
-        joint_entropy = -np.nansum(jointprobs*np.log2(jointprobs+eps));
-
-        return joint_entropy
-    
-    
-    
-    def get_entropy(self,binned_input,nbins):
-
-        eps = np.finfo(float).eps
-
-        hdat = np.histogram(binned_input,nbins)[0]
-        hdat = hdat/np.nansum(hdat)
-        entropy = -np.nansum(hdat*np.log2(hdat+eps))
-
-        return entropy
-    
-    def get_mutual_information(self,entropy1,entropy2,joint_entropy):
-        mutual_info = entropy1 + entropy2 - joint_entropy
-        return mutual_info
-    
-        
-    
     
     def get_mutual_information_zscored(self,mutual_info_original,mutual_info_shuffled):
         mutual_info_centered = mutual_info_original-np.nanmean(mutual_info_shuffled)
@@ -436,8 +344,8 @@ class PlaceCell:
         return mutual_info_zscored,mutual_info_centered
 
  
-    def parallelize_surrogate(self,calcium_imag,position_binned,nbins_cal,nbins_pos,mean_video_srate,num_cores,num_surrogates,shift_time):
-        mutual_info_shuffled = Parallel(n_jobs=num_cores)(delayed(self.get_mutual_info_surrogate)                                                         (calcium_imag,position_binned,mean_video_srate,shift_time,nbins_cal,nbins_pos) for permi in range(num_surrogates))
+    def parallelize_surrogate(self,calcium_imag,position_binned,mean_video_srate,num_cores,num_surrogates,shift_time):
+        mutual_info_shuffled = Parallel(n_jobs=num_cores)(delayed(self.get_mutual_info_surrogate)                                                         (calcium_imag,position_binned,mean_video_srate,shift_time) for permi in range(num_surrogates))
         
         return np.array(mutual_info_shuffled)
     
@@ -449,25 +357,15 @@ class PlaceCell:
 
         return input_vector_shuffled
 
-    def get_mutual_info_surrogate(self,calcium_imag,position_binned,mean_video_srate,shift_time,nbins_cal,nbins_pos):
+    def get_mutual_info_surrogate(self,calcium_imag,position_binned,mean_video_srate,shift_time):
         calcium_imag_shuffled = self.get_surrogate(calcium_imag,mean_video_srate,shift_time)
-        
-        calcium_imag_shuffled_binned = self.get_binned_signal(calcium_imag_shuffled,nbins_cal)
-        entropy1 = self.get_entropy(position_binned,nbins_pos)
-        entropy2 = self.get_entropy(calcium_imag_shuffled_binned,nbins_cal)
-        joint_entropy = self.get_joint_entropy(position_binned,calcium_imag_shuffled_binned,nbins_pos,nbins_cal)
-        mutual_info_shuffled = self.get_mutual_information(entropy1,entropy2,joint_entropy)
-        
-        
-
-        # mutual_info_shuffled = self.get_mutual_information(calcium_imag_shuffled,position_binned)
+        mutual_info_shuffled = self.get_mutual_information(calcium_imag_shuffled,position_binned)
         
         return mutual_info_shuffled
 
 
 
     def number_of_islands(self,input_array):
-
 
         row = input_array.shape[0]
         col = input_array.shape[1]
@@ -498,36 +396,46 @@ class PlaceCell:
         if j != col - 1:
             self.dfs(input_array,row,col,i,j+1)
 
+     
+    def get_mutual_information(self,calcium_imag,position_binned):
+        
+        # I've translated this code to Python. 
+        # Originally I took it from https://github.com/etterguillaume/CaImDecoding/blob/master/extract_1D_information.m
 
+        # I'm calling the input variable as calcium_imag just for the sake of class inheritance, but a better name
+        # would be binarized_signal
+        bin_vector = np.unique(position_binned)
 
-    def get_kullback_leibler_normalized(self,calcium_mean_occupancy_smoothed):
+        # Create bin vectors
+        prob_being_active = np.nansum(calcium_imag)/calcium_imag.shape[0] # Expressed in probability of firing (<1)
 
-        calcium_mean_occupancy_flattened = calcium_mean_occupancy_smoothed.flatten().copy()
-        calcium_mean_occupancy_flattened = calcium_mean_occupancy_flattened[~np.isnan(calcium_mean_occupancy_flattened)]
-        nbin = calcium_mean_occupancy_flattened.shape[0]
-        mean_amp = calcium_mean_occupancy_flattened
-        observed_distr = -np.nansum((mean_amp/np.nansum(mean_amp))*np.log((mean_amp/np.nansum(mean_amp))))
-        test_distr = np.log(nbin);
-        modulation_index = (test_distr - observed_distr) / test_distr
-        return modulation_index
+         # Compute joint probabilities (of cell being active while being in a state bin)
+        likelihood = []
+        occupancy_vector = []
 
+        mutual_info = 0
+        for i in range(bin_vector.shape[0]):
+            position_idx = position_binned == bin_vector[i]
 
-    def parallelize_surrogate_kullback_leibler(self,calcium_imag,x_coordinates,y_coordinates,x_grid,y_grid,mean_video_srate,shift_time,                                                               num_cores,num_surrogates):
-        modulation_index_shuffled = Parallel(n_jobs=num_cores)(delayed(self.get_kullback_leibler_normalized_surrogate)                                                         (calcium_imag,x_coordinates,y_coordinates,x_grid,y_grid,mean_video_srate,shift_time) for permi in range(num_surrogates))
+            if np.sum(position_idx)>0:
+                occupancy_vector.append(position_idx.shape[0]/calcium_imag.shape[0])
 
-        return np.array(modulation_index_shuffled)
+                activity_in_bin_idx = np.where((calcium_imag == 1) & position_idx)[0]
+                inactivity_in_bin_idx = np.where((calcium_imag == 0) & position_idx)[0]
+                likelihood.append(activity_in_bin_idx.shape[0]/np.sum(position_idx))
 
+                joint_prob_active = activity_in_bin_idx.shape[0]/calcium_imag.shape[0]
+                joint_prob_inactive = inactivity_in_bin_idx.shape[0]/calcium_imag.shape[0]
+                prob_in_bin = np.sum(position_idx)/calcium_imag.shape[0]
 
+                if joint_prob_active > 0:
+                    mutual_info = mutual_info + joint_prob_active*np.log2(joint_prob_active/(prob_in_bin*prob_being_active))
 
-    def get_kullback_leibler_normalized_surrogate(self,calcium_imag,x_coordinates,y_coordinates,x_grid,y_grid,mean_video_srate,shift_time):
+                if joint_prob_inactive > 0:
+                    mutual_info = mutual_info + joint_prob_inactive*np.log2(joint_prob_inactive/(prob_in_bin*(1-prob_being_active)))
+        occupancy_vector = np.array(occupancy_vector)
+        likelihood = np.array(likelihood)
 
-        calcium_imag_shuffled = self.get_surrogate(calcium_imag,mean_video_srate,shift_time)
-        calcium_mean_occupancy_shuffled = self.get_calcium_occupancy(calcium_imag_shuffled,x_coordinates,y_coordinates,x_grid,y_grid)
-        modulation_index_shuffled = self.get_kullback_leibler_normalized(calcium_mean_occupancy_shuffled)
+        posterior = likelihood*occupancy_vector/prob_being_active
 
-        return modulation_index_shuffled
-
-
-    
-    
-
+        return mutual_info
