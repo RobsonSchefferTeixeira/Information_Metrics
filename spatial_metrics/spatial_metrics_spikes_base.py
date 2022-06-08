@@ -1,12 +1,10 @@
-#import ray
 import numpy as np
 import os
+import sys
 from scipy import stats as stats
 import spatial_metrics.helper_functions as hf
 import spatial_metrics.detect_peaks as dp
 from joblib import Parallel, delayed
-
-#ray.init(num_cpus=os.cpu_count(), ignore_reinit_error=True,log_to_driver=False) 
 
 class PlaceCell:
     def __init__(self,**kwargs):
@@ -91,12 +89,16 @@ class PlaceCell:
             pixels_place_cell_relative = pixels_above/total_visited_pixels
             pixels_place_cell_absolute = pixels_above/pixels_total
 
-            calcium_mean_occupancy_above_to_island = np.copy(spatial_map_smoothed_threshold)
-            calcium_mean_occupancy_above_to_island[calcium_mean_occupancy_above_to_island < I_threshold] = 0
-            calcium_mean_occupancy_above_to_island[calcium_mean_occupancy_above_to_island >= I_threshold] = 1
+            place_field_above_to_island = np.copy(spatial_map_smoothed_threshold)
+            place_field_above_to_island[place_field_above_to_island < I_threshold] = 0
+            place_field_above_to_island[place_field_above_to_island >= I_threshold] = 1
 
-            num_of_islands = self.number_of_islands(np.copy(calcium_mean_occupancy_above_to_island))
+            if np.any(place_field_above_to_island==1):
+                sys.setrecursionlimit(10000)
+                num_of_islands = self.number_of_islands(np.copy(place_field_above_to_island))
 
+            else:
+                num_of_islands = 0
             
 
             inputdict = dict()

@@ -1,5 +1,6 @@
 import numpy as np
 import os
+import sys
 from scipy import stats as stats
 import spatial_metrics.helper_functions as hf
 import spatial_metrics.detect_peaks as dp
@@ -92,8 +93,13 @@ class PlaceCellBinarized:
             calcium_mean_occupancy_above_to_island[calcium_mean_occupancy_above_to_island < I_threshold] = 0
             calcium_mean_occupancy_above_to_island[calcium_mean_occupancy_above_to_island >= I_threshold] = 1
 
-            num_of_islands = self.number_of_islands(np.copy(calcium_mean_occupancy_above_to_island))
+            if np.any(calcium_mean_occupancy_above_to_island==1):
+                sys.setrecursionlimit(10000)
+                num_of_islands = self.number_of_islands(np.copy(calcium_mean_occupancy_above_to_island))
 
+            else:
+                num_of_islands = 0
+                
             I_peaks = np.where(calcium_imag_valid == 1)[0]
             peaks_amplitude = calcium_imag_valid[I_peaks]
             x_peaks_location = x_coordinates_valid[I_peaks]

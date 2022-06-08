@@ -1,5 +1,6 @@
 import numpy as np
 import os
+import sys
 from scipy import stats as stats
 import spatial_metrics.helper_functions as hf
 import spatial_metrics.detect_peaks as dp
@@ -73,11 +74,34 @@ class PlaceCell:
             entropy2 = self.get_entropy(calcium_imag_valid_binned,self.nbins_cal)
             joint_entropy = self.get_joint_entropy(position_binned,calcium_imag_valid_binned,nbins_pos,self.nbins_cal)
             mutual_info_original = self.get_mutual_information(entropy1,entropy2,joint_entropy)
+            kullback_leibler_mod_index = self.get_kullback_leibler_normalized(calcium_imag_valid,position_binned)
 
+            mutual_info_NN_original = self.get_mutual_information_NN(calcium_imag_valid,position_binned)
+            mutual_info_skaggs_original = self.get_mutual_info_skaggs(calcium_imag_valid,position_binned)
 
-            mutual_info_shuffled = self.parallelize_surrogate(calcium_imag_valid,position_binned,self.nbins_cal,nbins_pos,                                                          self.mean_video_srate,self.num_cores,self.num_surrogates,self.shift_time)
+            results = self.parallelize_surrogate(calcium_imag_valid,position_binned,self.nbins_cal,nbins_pos,self.mean_video_srate,                                                   self.num_cores,self.num_surrogates,self.shift_time)
 
+            mutual_info_shuffled = []
+            mutual_info_NN_shuffled = []
+            kullback_leibler_mod_index_shuffled = []
+            mutual_info_skaggs_shuffled = []
+            for perm in range(self.num_surrogates):    
+                mutual_info_shuffled.append(results[perm][0])
+                kullback_leibler_mod_index_shuffled.append(results[perm][1])
+                mutual_info_NN_shuffled.append(results[perm][2])
+                mutual_info_skaggs_shuffled.append(results[perm][3])
+                
+            mutual_info_NN_shuffled = np.array(mutual_info_NN_shuffled)
+            mutual_info_shuffled = np.array(mutual_info_shuffled)
+            kullback_leibler_mod_index_shuffled = np.array(kullback_leibler_mod_index_shuffled)
+            mutual_info_skaggs_shuffled = np.array(mutual_info_skaggs_shuffled)
+            
             mutual_info_zscored,mutual_info_centered = self.get_mutual_information_zscored(mutual_info_original,mutual_info_shuffled)
+            kullback_leibler_mod_index_zscored,kullback_leibler_mod_index_centered = self.get_mutual_information_zscored(kullback_leibler_mod_index,                                  kullback_leibler_mod_index_shuffled)
+            
+            mutual_info_NN_zscored,mutual_info_NN_centered = self.get_mutual_information_zscored(mutual_info_NN_original,mutual_info_NN_shuffled)
+            
+            mutual_info_skaggs_zscored,mutual_info_skaggs_centered = self.get_mutual_information_zscored(mutual_info_skaggs_original,mutual_info_skaggs_shuffled)
 
             position_occupancy = self.get_occupancy(x_coordinates_valid,y_coordinates_valid,x_grid,y_grid,self.mean_video_srate)
 
@@ -100,19 +124,20 @@ class PlaceCell:
             calcium_mean_occupancy_above_to_island[calcium_mean_occupancy_above_to_island < I_threshold] = 0
             calcium_mean_occupancy_above_to_island[calcium_mean_occupancy_above_to_island >= I_threshold] = 1
 
-            num_of_islands = self.number_of_islands(np.copy(calcium_mean_occupancy_above_to_island))
+            if np.any(calcium_mean_occupancy_above_to_island==1):
+                # when testing surrogate, I had a problem with max recursion depth. This is a workaround.
+                sys.setrecursionlimit(10000)
+                num_of_islands = self.number_of_islands(np.copy(calcium_mean_occupancy_above_to_island))
 
+            else:
+                num_of_islands = 0
+                
             I_peaks = dp.detect_peaks(calcium_imag_valid,mpd=0.5*self.mean_video_srate,mph=1.*np.nanstd(calcium_imag_valid))
             peaks_amplitude = calcium_imag_valid[I_peaks]
             x_peaks_location = x_coordinates_valid[I_peaks]
             y_peaks_location = y_coordinates_valid[I_peaks]
                 
-                
-            kullback_leibler_mod_index = self.get_kullback_leibler_normalized(calcium_mean_occupancy)
-            
-            kullback_leibler_mod_index_shuffled = self.parallelize_surrogate_kullback_leibler(calcium_imag_valid,x_coordinates_valid,y_coordinates_valid,x_grid,                   y_grid,self.mean_video_srate,self.shift_time,self.num_cores,self.num_surrogates)
-            
-            kullback_leibler_mod_index_zscored,kullback_leibler_mod_index_centered = self.get_mutual_information_zscored(kullback_leibler_mod_index,                   kullback_leibler_mod_index_shuffled)
+
    
             inputdict = dict()
             inputdict['signal_map'] = calcium_mean_occupancy
@@ -139,6 +164,18 @@ class PlaceCell:
             inputdict['kullback_leibler_mod_index_shuffled'] = kullback_leibler_mod_index_shuffled     
             inputdict['kullback_leibler_mod_index_zscored'] = kullback_leibler_mod_index_zscored     
             inputdict['kullback_leibler_mod_index_centered'] = kullback_leibler_mod_index_centered     
+            
+            inputdict['mutual_info_NN_original'] = mutual_info_NN_original     
+            inputdict['mutual_info_NN_shuffled'] = mutual_info_NN_shuffled     
+            inputdict['mutual_info_NN_zscored'] = mutual_info_NN_zscored     
+            inputdict['mutual_info_NN_centered'] = mutual_info_NN_centered           
+          
+            inputdict['mutual_info_skaggs_original'] = mutual_info_skaggs_original     
+            inputdict['mutual_info_skaggs_shuffled'] = mutual_info_skaggs_shuffled     
+            inputdict['mutual_info_skaggs_zscored'] = mutual_info_skaggs_zscored     
+            inputdict['mutual_info_skaggs_centered'] = mutual_info_skaggs_centered     
+            
+            
             inputdict['input_parameters'] = self.__dict__['input_parameters']
 
             filename = self.filename_constructor(self.saving_string,self.animal_id,self.dataset,self.day,self.neuron,self.trial)
@@ -373,11 +410,12 @@ class PlaceCell:
 
     
     
-    
-#     def get_mutual_information(self,calcium_imag,position_binned):
-#         mutual_info_original = mutual_info_classif(calcium_imag.reshape(-1,1),position_binned,                                                                     discrete_features=False,n_neighbors=5,random_state=1)[0]
+    def get_mutual_information_NN(self,calcium_imag,position_binned):
+        mutual_info_NN_original = mutual_info_classif(calcium_imag.reshape(-1,1),position_binned,discrete_features=False,n_neighbors=5)[0]
 
-#         return mutual_info_original
+        return mutual_info_NN_original
+    
+    
 
 
     
@@ -426,9 +464,7 @@ class PlaceCell:
         mutual_info = entropy1 + entropy2 - joint_entropy
         return mutual_info
     
-        
-    
-    
+
     def get_mutual_information_zscored(self,mutual_info_original,mutual_info_shuffled):
         mutual_info_centered = mutual_info_original-np.nanmean(mutual_info_shuffled)
         mutual_info_zscored = (mutual_info_original-np.nanmean(mutual_info_shuffled))/np.nanstd(mutual_info_shuffled)
@@ -437,9 +473,9 @@ class PlaceCell:
 
  
     def parallelize_surrogate(self,calcium_imag,position_binned,nbins_cal,nbins_pos,mean_video_srate,num_cores,num_surrogates,shift_time):
-        mutual_info_shuffled = Parallel(n_jobs=num_cores)(delayed(self.get_mutual_info_surrogate)                                                         (calcium_imag,position_binned,mean_video_srate,shift_time,nbins_cal,nbins_pos) for permi in range(num_surrogates))
+        results = Parallel(n_jobs=num_cores)(delayed(self.get_mutual_info_surrogate)                                                         (calcium_imag,position_binned,mean_video_srate,shift_time,nbins_cal,nbins_pos) for permi in range(num_surrogates))
         
-        return np.array(mutual_info_shuffled)
+        return results
     
 
     def get_surrogate(self,input_vector,mean_video_srate,shift_time):
@@ -458,14 +494,60 @@ class PlaceCell:
         joint_entropy = self.get_joint_entropy(position_binned,calcium_imag_shuffled_binned,nbins_pos,nbins_cal)
         mutual_info_shuffled = self.get_mutual_information(entropy1,entropy2,joint_entropy)
         
+        mutual_info_shuffled_NN = self.get_mutual_information_NN(calcium_imag_shuffled,position_binned)
         
+        modulation_index_shuffled = self.get_kullback_leibler_normalized(calcium_imag_shuffled,position_binned)
+        
+        mutual_info_skaggs_shuffled = self.get_mutual_info_skaggs(calcium_imag_shuffled,position_binned)
 
         # mutual_info_shuffled = self.get_mutual_information(calcium_imag_shuffled,position_binned)
         
-        return mutual_info_shuffled
+        return mutual_info_shuffled,modulation_index_shuffled,mutual_info_shuffled_NN,mutual_info_skaggs_shuffled
 
 
+    def get_kullback_leibler_normalized(self,calcium_imag,position_binned):
 
+        position_bins = np.unique(position_binned)
+        nbin = position_bins.shape[0]
+        
+        mean_calcium_activity = []
+        for pos in position_bins:
+            I_pos = np.where(pos == position_binned)[0]
+            mean_calcium_activity.append(np.nanmean(calcium_imag[I_pos]))
+        mean_calcium_activity = np.array(mean_calcium_activity)
+   
+        observed_distr = -np.nansum((mean_calcium_activity/np.nansum(mean_calcium_activity))*np.log((mean_calcium_activity/np.nansum(mean_calcium_activity))))
+        test_distr = np.log(nbin)
+        modulation_index = (test_distr - observed_distr) / test_distr
+        return modulation_index
+
+
+    
+
+    def get_mutual_info_skaggs(self,calcium_imag,position_binned):
+
+        overall_mean_amplitude = np.nanmean(calcium_imag)
+
+        position_bins = np.unique(position_binned)
+        nbin = position_bins.shape[0]
+
+        bin_probability = []
+        mean_calcium_activity = []
+        for pos in position_bins:
+            I_pos = np.where(pos == position_binned)[0]
+            bin_probability.append(I_pos.shape[0]/position_binned.shape[0])
+            mean_calcium_activity.append(np.nanmean(calcium_imag[I_pos]))
+        mean_calcium_activity = np.array(mean_calcium_activity)
+        bin_probability = np.array(bin_probability)
+        
+        mutual_info_skaggs = np.nansum((bin_probability*(mean_calcium_activity/overall_mean_amplitude))*np.log2(mean_calcium_activity/overall_mean_amplitude))
+        
+        # spatial info in bits per deltaF/F s^-1
+        
+        return mutual_info_skaggs
+
+    
+    
     def number_of_islands(self,input_array):
 
 
@@ -499,33 +581,6 @@ class PlaceCell:
             self.dfs(input_array,row,col,i,j+1)
 
 
-
-    def get_kullback_leibler_normalized(self,calcium_mean_occupancy_smoothed):
-
-        calcium_mean_occupancy_flattened = calcium_mean_occupancy_smoothed.flatten().copy()
-        calcium_mean_occupancy_flattened = calcium_mean_occupancy_flattened[~np.isnan(calcium_mean_occupancy_flattened)]
-        nbin = calcium_mean_occupancy_flattened.shape[0]
-        mean_amp = calcium_mean_occupancy_flattened
-        observed_distr = -np.nansum((mean_amp/np.nansum(mean_amp))*np.log((mean_amp/np.nansum(mean_amp))))
-        test_distr = np.log(nbin);
-        modulation_index = (test_distr - observed_distr) / test_distr
-        return modulation_index
-
-
-    def parallelize_surrogate_kullback_leibler(self,calcium_imag,x_coordinates,y_coordinates,x_grid,y_grid,mean_video_srate,shift_time,                                                               num_cores,num_surrogates):
-        modulation_index_shuffled = Parallel(n_jobs=num_cores)(delayed(self.get_kullback_leibler_normalized_surrogate)                                                         (calcium_imag,x_coordinates,y_coordinates,x_grid,y_grid,mean_video_srate,shift_time) for permi in range(num_surrogates))
-
-        return np.array(modulation_index_shuffled)
-
-
-
-    def get_kullback_leibler_normalized_surrogate(self,calcium_imag,x_coordinates,y_coordinates,x_grid,y_grid,mean_video_srate,shift_time):
-
-        calcium_imag_shuffled = self.get_surrogate(calcium_imag,mean_video_srate,shift_time)
-        calcium_mean_occupancy_shuffled = self.get_calcium_occupancy(calcium_imag_shuffled,x_coordinates,y_coordinates,x_grid,y_grid)
-        modulation_index_shuffled = self.get_kullback_leibler_normalized(calcium_mean_occupancy_shuffled)
-
-        return modulation_index_shuffled
 
 
     
