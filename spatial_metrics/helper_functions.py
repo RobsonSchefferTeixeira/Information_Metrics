@@ -5,6 +5,35 @@ import os
 from scipy import stats as stats
 
 
+def preprocess_signal(input_signal,mean_video_srate,signal_type,z_threshold = 2):
+    
+    filtered_signal = eegfilt(input_signal,mean_video_srate,0,2,order=2)
+    diff_signal = np.hstack([np.diff(filtered_signal),0])
+    
+    if signal_type == 'Raw':
+        output_signal = input_signal
+        
+    elif signal_type == 'Filtered':
+        output_signal = filtered_signal
+
+    elif signal_type == 'Diff':
+        diff_signal_truncated = np.copy(diff_signal)
+        diff_signal_truncated[diff_signal<0] = 0
+        output_signal = diff_signal_truncated
+
+
+    elif signal_type == 'Binarized':
+        
+        norm_signal = filtered_signal/np.std(filtered_signal)
+        binarized_signal = np.zeros(diff_signal.shape[0])
+        binarized_signal[(norm_signal>z_threshold) & (diff_signal>0)] = 1
+        output_signal = binarized_signal
+
+    else:
+        raise NotImplementedError('Signal type unknown')
+    
+    return output_signal
+
 # implementing eegfilt
 def eegfilt(LFP, fs, lowcut, highcut,order=3):
     from scipy import signal
