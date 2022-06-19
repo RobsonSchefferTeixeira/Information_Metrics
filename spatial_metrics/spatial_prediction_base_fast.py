@@ -18,9 +18,9 @@ class SpatialPrediction:
         kwargs.setdefault('trial', None) 
         kwargs.setdefault('dataset', None)  
         kwargs.setdefault('mean_video_srate', 30.)  
-        kwargs.setdefault('mintimespent', 0.1)  
-        kwargs.setdefault('minvisits', 1)  
-        kwargs.setdefault('speed_threshold', 2.5)  
+        kwargs.setdefault('min_time_spent', 0.1)  
+        kwargs.setdefault('min_visits', 1)  
+        kwargs.setdefault('min_speed_threshold', 2.5)  
         kwargs.setdefault('x_bin_size', 1)  # in cm
         kwargs.setdefault('y_bin_size', 1)  # in cm
         kwargs.setdefault('environment_edges', []) # [[x1,x2],[y1,y2]]
@@ -34,7 +34,7 @@ class SpatialPrediction:
         
         
         valid_kwargs = ['animal_id','day','neuron','dataset','trial', 'mean_video_srate',
-                        'mintimespent','minvisits','speed_threshold',
+                        'min_time_spent','min_visits','min_speed_threshold',
                         'x_bin_size','y_bin_size','shift_time','num_cores',
                         'num_surrogates','saving_path','saving','saving_string',
                         'num_of_folds','environment_edges']
@@ -61,15 +61,11 @@ class SpatialPrediction:
             Input_Variable,Target_Variable,x_coordinates_valid,y_coordinates_valid,I_valid = self.get_valid_timepoints(calcium_imag,position_binned,x_coordinates,y_coordinates)
 
 
-            concat_accuracy,concat_continuous_error,concat_mean_error_classic, concat_continuous_error_center_of_mass,concat_mean_error_center_of_mass, I_peaks = self.run_all_folds(Input_Variable,Target_Variable,x_coordinates_valid,y_coordinates_valid,self.num_of_folds, x_center_bins,y_center_bins,x_center_bins_repeated,y_center_bins_repeated,self.mean_video_srate)
+            concat_accuracy,concat_continuous_error,concat_mean_error_classic,I_peaks = self.run_all_folds(Input_Variable,Target_Variable,x_coordinates_valid,y_coordinates_valid,self.num_of_folds, x_center_bins,y_center_bins,x_center_bins_repeated,y_center_bins_repeated,self.mean_video_srate)
 
 
             spatial_error_classic = self.get_spatial_error(concat_continuous_error,Target_Variable,x_center_bins,y_center_bins)
             smoothed_spatial_error_classic = self.smooth_spatial_error(spatial_error_classic,spatial_bins=2)
-
-            spatial_error_center_of_mass = self.get_spatial_error(concat_continuous_error_center_of_mass,Target_Variable,x_center_bins,y_center_bins)
-            smoothed_spatial_center_of_mass = self.smooth_spatial_error(spatial_error_center_of_mass,spatial_bins=2)
-
 
 
             inputdict = dict()
@@ -78,10 +74,6 @@ class SpatialPrediction:
             inputdict['concat_mean_error_classic'] = concat_mean_error_classic        
             inputdict['spatial_error_classic'] = spatial_error_classic
             inputdict['smoothed_spatial_error_classic'] = smoothed_spatial_error_classic
-            inputdict['concat_continuous_error_center_of_mass'] = concat_continuous_error_center_of_mass
-            inputdict['concat_mean_error_center_of_mass'] = concat_mean_error_center_of_mass
-            inputdict['spatial_error_center_of_mass'] = spatial_error_center_of_mass
-            inputdict['smoothed_spatial_center_of_mass'] = smoothed_spatial_center_of_mass
             inputdict['x_grid'] = x_grid
             inputdict['y_grid'] = y_grid
             inputdict['x_center_bins'] = x_center_bins
@@ -95,42 +87,41 @@ class SpatialPrediction:
 
 
 
-            filename = self.filename_constructor(self.saving_string,self.animal_id,self.dataset,self.day,self.neuron,self.trial)
+            filename = hf.filename_constructor(self.saving_string,self.animal_id,self.dataset,self.day,self.neuron,self.trial)
 
             if self.saving == True:
-                self.caller_saving(inputdict,filename,self.saving_path)
+                hf.caller_saving(inputdict,filename,self.saving_path)
             else:
                 print('File not saved!')
 
         return inputdict
     
             
- 
-    def filename_constructor(self,saving_string,animal_id,dataset,day,neuron,trial):
+#     def filename_constructor(self,saving_string,animal_id,dataset,day,neuron,trial):
 
-        first_string =  saving_string
-        animal_id_string = '.' + animal_id
-        dataset_string = '.Dataset.' + dataset
-        day_string = '.Day.' + str(day)
-        neuron_string = '.Neuron.' + str(neuron)
-        trial_string = '.Trial.' + str(trial)
+#         first_string =  saving_string
+#         animal_id_string = '.' + animal_id
+#         dataset_string = '.Dataset.' + dataset
+#         day_string = '.Day.' + str(day)
+#         neuron_string = '.Neuron.' + str(neuron)
+#         trial_string = '.Trial.' + str(trial)
 
-        filename_checklist = np.array([first_string,animal_id, dataset, day, neuron, trial])
-        inlcude_this = np.where(filename_checklist != None)[0]
+#         filename_checklist = np.array([first_string,animal_id, dataset, day, neuron, trial])
+#         inlcude_this = np.where(filename_checklist != None)[0]
 
-        filename_backbone = [first_string, animal_id_string,dataset_string, day_string, neuron_string, trial_string]
+#         filename_backbone = [first_string, animal_id_string,dataset_string, day_string, neuron_string, trial_string]
 
-        filename = ''.join([filename_backbone[i] for i in inlcude_this])
+#         filename = ''.join([filename_backbone[i] for i in inlcude_this])
                
-        return filename
+#         return filename
     
             
-    def caller_saving(self,inputdict,filename,saving_path):
-        os.chdir(saving_path)
-        output = open(filename, 'wb') 
-        np.save(output,inputdict)
-        output.close()
-        print('File saved.')
+#     def caller_saving(self,inputdict,filename,saving_path):
+#         os.chdir(saving_path)
+#         output = open(filename, 'wb') 
+#         np.save(output,inputdict)
+#         output.close()
+#         print('File saved.')
   
     
     def run_all_folds(self,Input_Variable,Target_Variable,x_coordinates_valid,y_coordinates_valid,num_of_folds,x_center_bins,y_center_bins,x_center_bins_repeated,y_center_bins_repeated,mean_video_srate):
@@ -139,9 +130,6 @@ class SpatialPrediction:
         concat_mean_error_classic = []
         # concat_pred_dist_grid_classic = []
 
-        concat_continuous_error_center_of_mass = []
-        concat_mean_error_center_of_mass = []
-        # concat_pred_dist_grid_center_of_mass = []
 
         concat_accuracy = []
 
@@ -159,12 +147,6 @@ class SpatialPrediction:
 
             continuous_error_classic,mean_error_classic = self.get_classic_continuous_error(y_test,y_pred,x_coordinates_test,y_coordinates_test,x_center_bins_repeated,y_center_bins_repeated)
 
-            # pred_dist_grid_classic = self.get_spatial_error(continuous_error_classic,y_test,x_center_bins,y_center_bins)
-
-            continuous_error_center_of_mass,mean_error_center_of_mass = self.get_center_of_mass_continuous_error(y_train,predict_proba,x_coordinates_test,y_coordinates_test,x_center_bins, y_center_bins,x_center_bins_repeated,y_center_bins_repeated)
-
-            # pred_dist_grid_center_of_mass = self.get_spatial_error(continuous_error_center_of_mass,y_test,x_center_bins,y_center_bins)
-
 
             concat_accuracy.append(classifier_accuracy)
 
@@ -172,25 +154,14 @@ class SpatialPrediction:
             concat_mean_error_classic.append(mean_error_classic)
             # concat_pred_dist_grid_classic.append(pred_dist_grid_classic)
 
-            concat_continuous_error_center_of_mass.append(continuous_error_center_of_mass)
-            concat_mean_error_center_of_mass.append(mean_error_center_of_mass)     
-            # concat_pred_dist_grid_center_of_mass.append(pred_dist_grid_center_of_mass)
-
 
         concat_accuracy = np.array(concat_accuracy)
 
         concat_continuous_error = np.concatenate(concat_continuous_error)
         concat_mean_error_classic = np.array(concat_mean_error_classic)
-        # concat_pred_dist_grid_classic = np.array(concat_pred_dist_grid_classic)
-
-        concat_continuous_error_center_of_mass = np.concatenate(concat_continuous_error_center_of_mass)
-        concat_mean_error_center_of_mass = np.array(concat_mean_error_center_of_mass)
-        # concat_pred_dist_grid_center_of_mass = np.array(concat_pred_dist_grid_center_of_mass)
 
 
-
-
-        return concat_accuracy,concat_continuous_error,concat_mean_error_classic,                                                                                    concat_continuous_error_center_of_mass,concat_mean_error_center_of_mass,I_peaks
+        return concat_accuracy,concat_continuous_error,concat_mean_error_classic,I_peaks
 
     def get_position_grid(self,x_coordinates,y_coordinates,x_bin_size,y_bin_size,environment_edges=None):
 
@@ -289,32 +260,6 @@ class SpatialPrediction:
         return continuous_nearest_dist_to_predicted,mean_nearest_dist_to_predicted
 
 
-    def get_center_of_mass_continuous_error(self,y_train,predict_proba,x_coordinates,y_coordinates,x_center_bins,                                         y_center_bins,x_center_bins_repeated,y_center_bins_repeated):
-
-
-        _classes = np.sort(np.unique(y_train)).astype(int)
-        continuous_nearest_dist_to_predicted = []
-        for fr in range(predict_proba.shape[0]):
-            predic_distr_singleTime = predict_proba[fr,:]
-
-            prob_grid = np.zeros((x_center_bins.shape[0])*(y_center_bins.shape[0]))*np.nan
-            prob_grid[_classes] = predic_distr_singleTime
-
-            mass_x_coord = np.nansum(prob_grid*x_center_bins_repeated)
-            mass_y_coord = np.nansum(prob_grid*y_center_bins_repeated)
-
-            error_distance = np.sqrt((mass_x_coord - x_coordinates[fr])**2 +  
-                                     (mass_y_coord - y_coordinates[fr])**2)
-
-            continuous_nearest_dist_to_predicted.append(error_distance)
-        continuous_nearest_dist_to_predicted = np.array(continuous_nearest_dist_to_predicted)
-        mean_nearest_dist_to_predicted = np.nanmean(continuous_nearest_dist_to_predicted)
-
-        return continuous_nearest_dist_to_predicted,mean_nearest_dist_to_predicted
-
-
-
-
     def get_binned_2Dposition(self,x_coordinates,y_coordinates,x_grid,y_grid):
 
         # calculate position occupancy
@@ -378,13 +323,9 @@ class SpatialPredictionSurrogates(SpatialPrediction):
             concat_accuracy = []
             concat_continuous_error = []
             concat_mean_error_classic = []
-            concat_continuous_error_center_of_mass = []
-            concat_mean_error_center_of_mass = []
             I_peaks = []
             spatial_error_classic = []
             smoothed_spatial_error_classic = []
-            spatial_error_center_of_mass = []
-            smoothed_spatial_center_of_mass = []
             numb_events = []
             events_amp = []
             events_x_localization = []
@@ -394,19 +335,15 @@ class SpatialPredictionSurrogates(SpatialPrediction):
                 concat_accuracy.append(results[surr][0])
                 concat_continuous_error.append(results[surr][1])
                 concat_mean_error_classic.append(results[surr][2])
-                concat_continuous_error_center_of_mass.append(results[surr][3])
-                concat_mean_error_center_of_mass.append(results[surr][4])
 
-                I_peaks.append(results[surr][5])
-                numb_events.append(results[surr][5].shape[0])
-                events_x_localization.append(x_coordinates_valid[results[surr][5]])
-                events_y_localization.append(y_coordinates_valid[results[surr][5]])
+                I_peaks.append(results[surr][3])
+                numb_events.append(results[surr][3].shape[0])
+                events_x_localization.append(x_coordinates_valid[results[surr][3]])
+                events_y_localization.append(y_coordinates_valid[results[surr][3]])
 
-                spatial_error_classic.append(results[surr][6])
-                smoothed_spatial_error_classic.append(results[surr][7])
-                spatial_error_center_of_mass.append(results[surr][8])
-                smoothed_spatial_center_of_mass.append(results[surr][9])
-                events_amp.append(results[surr][10])
+                spatial_error_classic.append(results[surr][4])
+                smoothed_spatial_error_classic.append(results[surr][5])
+                events_amp.append(results[surr][6])
 
 
 
@@ -416,10 +353,6 @@ class SpatialPredictionSurrogates(SpatialPrediction):
             inputdict['concat_mean_error_classic'] = concat_mean_error_classic        
             inputdict['spatial_error_classic'] = spatial_error_classic
             inputdict['smoothed_spatial_error_classic'] = smoothed_spatial_error_classic
-            inputdict['concat_continuous_error_center_of_mass'] = concat_continuous_error_center_of_mass
-            inputdict['concat_mean_error_center_of_mass'] = concat_mean_error_center_of_mass
-            inputdict['spatial_error_center_of_mass'] = spatial_error_center_of_mass
-            inputdict['smoothed_spatial_center_of_mass'] = smoothed_spatial_center_of_mass
             inputdict['numb_events'] = numb_events
             inputdict['events_index'] = I_peaks
             inputdict['events_amp'] = events_amp
@@ -487,19 +420,17 @@ class SpatialPredictionSurrogates(SpatialPrediction):
         Input_Variable_Shuffled = self.get_surrogate(Input_Variable,mean_video_srate,shift_time)
        
                     
-        concat_accuracy,concat_continuous_error,concat_mean_error_classic, concat_continuous_error_center_of_mass,concat_mean_error_center_of_mass, I_peaks = self.run_all_folds(Input_Variable_Shuffled,Target_Variable,x_coordinates_valid,y_coordinates_valid,self.num_of_folds, x_center_bins,y_center_bins,x_center_bins_repeated,y_center_bins_repeated,self.mean_video_srate)
+        concat_accuracy,concat_continuous_error,concat_mean_error_classic,I_peaks = self.run_all_folds(Input_Variable_Shuffled,Target_Variable,x_coordinates_valid,y_coordinates_valid,self.num_of_folds, x_center_bins,y_center_bins,x_center_bins_repeated,y_center_bins_repeated,self.mean_video_srate)
         
         
         
         spatial_error_classic = self.get_spatial_error(concat_continuous_error,Target_Variable,x_center_bins,y_center_bins)
         smoothed_spatial_error_classic = self.smooth_spatial_error(spatial_error_classic,spatial_bins=2)
 
-        spatial_error_center_of_mass = self.get_spatial_error(concat_continuous_error_center_of_mass,Target_Variable,x_center_bins,y_center_bins)
-        smoothed_spatial_center_of_mass = self.smooth_spatial_error(spatial_error_center_of_mass,spatial_bins=2)
 
         events_amp = np.squeeze(Input_Variable_Shuffled[I_peaks])
         
-        return concat_accuracy,concat_continuous_error,concat_mean_error_classic, concat_continuous_error_center_of_mass,concat_mean_error_center_of_mass, I_peaks,spatial_error_classic,smoothed_spatial_error_classic,spatial_error_center_of_mass,smoothed_spatial_center_of_mass,events_amp
+        return concat_accuracy,concat_continuous_error,concat_mean_error_classic,I_peaks,spatial_error_classic,smoothed_spatial_error_classic,events_amp
         
         
 

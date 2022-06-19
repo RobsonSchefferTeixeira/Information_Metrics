@@ -3,6 +3,157 @@ from scipy.io import loadmat
 import pandas as pd
 import os
 from scipy import stats as stats
+import sys
+from scipy import interpolate
+
+def correct_lost_tracking(x_coordinates,y_coordinates,track_timevector,mean_video_srate,min_epoch_length = 1):
+    
+    
+
+    x_coordinates_interpolated = x_coordinates.copy()
+    y_coordinates_interpolated = y_coordinates.copy()
+
+    I_nan_events = np.where(np.isnan(x_coordinates*y_coordinates))[0]
+    I_start = np.where(np.diff(I_nan_events) > 1)[0] + 1
+
+    all_epoch_length = []
+    for cc in range(I_start.shape[0]-1):
+        beh_index = np.arange(I_start[cc],I_start[cc+1])
+
+        epoch_length = (beh_index.shape[0]/mean_video_srate)
+        all_epoch_length.append(epoch_length)
+
+        if epoch_length <= min_epoch_length:
+
+            events_around_nan = I_nan_events[beh_index]
+            events_to_replace = np.arange(events_around_nan[0]-1,events_around_nan[-1]+2)
+
+            window_beg = events_to_replace[0]
+            window_end = events_to_replace[-1]
+
+            x_original = track_timevector[[window_beg,window_end]]
+            y_original = x_coordinates[[window_beg,window_end]]
+            x_new = track_timevector[window_beg:window_end+1]
+            interpol_func = interpolate.interp1d(x_original,y_original,kind='slinear')
+            y_new = interpol_func(x_new)
+
+            x_coordinates_interpolated[events_to_replace] = y_new
+
+
+            x_original = track_timevector[[window_beg,window_end]]
+            y_original = y_coordinates[[window_beg,window_end]]
+            x_new = track_timevector[window_beg:window_end+1]
+            interpol_func = interpolate.interp1d(x_original,y_original,kind='slinear')
+            y_new = interpol_func(x_new)
+
+            y_coordinates_interpolated[events_to_replace] = y_new
+
+    all_epoch_length = np.array(all_epoch_length)
+
+    return x_coordinates_interpolated,y_coordinates_interpolated
+
+
+def filename_constructor(saving_string,animal_id,dataset,day,neuron,trial):
+
+    first_string =  saving_string
+    animal_id_string = '.' + animal_id
+    dataset_string = '.Dataset.' + dataset
+    day_string = '.Day.' + str(day)
+    neuron_string = '.Neuron.' + str(neuron)
+    trial_string = '.Trial.' + str(trial)
+
+    filename_checklist = np.array([first_string,animal_id, dataset, day, neuron, trial])
+    inlcude_this = np.where(filename_checklist != None)[0]
+
+    filename_backbone = [first_string, animal_id_string,dataset_string, day_string, neuron_string, trial_string]
+
+    filename = ''.join([filename_backbone[i] for i in inlcude_this])
+
+    return filename
+
+def caller_saving(inputdict,filename,saving_path):
+    os.chdir(saving_path)
+    output = open(filename, 'wb') 
+    np.save(output,inputdict)
+    output.close()
+    print('File saved.')
+
+def identify_islands(input_array):
+
+    row = input_array.shape[0]
+    col = input_array.shape[1]
+    count = 0
+    input_array2 = np.copy(input_array)
+    
+    for i in range(row):
+        for j in range(col):
+            if input_array[i,j] == 1:
+                count+=1
+                dfs(input_array,input_array2,count,row,col,i,j)
+                
+    return input_array2
+
+def dfs(input_array,input_array2,count,row,col,i,j):
+
+    if input_array[i,j] == 0:
+        return
+    input_array[i,j] = 0
+    input_array2[i,j] = count
+
+    if i != 0:
+        dfs(input_array,input_array2,count,row,col,i-1,j)
+
+    if i != row-1:
+        dfs(input_array,input_array2,count,row,col,i+1,j)
+
+    if j != 0:
+        dfs(input_array,input_array2,count,row,col,i,j-1)
+
+    if j != col - 1:
+        dfs(input_array,input_array2,count,row,col,i,j+1)
+
+def field_coordinates(place_field,smoothing_size=1,field_threshold = 2):
+    
+    place_field_to_smooth = np.copy(place_field)
+    place_field_to_smooth[np.isnan(place_field_to_smooth)] = 0 
+    place_field_smoothed = gaussian_smooth_2d(place_field_to_smooth,smoothing_size)
+
+    I_threshold = field_threshold*np.nanstd(place_field_smoothed)
+
+    field_above_threshold = np.copy(place_field_smoothed)
+    field_above_threshold[field_above_threshold < I_threshold] = 0
+
+    field_above_threshold_binary = np.copy(place_field_smoothed)
+    field_above_threshold_binary[field_above_threshold_binary < I_threshold] = 0
+    field_above_threshold_binary[field_above_threshold_binary >= I_threshold] = 1
+
+
+    if np.any(field_above_threshold_binary>0):
+        sys.setrecursionlimit(10000)
+        place_field_identity = identify_islands(np.copy(field_above_threshold_binary))
+        islands_id = np.unique(place_field_identity)[1:]
+        num_of_islands = islands_id.shape[0]
+
+        islands_y_max = []
+        islands_x_max = []
+
+        for ii in islands_id:
+            max_val = np.max(place_field_smoothed[(place_field_identity == ii)])
+            I_y_max,I_x_max = np.where(place_field_smoothed == max_val)
+            islands_y_max.append(I_y_max[0])
+            islands_x_max.append(I_x_max[0])
+
+        islands_x_max = np.array(islands_x_max)
+        islands_y_max = np.array(islands_y_max)
+
+
+    else:
+        num_of_islands = 0
+        islands_y_max = np.nan
+        islands_x_max = np.nan
+
+    return num_of_islands,islands_x_max,islands_y_max
+
 
 
 def preprocess_signal(input_signal,mean_video_srate,signal_type,z_threshold = 2):

@@ -17,9 +17,9 @@ class PlaceCell:
         kwargs.setdefault('trial', None)
         kwargs.setdefault('dataset', None)
         kwargs.setdefault('mean_video_srate', 30.)
-        kwargs.setdefault('mintimespent', 0.1)
-        kwargs.setdefault('minvisits', 1)
-        kwargs.setdefault('speed_threshold', 2.5)
+        kwargs.setdefault('min_time_spent', 0.1)
+        kwargs.setdefault('min_visits', 1)
+        kwargs.setdefault('min_speed_threshold', 2.5)
         kwargs.setdefault('x_bin_size', 1)
         kwargs.setdefault('y_bin_size', 1)
         kwargs.setdefault('environment_edges', None)
@@ -31,12 +31,14 @@ class PlaceCell:
         kwargs.setdefault('saving', False)
         kwargs.setdefault('saving_string', 'SpatialMetrics')
         kwargs.setdefault('nbins_cal', 10)
-        
+        kwargs.setdefault('field_threshold', 2)
         
 
+                    
+                    
         valid_kwargs = ['animal_id','day','neuron','dataset','trial','mean_video_srate',
-                        'mintimespent','minvisits','speed_threshold','smoothing_size',
-                        'x_bin_size','y_bin_size','shift_time','num_cores',
+                        'min_time_spent','min_visits','min_speed_threshold','smoothing_size',
+                        'x_bin_size','y_bin_size','shift_time','num_cores','field_threshold',
                         'num_surrogates','saving_path','saving','saving_string','environment_edges','nbins_cal']
         
         for k, v in kwargs.items():
@@ -52,85 +54,77 @@ class PlaceCell:
         if np.all(np.isnan(calcium_imag)):
             warnings.warn("Signal contains only NaN's")
             inputdict = np.nan
-           
+            filename = self.filename_constructor(self.saving_string,self.animal_id,self.dataset,self.day,self.neuron,self.trial)
         else:
             speed = self.get_speed(x_coordinates,y_coordinates,track_timevector)
 
+            
+            
+            x_grid,y_grid,x_center_bins,y_center_bins,x_center_bins_repeated,y_center_bins_repeated = self.get_position_grid(                                         x_coordinates,y_coordinates,self.x_bin_size,self.y_bin_size,environment_edges = self.environment_edges)
 
-            x_coordinates_valid, y_coordinates_valid, calcium_imag_valid, track_timevector_valid = self.get_valid_timepoints(calcium_imag,x_coordinates,y_coordinates,track_timevector,speed,self.speed_threshold)
+            position_binned = self.get_binned_2Dposition(x_coordinates,y_coordinates,x_grid,y_grid)
+            visits_bins,new_visits_times = self.get_visits(x_coordinates,y_coordinates,position_binned,x_center_bins,y_center_bins)
+            time_spent_inside_bins = self.get_position_time_spent(position_binned,self.mean_video_srate)
+            
+            I_keep = self.get_valid_timepoints(calcium_imag,speed,visits_bins,time_spent_inside_bins,                                                                 self.min_speed_threshold,self.min_visits,self.min_time_spent)
 
-#            calcium_mean_occupancy,position_binned,x_grid,y_grid,x_center_bins,y_center_bins = self.get_spatial_statistics(calcium_imag_valid,x_coordinates_valid,y_coordinates_valid,self.environment_edges,self.x_bin_size,self.y_bin_size)
+            calcium_imag_valid = calcium_imag[I_keep].copy()
+            x_coordinates_valid = x_coordinates[I_keep].copy()
+            y_coordinates_valid = y_coordinates[I_keep].copy()
+            track_timevector_valid = track_timevector[I_keep].copy()
+            visits_bins_valid = visits_bins[I_keep].copy()
+            position_binned_valid = position_binned[I_keep].copy()
+                       
+            position_occupancy = self.get_occupancy(x_coordinates_valid,y_coordinates_valid,x_grid,y_grid,self.mean_video_srate)
+            visits_occupancy = self.get_visits_occupancy(x_coordinates,y_coordinates,new_visits_times,x_grid,y_grid,self.min_visits)
 
-            x_grid,y_grid,x_center_bins,y_center_bins,x_center_bins_repeated,y_center_bins_repeated = self.get_position_grid(x_coordinates,y_coordinates,self.x_bin_size,self.y_bin_size,environment_edges = self.environment_edges)
-
-            position_binned = self.get_binned_2Dposition(x_coordinates_valid,y_coordinates_valid,x_grid,y_grid)
-
-            calcium_mean_occupancy = self.get_calcium_occupancy(calcium_imag_valid,x_coordinates_valid,y_coordinates_valid,x_grid,y_grid)
+            place_field,place_field_smoothed = self.get_place_field(calcium_imag_valid,x_coordinates_valid,y_coordinates_valid,                                       x_grid,y_grid,self.smoothing_size)
 
             # mutual_info_original = self.get_mutual_information(calcium_imag_valid,position_binned)
             calcium_imag_valid_binned = self.get_binned_signal(calcium_imag_valid,self.nbins_cal)
             nbins_pos = (x_grid.shape[0]-1)*(y_grid.shape[0]-1)
-            entropy1 = self.get_entropy(position_binned,nbins_pos)
+            entropy1 = self.get_entropy(position_binned_valid,nbins_pos)
             entropy2 = self.get_entropy(calcium_imag_valid_binned,self.nbins_cal)
-            joint_entropy = self.get_joint_entropy(position_binned,calcium_imag_valid_binned,nbins_pos,self.nbins_cal)
+            joint_entropy = self.get_joint_entropy(position_binned_valid,calcium_imag_valid_binned,nbins_pos,self.nbins_cal)
+            
             mutual_info_original = self.get_mutual_information(entropy1,entropy2,joint_entropy)
-            kullback_leibler_mod_index = self.get_kullback_leibler_normalized(calcium_imag_valid,position_binned)
+            mutual_info_kullback_leibler_original = self.get_kullback_leibler_normalized(calcium_imag_valid,position_binned_valid)
+            mutual_info_NN_original = self.get_mutual_information_NN(calcium_imag_valid,position_binned_valid)
+            mutual_info_skaggs_original = self.get_mutual_info_skaggs(calcium_imag_valid,position_binned_valid)
 
-            mutual_info_NN_original = self.get_mutual_information_NN(calcium_imag_valid,position_binned)
-            mutual_info_skaggs_original = self.get_mutual_info_skaggs(calcium_imag_valid,position_binned)
-
-            results = self.parallelize_surrogate(calcium_imag_valid,position_binned,self.nbins_cal,nbins_pos,self.mean_video_srate,                                                   self.num_cores,self.num_surrogates,self.shift_time)
-
+            
+            results = self.parallelize_surrogate(calcium_imag,I_keep,position_binned_valid,self.mean_video_srate,self.shift_time,self.nbins_cal,                       nbins_pos,x_coordinates_valid,y_coordinates_valid,x_grid,y_grid,self.smoothing_size,self.num_cores,self.num_surrogates)
+            
+            place_field_shuffled = []
+            place_field_smoothed_shuffled = []
             mutual_info_shuffled = []
             mutual_info_NN_shuffled = []
-            kullback_leibler_mod_index_shuffled = []
+            mutual_info_kullback_leibler_shuffled = []
             mutual_info_skaggs_shuffled = []
-            for perm in range(self.num_surrogates):    
+            for perm in range(self.num_surrogates):
                 mutual_info_shuffled.append(results[perm][0])
-                kullback_leibler_mod_index_shuffled.append(results[perm][1])
+                mutual_info_kullback_leibler_shuffled.append(results[perm][1])
                 mutual_info_NN_shuffled.append(results[perm][2])
                 mutual_info_skaggs_shuffled.append(results[perm][3])
+                place_field_shuffled.append(results[perm][4])
+                place_field_smoothed_shuffled.append(results[perm][5])
                 
             mutual_info_NN_shuffled = np.array(mutual_info_NN_shuffled)
             mutual_info_shuffled = np.array(mutual_info_shuffled)
-            kullback_leibler_mod_index_shuffled = np.array(kullback_leibler_mod_index_shuffled)
+            mutual_info_kullback_leibler_shuffled = np.array(mutual_info_kullback_leibler_shuffled)
             mutual_info_skaggs_shuffled = np.array(mutual_info_skaggs_shuffled)
-            
+            place_field_shuffled = np.array(place_field_shuffled)
+            place_field_smoothed_shuffled = np.array(place_field_smoothed_shuffled)
+                    
             mutual_info_zscored,mutual_info_centered = self.get_mutual_information_zscored(mutual_info_original,mutual_info_shuffled)
-            kullback_leibler_mod_index_zscored,kullback_leibler_mod_index_centered = self.get_mutual_information_zscored(kullback_leibler_mod_index,                                  kullback_leibler_mod_index_shuffled)
+            mutual_info_kullback_leibler_zscored,mutual_info_kullback_leibler_centered = self.get_mutual_information_zscored(                                         mutual_info_kullback_leibler_original,mutual_info_kullback_leibler_shuffled)
             
             mutual_info_NN_zscored,mutual_info_NN_centered = self.get_mutual_information_zscored(mutual_info_NN_original,mutual_info_NN_shuffled)
             
-            mutual_info_skaggs_zscored,mutual_info_skaggs_centered = self.get_mutual_information_zscored(mutual_info_skaggs_original,mutual_info_skaggs_shuffled)
+            mutual_info_skaggs_zscored,mutual_info_skaggs_centered = self.get_mutual_information_zscored(                                                             mutual_info_skaggs_original,mutual_info_skaggs_shuffled)
 
-            position_occupancy = self.get_occupancy(x_coordinates_valid,y_coordinates_valid,x_grid,y_grid,self.mean_video_srate)
 
-            visits_occupancy = self.get_visits(x_coordinates_valid,y_coordinates_valid,x_grid,y_grid,x_center_bins,y_center_bins)
-
-            place_field,place_field_smoothed = self.validate_place_field(calcium_mean_occupancy,position_occupancy,visits_occupancy,
-                                                                         self.mintimespent,self.minvisits,self.smoothing_size)
-
-            spatial_map_smoothed_threshold = np.copy(place_field_smoothed)
-            I_threshold = 2*np.nanstd(spatial_map_smoothed_threshold)
-
-            total_visited_pixels = np.nansum(visits_occupancy != 0)
-            pixels_above = np.nansum(spatial_map_smoothed_threshold > I_threshold)
-            pixels_total = spatial_map_smoothed_threshold.shape[0]*spatial_map_smoothed_threshold.shape[1]
-
-            pixels_place_cell_relative = pixels_above/total_visited_pixels
-            pixels_place_cell_absolute = pixels_above/pixels_total
-
-            calcium_mean_occupancy_above_to_island = np.copy(spatial_map_smoothed_threshold)
-            calcium_mean_occupancy_above_to_island[calcium_mean_occupancy_above_to_island < I_threshold] = 0
-            calcium_mean_occupancy_above_to_island[calcium_mean_occupancy_above_to_island >= I_threshold] = 1
-
-            if np.any(calcium_mean_occupancy_above_to_island==1):
-                # when testing surrogate, I had a problem with max recursion depth. This is a workaround.
-                sys.setrecursionlimit(10000)
-                num_of_islands = self.number_of_islands(np.copy(calcium_mean_occupancy_above_to_island))
-
-            else:
-                num_of_islands = 0
+            num_of_islands,islands_x_max,islands_y_max = hf.field_coordinates(place_field,smoothing_size=self.smoothing_size,                                         field_threshold = self.field_threshold)
                 
             I_peaks = dp.detect_peaks(calcium_imag_valid,mpd=0.5*self.mean_video_srate,mph=1.*np.nanstd(calcium_imag_valid))
             peaks_amplitude = calcium_imag_valid[I_peaks]
@@ -138,11 +132,21 @@ class PlaceCell:
             y_peaks_location = y_coordinates_valid[I_peaks]
                 
 
+            total_visited_pixels = np.nansum(visits_occupancy != 0)
+            pixels_above = np.nansum(place_field_smoothed > self.field_threshold)
+            pixels_total = place_field_smoothed.shape[0]*place_field_smoothed.shape[1]
+
+            pixels_place_cell_relative = pixels_above/total_visited_pixels
+            pixels_place_cell_absolute = pixels_above/pixels_total
    
             inputdict = dict()
-            inputdict['signal_map'] = calcium_mean_occupancy
             inputdict['place_field'] = place_field
-            inputdict['place_field_smoothed'] = place_field_smoothed        
+            inputdict['place_field_smoothed'] = place_field_smoothed
+            
+            inputdict['place_field_shuffled'] = place_field_shuffled
+            inputdict['place_field_smoothed_shuffled'] = place_field_smoothed_shuffled
+
+            
             inputdict['ocuppancy_map'] = position_occupancy
             inputdict['visits_map'] = visits_occupancy
             inputdict['x_grid'] = x_grid
@@ -153,17 +157,23 @@ class PlaceCell:
             inputdict['x_peaks_location'] = x_peaks_location
             inputdict['y_peaks_location'] = y_peaks_location
             inputdict['events_amplitude'] = peaks_amplitude
+
+            inputdict['num_of_islands'] = num_of_islands
+            inputdict['islands_x_max'] = islands_x_max
+            inputdict['islands_y_max'] = islands_y_max
+            
+            inputdict['place_cell_extension_absolute'] = pixels_place_cell_absolute
+            inputdict['place_cell_extension_relative'] = pixels_place_cell_relative
+            
             inputdict['mutual_info_original'] = mutual_info_original
             inputdict['mutual_info_shuffled'] = mutual_info_shuffled
             inputdict['mutual_info_zscored'] = mutual_info_zscored
             inputdict['mutual_info_centered'] = mutual_info_centered
-            inputdict['num_of_islands'] = num_of_islands
-            inputdict['place_cell_extension_absolute'] = pixels_place_cell_absolute
-            inputdict['place_cell_extension_relative'] = pixels_place_cell_relative
-            inputdict['kullback_leibler_mod_index'] = kullback_leibler_mod_index     
-            inputdict['kullback_leibler_mod_index_shuffled'] = kullback_leibler_mod_index_shuffled     
-            inputdict['kullback_leibler_mod_index_zscored'] = kullback_leibler_mod_index_zscored     
-            inputdict['kullback_leibler_mod_index_centered'] = kullback_leibler_mod_index_centered     
+            
+            inputdict['mutual_info_kullback_leibler_original'] = mutual_info_kullback_leibler_original     
+            inputdict['mutual_info_kullback_leibler_shuffled'] = mutual_info_kullback_leibler_shuffled     
+            inputdict['mutual_info_kullback_leibler_zscored'] = mutual_info_kullback_leibler_zscored     
+            inputdict['mutual_info_kullback_leibler_centered'] = mutual_info_kullback_leibler_centered     
             
             inputdict['mutual_info_NN_original'] = mutual_info_NN_original     
             inputdict['mutual_info_NN_shuffled'] = mutual_info_NN_shuffled     
@@ -178,10 +188,10 @@ class PlaceCell:
             
             inputdict['input_parameters'] = self.__dict__['input_parameters']
 
-            filename = self.filename_constructor(self.saving_string,self.animal_id,self.dataset,self.day,self.neuron,self.trial)
+            filename = hf.filename_constructor(self.saving_string,self.animal_id,self.dataset,self.day,self.neuron,self.trial)
             
         if self.saving == True:
-            self.caller_saving(inputdict,filename,self.saving_path)
+            hf.caller_saving(inputdict,filename,self.saving_path)
             print(filename + ' saved')
 
         else:
@@ -191,31 +201,31 @@ class PlaceCell:
         return inputdict
     
     
-    def filename_constructor(self,saving_string,animal_id,dataset,day,neuron,trial):
+#     def filename_constructor(self,saving_string,animal_id,dataset,day,neuron,trial):
 
-        first_string =  saving_string
-        animal_id_string = '.' + animal_id
-        dataset_string = '.Dataset.' + dataset
-        day_string = '.Day.' + str(day)
-        neuron_string = '.Neuron.' + str(neuron)
-        trial_string = '.Trial.' + str(trial)
+#         first_string =  saving_string
+#         animal_id_string = '.' + animal_id
+#         dataset_string = '.Dataset.' + dataset
+#         day_string = '.Day.' + str(day)
+#         neuron_string = '.Neuron.' + str(neuron)
+#         trial_string = '.Trial.' + str(trial)
 
-        filename_checklist = np.array([first_string,animal_id, dataset, day, neuron, trial])
-        inlcude_this = np.where(filename_checklist != None)[0]
+#         filename_checklist = np.array([first_string,animal_id, dataset, day, neuron, trial])
+#         inlcude_this = np.where(filename_checklist != None)[0]
 
-        filename_backbone = [first_string, animal_id_string,dataset_string, day_string, neuron_string, trial_string]
+#         filename_backbone = [first_string, animal_id_string,dataset_string, day_string, neuron_string, trial_string]
 
-        filename = ''.join([filename_backbone[i] for i in inlcude_this])
+#         filename = ''.join([filename_backbone[i] for i in inlcude_this])
                
-        return filename
+#         return filename
     
             
-    def caller_saving(self,inputdict,filename,saving_path):
-        os.chdir(saving_path)
-        output = open(filename, 'wb') 
-        np.save(output,inputdict)
-        output.close()
-        print('File saved.')
+#     def caller_saving(self,inputdict,filename,saving_path):
+#         os.chdir(saving_path)
+#         output = open(filename, 'wb') 
+#         np.save(output,inputdict)
+#         output.close()
+#         print('File saved.')
      
 
     def get_sparsity(self,place_field,position_occupancy):
@@ -297,90 +307,117 @@ class PlaceCell:
 
                 position_occupancy[yy,xx] = np.sum(np.logical_and(check_x_ocuppancy,check_y_ocuppancy))/mean_video_srate
 
+        position_occupancy[position_occupancy==0] = np.nan
         return position_occupancy
+  
+
     
-    def get_calcium_occupancy(self,calcium_imag,x_coordinates,y_coordinates,x_grid,y_grid):
+    def get_visits(self,x_coordinates,y_coordinates,position_binned,x_center_bins,y_center_bins):
+
+        I_x_coord = []
+        I_y_coord = []
+
+        for xx in range(0,x_coordinates.shape[0]):
+            if np.isnan(x_coordinates[xx]):
+                I_x_coord.append(np.nan)
+                I_y_coord.append(np.nan)
+            else:
+                I_x_coord.append(np.nanargmin(np.abs(x_coordinates[xx] - x_center_bins)))
+                I_y_coord.append(np.nanargmin(np.abs(y_coordinates[xx] - y_center_bins)))
+
+        I_x_coord = np.array(I_x_coord)
+        I_y_coord = np.array(I_y_coord)
+
+        dx = np.diff(np.hstack([I_x_coord[0]-1,I_x_coord]))
+        dy = np.diff(np.hstack([I_y_coord[0]-1,I_y_coord]))
+
+
+        new_visits_times = (np.logical_or(((dy != 0) & (~np.isnan(dy))), ((dx!=0) & (~np.isnan(dx)))))
+
+
+        visits_id, visits_counts = np.unique(position_binned[new_visits_times],return_counts=True)
+
+        visits_bins = np.zeros(position_binned.shape)*np.nan
+        for ids in range(visits_id.shape[0]):
+            if ~np.isnan(visits_id[ids]):
+                I_pos = position_binned == visits_id[ids]
+                visits_bins[I_pos] = visits_counts[ids]
+
+        return visits_bins,new_visits_times*1
+
+
+
+    def get_visits_occupancy(self,x_coordinates,y_coordinates,new_visits_times,x_grid,y_grid,min_visits = 1):
+    
+        I_visit = np.where(new_visits_times > 0)[0]
+
+        x_coordinate_visit = x_coordinates[I_visit]
+        y_coordinate_visit = y_coordinates[I_visit]
+
+        visits_occupancy = np.zeros((y_grid.shape[0]-1,x_grid.shape[0]-1))*np.nan
+        for xx in range(0,x_grid.shape[0]-1):
+            for yy in range(0,y_grid.shape[0]-1):
+
+                check_x_ocuppancy = np.logical_and(x_coordinate_visit >= x_grid[xx],x_coordinate_visit < (x_grid[xx+1]))
+                check_y_ocuppancy = np.logical_and(y_coordinate_visit >= y_grid[yy],y_coordinate_visit < (y_grid[yy+1]))
+
+                visits_occupancy[yy,xx] = np.sum(np.logical_and(check_x_ocuppancy,check_y_ocuppancy))
+
+        visits_occupancy[visits_occupancy<min_visits] = np.nan
+
+        return visits_occupancy
+
+    def get_position_time_spent(self,position_binned,mean_video_srate):
+
+        positions_id, positions_counts = np.unique(position_binned,return_counts=True)
+
+        time_spent_inside_bins = np.zeros(position_binned.shape)*np.nan
+        for ids in range(positions_id.shape[0]):
+            if ~np.isnan(positions_id[ids]):
+                I_pos = position_binned == positions_id[ids]
+                time_spent_inside_bins[I_pos] = positions_counts[ids]/mean_video_srate
+
+        return time_spent_inside_bins
+
+
+   
+
+    def get_valid_timepoints(self,calcium_imag,speed,visits_bins,time_spent_inside_bins,min_speed_threshold,min_visits,min_time_spent):
+
+        # min speed
+        I_speed_thres = speed >= min_speed_threshold
+
+        # min visits
+        I_visits_times_thres = visits_bins >= min_visits
+
+        # min time spent
+        I_time_spent_thres = time_spent_inside_bins >= min_time_spent
+
+        # valid calcium points
+        I_valid_calcium = ~np.isnan(calcium_imag)
+
+        I_keep = I_speed_thres*I_visits_times_thres*I_time_spent_thres*I_valid_calcium
+
+        # calcium_imag_valid = calcium_imag_valid[I_keep]
+        # x_coordinates_valid = x_coordinates_valid[I_keep]
+        # y_coordinates_valid = y_coordinates_valid[I_keep]
+        # track_timevector_valid = track_timevector_valid[I_keep]
+
+        return I_keep
+
+
+    def get_place_field(self,calcium_imag,x_coordinates,y_coordinates,x_grid,y_grid,smoothing_size):
 
         # calculate mean calcium per pixel
-        calcium_mean_occupancy = np.nan*np.zeros((y_grid.shape[0]-1,x_grid.shape[0]-1)) 
+        place_field = np.nan*np.zeros((y_grid.shape[0]-1,x_grid.shape[0]-1)) 
         for xx in range(0,x_grid.shape[0]-1):
             for yy in range(0,y_grid.shape[0]-1):
 
                 check_x_ocuppancy = np.logical_and(x_coordinates >= x_grid[xx],x_coordinates < (x_grid[xx+1]))
                 check_y_ocuppancy = np.logical_and(y_coordinates >= y_grid[yy],y_coordinates < (y_grid[yy+1]))
 
-                calcium_mean_occupancy[yy,xx] = np.nanmean(calcium_imag[np.logical_and(check_x_ocuppancy,check_y_ocuppancy)])
+                place_field[yy,xx] = np.nanmean(calcium_imag[np.logical_and(check_x_ocuppancy,check_y_ocuppancy)])
 
-        return calcium_mean_occupancy
-
-
-    def get_visits(self,x_coordinates,y_coordinates,x_grid,y_grid,x_center_bins,y_center_bins):
-
-            I_x_coord = []
-            I_y_coord = []
-
-            for xx in range(0,x_coordinates.shape[0]):
-                I_x_coord.append(np.argmin(np.abs(x_coordinates[xx] - x_center_bins)))
-                I_y_coord.append(np.argmin(np.abs(y_coordinates[xx] - y_center_bins)))
-
-            I_x_coord = np.array(I_x_coord)
-            I_y_coord = np.array(I_y_coord)
-
-            dx = np.diff(np.hstack([I_x_coord[0]-1,I_x_coord]))
-            dy = np.diff(np.hstack([I_y_coord[0]-1,I_y_coord]))
-
-            newvisitstimes = (-1*(dy == 0))*(dx==0)+1
-            newvisitstimes2 = (np.logical_or((dy != 0), (dx!=0))*1)
-
-            I_visit = np.where(newvisitstimes>0)[0]
-
-            # calculate visits
-
-            x_coordinate_visit = x_coordinates[I_visit]
-            y_coordinate_visit = y_coordinates[I_visit]
-
-            visits_occupancy = np.zeros((y_grid.shape[0]-1,x_grid.shape[0]-1))        
-            for xx in range(0,x_grid.shape[0]-1):
-                for yy in range(0,y_grid.shape[0]-1):
-
-                    check_x_ocuppancy = np.logical_and(x_coordinate_visit >= x_grid[xx],x_coordinate_visit < (x_grid[xx+1]))
-                    check_y_ocuppancy = np.logical_and(y_coordinate_visit >= y_grid[yy],y_coordinate_visit < (y_grid[yy+1]))
-
-                    visits_occupancy[yy,xx] = np.sum(np.logical_and(check_x_ocuppancy,check_y_ocuppancy))
-
-            return visits_occupancy
-
-        
-    def get_valid_timepoints(self,calcium_imag,x_coordinates,y_coordinates,track_timevector,speed,speed_threshold):
-        
-        calcium_imag_valid = calcium_imag.copy()
-        x_coordinates_valid = x_coordinates.copy()
-        y_coordinates_valid = y_coordinates.copy()
-        track_timevector_valid = track_timevector.copy()
-        
-        
-        I_keep = ~np.isnan(calcium_imag)
-        calcium_imag_valid = calcium_imag_valid[I_keep]
-        x_coordinates_valid = x_coordinates_valid[I_keep]
-        y_coordinates_valid = y_coordinates_valid[I_keep]
-        track_timevector_valid = track_timevector_valid[I_keep]
-        speed_valid = speed[I_keep]
-
-        I_speed_thres = speed_valid > speed_threshold
-
-        calcium_imag_valid = calcium_imag_valid[I_speed_thres].copy()
-        x_coordinates_valid = x_coordinates_valid[I_speed_thres].copy()
-        y_coordinates_valid = y_coordinates_valid[I_speed_thres].copy()
-        track_timevector_valid = track_timevector_valid[I_speed_thres].copy()
-        
-        return x_coordinates_valid, y_coordinates_valid, calcium_imag_valid, track_timevector_valid
-  
-
-    def validate_place_field(self,calcium_mean_occupancy,position_occupancy,visits_occupancy,mintimespent,minvisits,smoothing_size):
-
-        valid_bins=(position_occupancy>=mintimespent)*(visits_occupancy>=minvisits)*1.
-        valid_bins[valid_bins == 0] = np.nan
-        place_field = calcium_mean_occupancy*valid_bins
 
         place_field_to_smooth = np.copy(place_field)
         place_field_to_smooth[np.isnan(place_field_to_smooth)] = 0 
@@ -390,22 +427,22 @@ class PlaceCell:
     
    
     
-    def get_spatial_statistics(self,calcium_imag,x_coordinates,y_coordinates,environment_edges,x_bin_size,y_bin_size):
+#     def get_spatial_statistics(self,calcium_imag,x_coordinates,y_coordinates,environment_edges,x_bin_size,y_bin_size):
 
-        placefield_nbins_pos_x = (environment_edges[0][1] - environment_edges[0][0])/x_bin_size
-        placefield_nbins_pos_y = (environment_edges[1][1] - environment_edges[1][0])/y_bin_size
-        results = stats.binned_statistic_2d(x_coordinates, y_coordinates, calcium_imag, statistic = 'mean',
-                                            bins =[placefield_nbins_pos_x,placefield_nbins_pos_y], range = environment_edges,
-                                            expand_binnumbers=False)
-        x_grid = results[1]
-        y_grid = results[2]
-        calcium_mean_occupancy = results[0].T
+#         placefield_nbins_pos_x = (environment_edges[0][1] - environment_edges[0][0])/x_bin_size
+#         placefield_nbins_pos_y = (environment_edges[1][1] - environment_edges[1][0])/y_bin_size
+#         results = stats.binned_statistic_2d(x_coordinates, y_coordinates, calcium_imag, statistic = 'mean',
+#                                             bins =[placefield_nbins_pos_x,placefield_nbins_pos_y], range = environment_edges,
+#                                             expand_binnumbers=False)
+#         x_grid = results[1]
+#         y_grid = results[2]
+#         calcium_mean_occupancy = results[0].T
 
-        x_center_bins = x_grid[0:-1] + np.diff(x_grid)
-        y_center_bins = y_grid[0:-1] + np.diff(y_grid)
+#         x_center_bins = x_grid[0:-1] + np.diff(x_grid)
+#         y_center_bins = y_grid[0:-1] + np.diff(y_grid)
         
-        position_binned = results[3]
-        return calcium_mean_occupancy,position_binned,x_grid,y_grid,x_center_bins,y_center_bins
+#         position_binned = results[3]
+#         return calcium_mean_occupancy,position_binned,x_grid,y_grid,x_center_bins,y_center_bins
     
 
     
@@ -472,37 +509,42 @@ class PlaceCell:
         return mutual_info_zscored,mutual_info_centered
 
  
-    def parallelize_surrogate(self,calcium_imag,position_binned,nbins_cal,nbins_pos,mean_video_srate,num_cores,num_surrogates,shift_time):
-        results = Parallel(n_jobs=num_cores)(delayed(self.get_mutual_info_surrogate)                                                         (calcium_imag,position_binned,mean_video_srate,shift_time,nbins_cal,nbins_pos) for permi in range(num_surrogates))
+    def parallelize_surrogate(self,calcium_imag,I_keep,position_binned_valid,mean_video_srate,shift_time,nbins_cal,nbins_pos,x_coordinates_valid,         y_coordinates_valid,x_grid,y_grid,smoothing_size,num_cores,num_surrogates):
+        results = Parallel(n_jobs=num_cores)(delayed(self.get_mutual_info_surrogate)                                                         (calcium_imag,I_keep,position_binned_valid,mean_video_srate,shift_time,nbins_cal,nbins_pos,x_coordinates_valid,         y_coordinates_valid,x_grid,y_grid,smoothing_size) for permi in range(num_surrogates))
         
         return results
     
 
     def get_surrogate(self,input_vector,mean_video_srate,shift_time):
         eps = np.finfo(float).eps
+        
         I_break = np.random.choice(np.arange(-shift_time*mean_video_srate,mean_video_srate*shift_time),1)[0].astype(int)
+        # I_break = np.random.choice(np.arange(0,input_vector.shape[0]),1)[0].astype(int)
+    
         input_vector_shuffled = np.concatenate([input_vector[I_break:], input_vector[0:I_break]])
 
         return input_vector_shuffled
 
-    def get_mutual_info_surrogate(self,calcium_imag,position_binned,mean_video_srate,shift_time,nbins_cal,nbins_pos):
-        calcium_imag_shuffled = self.get_surrogate(calcium_imag,mean_video_srate,shift_time)
+    def get_mutual_info_surrogate(self,calcium_imag,I_keep,position_binned_valid,mean_video_srate,shift_time,nbins_cal,nbins_pos,x_coordinates_valid,         y_coordinates_valid,x_grid,y_grid,smoothing_size):
         
-        calcium_imag_shuffled_binned = self.get_binned_signal(calcium_imag_shuffled,nbins_cal)
-        entropy1 = self.get_entropy(position_binned,nbins_pos)
+        calcium_imag_shuffled = self.get_surrogate(calcium_imag,mean_video_srate,shift_time)
+        calcium_imag_shuffled_valid = calcium_imag_shuffled[I_keep].copy()
+        
+        calcium_imag_shuffled_binned = self.get_binned_signal(calcium_imag_shuffled_valid,nbins_cal)
+        entropy1 = self.get_entropy(position_binned_valid,nbins_pos)
         entropy2 = self.get_entropy(calcium_imag_shuffled_binned,nbins_cal)
-        joint_entropy = self.get_joint_entropy(position_binned,calcium_imag_shuffled_binned,nbins_pos,nbins_cal)
+        joint_entropy = self.get_joint_entropy(position_binned_valid,calcium_imag_shuffled_binned,nbins_pos,nbins_cal)
         mutual_info_shuffled = self.get_mutual_information(entropy1,entropy2,joint_entropy)
         
-        mutual_info_shuffled_NN = self.get_mutual_information_NN(calcium_imag_shuffled,position_binned)
+        mutual_info_shuffled_NN = self.get_mutual_information_NN(calcium_imag_shuffled_valid,position_binned_valid)
         
-        modulation_index_shuffled = self.get_kullback_leibler_normalized(calcium_imag_shuffled,position_binned)
+        modulation_index_shuffled = self.get_kullback_leibler_normalized(calcium_imag_shuffled_valid,position_binned_valid)
         
-        mutual_info_skaggs_shuffled = self.get_mutual_info_skaggs(calcium_imag_shuffled,position_binned)
+        mutual_info_skaggs_shuffled = self.get_mutual_info_skaggs(calcium_imag_shuffled_valid,position_binned_valid)
 
-        # mutual_info_shuffled = self.get_mutual_information(calcium_imag_shuffled,position_binned)
+        place_field_shuffled,place_field_smoothed_shuffled = self.get_place_field(calcium_imag_shuffled_valid,x_coordinates_valid,y_coordinates_valid,             x_grid,y_grid,smoothing_size)
         
-        return mutual_info_shuffled,modulation_index_shuffled,mutual_info_shuffled_NN,mutual_info_skaggs_shuffled
+        return mutual_info_shuffled,modulation_index_shuffled,mutual_info_shuffled_NN,mutual_info_skaggs_shuffled,                                                 place_field_shuffled,place_field_smoothed_shuffled
 
 
     def get_kullback_leibler_normalized(self,calcium_imag,position_binned):
