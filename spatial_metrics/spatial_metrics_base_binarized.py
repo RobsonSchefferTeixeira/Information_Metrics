@@ -84,7 +84,7 @@ class PlaceCellBinarized:
 
             mutual_info_original = self.get_mutual_information(calcium_imag_valid, position_binned_valid)
 
-            results = self.parallelize_surrogate(calcium_imag_valid,I_keep, position_binned_valid, self.mean_video_srate,
+            results = self.parallelize_surrogate(calcium_imag,I_keep, position_binned_valid, self.mean_video_srate,
                                                  self.shift_time, x_coordinates_valid, y_coordinates_valid,x_grid,y_grid,
                                                  self.smoothing_size,self.num_cores,self.num_surrogates)
 
@@ -162,78 +162,6 @@ class PlaceCellBinarized:
         return inputdict
 
 
-
-
-    # def get_speed(self,x_coordinates,y_coordinates,timevector):
-    #
-    #     speed = np.sqrt(np.diff(x_coordinates)**2 + np.diff(y_coordinates)**2)
-    #     speed = hf.smooth(speed/np.diff(timevector),window_len=10)
-    #     speed = np.hstack([speed,0])
-    #     return speed
-
-    # def get_binned_2Dposition(self,x_coordinates,y_coordinates,x_grid,y_grid):
-    #
-    #     # calculate position occupancy
-    #     position_binned = np.zeros(x_coordinates.shape)*np.nan
-    #     count = 0
-    #     for xx in range(0,x_grid.shape[0]-1):
-    #         for yy in range(0,y_grid.shape[0]-1):
-    #             if xx == x_grid.shape[0]-2:
-    #                 check_x_ocuppancy = np.logical_and(x_coordinates >= x_grid[xx],x_coordinates <= (x_grid[xx+1]))
-    #             else:
-    #                 check_x_ocuppancy = np.logical_and(x_coordinates >= x_grid[xx],x_coordinates < (x_grid[xx+1]))
-    #
-    #             if yy == y_grid.shape[0]-2:
-    #                 check_y_ocuppancy = np.logical_and(y_coordinates >= y_grid[yy],y_coordinates <= (y_grid[yy+1]))
-    #             else:
-    #                 check_y_ocuppancy = np.logical_and(y_coordinates >= y_grid[yy],y_coordinates < (y_grid[yy+1]))
-    #
-    #
-    #             position_binned[np.logical_and(check_x_ocuppancy,check_y_ocuppancy)] = count
-    #             count += 1
-    #
-    #     return position_binned
-    #
-    # def get_position_grid(self,x_coordinates,y_coordinates,x_bin_size,y_bin_size,environment_edges=None):
-    #
-    #     # x_bin_size and y_bin_size in cm
-    #     # environment_edges = [[x1, x2], [y1, y2]]
-    #
-    #     if environment_edges==None:
-    #         x_min = np.nanmin(x_coordinates)
-    #         x_max = np.nanmax(x_coordinates)
-    #         y_min = np.nanmin(y_coordinates)
-    #         y_max = np.nanmax(y_coordinates)
-    #
-    #         environment_edges = [[x_min,x_max],[y_min,y_max]]
-    #
-    #
-    #     x_grid = np.arange(environment_edges[0][0]- x_bin_size,environment_edges[0][1] + x_bin_size,x_bin_size)
-    #
-    #     y_grid = np.arange(environment_edges[1][0]- y_bin_size,environment_edges[1][1] + y_bin_size,y_bin_size)
-    #
-    #     x_center_bins = x_grid[0:-1] + x_bin_size/2
-    #     y_center_bins = y_grid[0:-1] + y_bin_size/2
-    #
-    #     x_center_bins_repeated = np.repeat(x_center_bins,y_center_bins.shape[0])
-    #     y_center_bins_repeated = np.tile(y_center_bins,x_center_bins.shape[0])
-    #
-    #
-    #     return x_grid,y_grid,x_center_bins,y_center_bins,x_center_bins_repeated,y_center_bins_repeated
-
-    # def get_occupancy(self,x_coordinates,y_coordinates,x_grid,y_grid,mean_video_srate):
-    #     # calculate position occupancy
-    #     position_occupancy = np.zeros((y_grid.shape[0]-1,x_grid.shape[0]-1))
-    #     for xx in range(0,x_grid.shape[0]-1):
-    #         for yy in range(0,y_grid.shape[0]-1):
-    #
-    #             check_x_ocuppancy = np.logical_and(x_coordinates>= x_grid[xx],x_coordinates < (x_grid[xx+1]))
-    #             check_y_ocuppancy = np.logical_and(y_coordinates >= y_grid[yy],y_coordinates < (y_grid[yy+1]))
-    #
-    #             position_occupancy[yy,xx] = np.sum(np.logical_and(check_x_ocuppancy,check_y_ocuppancy))/mean_video_srate
-    #
-    #     return position_occupancy
-
     def get_calcium_occupancy(self, calcium_imag, x_coordinates, y_coordinates, x_grid, y_grid):
 
         # calculate mean calcium per pixel
@@ -247,42 +175,6 @@ class PlaceCellBinarized:
                     calcium_imag[np.logical_and(check_x_ocuppancy, check_y_ocuppancy)])
 
         return calcium_mean_occupancy
-
-    # def get_visits(self,x_coordinates,y_coordinates,x_grid,y_grid,x_center_bins,y_center_bins):
-    #
-    #         I_x_coord = []
-    #         I_y_coord = []
-    #
-    #         for xx in range(0,x_coordinates.shape[0]):
-    #             I_x_coord.append(np.argmin(np.abs(x_coordinates[xx] - x_center_bins)))
-    #             I_y_coord.append(np.argmin(np.abs(y_coordinates[xx] - y_center_bins)))
-    #
-    #         I_x_coord = np.array(I_x_coord)
-    #         I_y_coord = np.array(I_y_coord)
-    #
-    #         dx = np.diff(np.hstack([I_x_coord[0]-1,I_x_coord]))
-    #         dy = np.diff(np.hstack([I_y_coord[0]-1,I_y_coord]))
-    #
-    #         newvisitstimes = (-1*(dy == 0))*(dx==0)+1
-    #         newvisitstimes2 = (np.logical_or((dy != 0), (dx!=0))*1)
-    #
-    #         I_visit = np.where(newvisitstimes>0)[0]
-    #
-    #         # calculate visits
-    #
-    #         x_coordinate_visit = x_coordinates[I_visit]
-    #         y_coordinate_visit = y_coordinates[I_visit]
-    #
-    #         visits_occupancy = np.zeros((y_grid.shape[0]-1,x_grid.shape[0]-1))
-    #         for xx in range(0,x_grid.shape[0]-1):
-    #             for yy in range(0,y_grid.shape[0]-1):
-    #
-    #                 check_x_ocuppancy = np.logical_and(x_coordinate_visit >= x_grid[xx],x_coordinate_visit < (x_grid[xx+1]))
-    #                 check_y_ocuppancy = np.logical_and(y_coordinate_visit >= y_grid[yy],y_coordinate_visit < (y_grid[yy+1]))
-    #
-    #                 visits_occupancy[yy,xx] = np.sum(np.logical_and(check_x_ocuppancy,check_y_ocuppancy))
-    #
-    #         return visits_occupancy
 
     def get_valid_timepoints(self, calcium_imag, speed, visits_bins, time_spent_inside_bins, min_speed_threshold,
                              min_visits, min_time_spent):
@@ -302,29 +194,6 @@ class PlaceCellBinarized:
         I_keep = I_speed_thres * I_visits_times_thres * I_time_spent_thres * I_valid_calcium
         return I_keep
 
-    # def get_valid_timepoints(self,calcium_imag,x_coordinates,y_coordinates,track_timevector,speed,speed_threshold):
-    #
-    #     calcium_imag_valid = calcium_imag.copy()
-    #     x_coordinates_valid = x_coordinates.copy()
-    #     y_coordinates_valid = y_coordinates.copy()
-    #     track_timevector_valid = track_timevector.copy()
-    #
-    #
-    #     I_keep = ~np.isnan(calcium_imag)
-    #     calcium_imag_valid = calcium_imag_valid[I_keep]
-    #     x_coordinates_valid = x_coordinates_valid[I_keep]
-    #     y_coordinates_valid = y_coordinates_valid[I_keep]
-    #     track_timevector_valid = track_timevector_valid[I_keep]
-    #     speed_valid = speed[I_keep]
-    #
-    #     I_speed_thres = speed_valid > speed_threshold
-    #
-    #     calcium_imag_valid = calcium_imag_valid[I_speed_thres].copy()
-    #     x_coordinates_valid = x_coordinates_valid[I_speed_thres].copy()
-    #     y_coordinates_valid = y_coordinates_valid[I_speed_thres].copy()
-    #     track_timevector_valid = track_timevector_valid[I_speed_thres].copy()
-    #
-    #     return x_coordinates_valid, y_coordinates_valid, calcium_imag_valid, track_timevector_valid
 
     def get_place_field(self, calcium_imag, x_coordinates, y_coordinates, x_grid, y_grid, smoothing_size):
 
@@ -343,17 +212,6 @@ class PlaceCellBinarized:
 
         return place_field, place_field_smoothed
 
-    # def validate_place_field(self,calcium_mean_occupancy,position_occupancy,visits_occupancy,mintimespent,minvisits,smoothing_size):
-    #
-    #     valid_bins=(position_occupancy>=mintimespent)*(visits_occupancy>=minvisits)*1.
-    #     valid_bins[valid_bins == 0] = np.nan
-    #     place_field = calcium_mean_occupancy*valid_bins
-    #
-    #     place_field_to_smooth = np.copy(place_field)
-    #     place_field_to_smooth[np.isnan(place_field_to_smooth)] = 0
-    #     place_field_smoothed = hf.gaussian_smooth_2d(place_field_to_smooth,smoothing_size)
-    #
-    #     return place_field,place_field_smoothed
 
     def get_mutual_information_zscored(self, mutual_info_original, mutual_info_shuffled):
         mutual_info_centered = mutual_info_original - np.nanmean(mutual_info_shuffled)
@@ -365,14 +223,14 @@ class PlaceCellBinarized:
     def parallelize_surrogate(self, calcium_imag, I_keep, position_binned_valid, mean_video_srate, shift_time,
                               x_coordinates_valid, y_coordinates_valid, x_grid, y_grid, smoothing_size,
                               num_cores, num_surrogates):
-        mutual_info_shuffled = Parallel(n_jobs=num_cores)(delayed(self.get_mutual_info_surrogate)
+        results = Parallel(n_jobs=num_cores)(delayed(self.get_mutual_info_surrogate)
                                                           (calcium_imag, I_keep, position_binned_valid,
                                                            mean_video_srate,
                                                            shift_time, x_coordinates_valid, y_coordinates_valid,
                                                            x_grid, y_grid, smoothing_size)
                                                           for _ in range(num_surrogates))
 
-        return np.array(mutual_info_shuffled)
+        return results
 
     def get_surrogate(self, input_vector, mean_video_srate, shift_time):
         # eps = np.finfo(float).eps
@@ -395,37 +253,6 @@ class PlaceCellBinarized:
                                                                                    y_coordinates_valid, x_grid, y_grid,
                                                                                    smoothing_size)
         return mutual_info_shuffled, place_field_shuffled, place_field_smoothed_shuffled
-
-    # def number_of_islands(self,input_array):
-    #
-    #     row = input_array.shape[0]
-    #     col = input_array.shape[1]
-    #     count = 0
-    #
-    #     for i in range(row):
-    #         for j in range(col):
-    #             if input_array[i,j] == 1:
-    #                 self.dfs(input_array,row,col,i,j)
-    #                 count+=1
-    #     return count
-    #
-    # def dfs(self,input_array,row,col,i,j):
-    #
-    #     if input_array[i,j] == 0:
-    #         return
-    #     input_array[i,j] = 0
-    #
-    #     if i != 0:
-    #         self.dfs(input_array,row,col,i-1,j)
-    #
-    #     if i != row-1:
-    #         self.dfs(input_array,row,col,i+1,j)
-    #
-    #     if j != 0:
-    #         self.dfs(input_array,row,col,i,j-1)
-    #
-    #     if j != col - 1:
-    #         self.dfs(input_array,row,col,i,j+1)
 
     def get_mutual_information(self, calcium_imag, position_binned):
 
