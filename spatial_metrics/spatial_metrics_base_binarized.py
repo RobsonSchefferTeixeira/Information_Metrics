@@ -168,11 +168,11 @@ class PlaceCellBinarized:
         calcium_mean_occupancy = np.nan * np.zeros((y_grid.shape[0] - 1, x_grid.shape[0] - 1))
         for xx in range(0, x_grid.shape[0] - 1):
             for yy in range(0, y_grid.shape[0] - 1):
-                check_x_ocuppancy = np.logical_and(x_coordinates >= x_grid[xx], x_coordinates < (x_grid[xx + 1]))
-                check_y_ocuppancy = np.logical_and(y_coordinates >= y_grid[yy], y_coordinates < (y_grid[yy + 1]))
+                check_x_occupancy = np.logical_and(x_coordinates >= x_grid[xx], x_coordinates < (x_grid[xx + 1]))
+                check_y_occupancy = np.logical_and(y_coordinates >= y_grid[yy], y_coordinates < (y_grid[yy + 1]))
 
                 calcium_mean_occupancy[yy, xx] = np.nanmean(
-                    calcium_imag[np.logical_and(check_x_ocuppancy, check_y_ocuppancy)])
+                    calcium_imag[np.logical_and(check_x_occupancy, check_y_occupancy)])
 
         return calcium_mean_occupancy
 
@@ -201,10 +201,10 @@ class PlaceCellBinarized:
         place_field = np.nan * np.zeros((y_grid.shape[0] - 1, x_grid.shape[0] - 1))
         for xx in range(0, x_grid.shape[0] - 1):
             for yy in range(0, y_grid.shape[0] - 1):
-                check_x_ocuppancy = np.logical_and(x_coordinates >= x_grid[xx], x_coordinates < (x_grid[xx + 1]))
-                check_y_ocuppancy = np.logical_and(y_coordinates >= y_grid[yy], y_coordinates < (y_grid[yy + 1]))
+                check_x_occupancy = np.logical_and(x_coordinates >= x_grid[xx], x_coordinates < (x_grid[xx + 1]))
+                check_y_occupancy = np.logical_and(y_coordinates >= y_grid[yy], y_coordinates < (y_grid[yy + 1]))
 
-                place_field[yy, xx] = np.nanmean(calcium_imag[np.logical_and(check_x_ocuppancy, check_y_ocuppancy)])
+                place_field[yy, xx] = np.nanmean(calcium_imag[np.logical_and(check_x_occupancy, check_y_occupancy)])
 
         place_field_to_smooth = np.copy(place_field)
         place_field_to_smooth[np.isnan(place_field_to_smooth)] = 0

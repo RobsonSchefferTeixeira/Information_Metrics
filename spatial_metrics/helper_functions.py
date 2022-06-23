@@ -50,12 +50,12 @@ def get_visits_occupancy( x_coordinates, y_coordinates, new_visits_times, x_grid
     visits_occupancy = np.zeros((y_grid.shape[0] - 1, x_grid.shape[0] - 1)) * np.nan
     for xx in range(0, x_grid.shape[0] - 1):
         for yy in range(0, y_grid.shape[0] - 1):
-            check_x_ocuppancy = np.logical_and(x_coordinate_visit >= x_grid[xx],
+            check_x_occupancy = np.logical_and(x_coordinate_visit >= x_grid[xx],
                                                x_coordinate_visit < (x_grid[xx + 1]))
-            check_y_ocuppancy = np.logical_and(y_coordinate_visit >= y_grid[yy],
+            check_y_occupancy = np.logical_and(y_coordinate_visit >= y_grid[yy],
                                                y_coordinate_visit < (y_grid[yy + 1]))
 
-            visits_occupancy[yy, xx] = np.sum(np.logical_and(check_x_ocuppancy, check_y_ocuppancy))
+            visits_occupancy[yy, xx] = np.sum(np.logical_and(check_x_occupancy, check_y_occupancy))
 
     visits_occupancy[visits_occupancy < min_visits] = np.nan
 
@@ -78,11 +78,11 @@ def get_occupancy(x_coordinates, y_coordinates, x_grid, y_grid, mean_video_srate
     position_occupancy = np.zeros((y_grid.shape[0] - 1, x_grid.shape[0] - 1))
     for xx in range(0, x_grid.shape[0] - 1):
         for yy in range(0, y_grid.shape[0] - 1):
-            check_x_ocuppancy = np.logical_and(x_coordinates >= x_grid[xx], x_coordinates < (x_grid[xx + 1]))
-            check_y_ocuppancy = np.logical_and(y_coordinates >= y_grid[yy], y_coordinates < (y_grid[yy + 1]))
+            check_x_occupancy = np.logical_and(x_coordinates >= x_grid[xx], x_coordinates < (x_grid[xx + 1]))
+            check_y_occupancy = np.logical_and(y_coordinates >= y_grid[yy], y_coordinates < (y_grid[yy + 1]))
 
             position_occupancy[yy, xx] = np.sum(
-                np.logical_and(check_x_ocuppancy, check_y_ocuppancy)) / mean_video_srate
+                np.logical_and(check_x_occupancy, check_y_occupancy)) / mean_video_srate
 
     position_occupancy[position_occupancy == 0] = np.nan
     return position_occupancy
@@ -118,16 +118,16 @@ def get_binned_2Dposition(x_coordinates, y_coordinates, x_grid, y_grid):
     for xx in range(0, x_grid.shape[0] - 1):
         for yy in range(0, y_grid.shape[0] - 1):
             if xx == x_grid.shape[0] - 2:
-                check_x_ocuppancy = np.logical_and(x_coordinates >= x_grid[xx], x_coordinates <= (x_grid[xx + 1]))
+                check_x_occupancy = np.logical_and(x_coordinates >= x_grid[xx], x_coordinates <= (x_grid[xx + 1]))
             else:
-                check_x_ocuppancy = np.logical_and(x_coordinates >= x_grid[xx], x_coordinates < (x_grid[xx + 1]))
+                check_x_occupancy = np.logical_and(x_coordinates >= x_grid[xx], x_coordinates < (x_grid[xx + 1]))
 
             if yy == y_grid.shape[0] - 2:
-                check_y_ocuppancy = np.logical_and(y_coordinates >= y_grid[yy], y_coordinates <= (y_grid[yy + 1]))
+                check_y_occupancy = np.logical_and(y_coordinates >= y_grid[yy], y_coordinates <= (y_grid[yy + 1]))
             else:
-                check_y_ocuppancy = np.logical_and(y_coordinates >= y_grid[yy], y_coordinates < (y_grid[yy + 1]))
+                check_y_occupancy = np.logical_and(y_coordinates >= y_grid[yy], y_coordinates < (y_grid[yy + 1]))
 
-            position_binned[np.logical_and(check_x_ocuppancy, check_y_ocuppancy)] = count
+            position_binned[np.logical_and(check_x_occupancy, check_y_occupancy)] = count
             count += 1
 
     return position_binned

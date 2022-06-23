@@ -15,9 +15,9 @@ class PlaceCell:
         kwargs.setdefault('trial', None)
         kwargs.setdefault('dataset', None)
         kwargs.setdefault('video_srate', 30.)
-        kwargs.setdefault('mintimespent', 0.1)
-        kwargs.setdefault('minvisits', 1)
-        kwargs.setdefault('speed_threshold', 2.5)
+        kwargs.setdefault('min_time_spent', 0.1)
+        kwargs.setdefault('min_visits', 1)
+        kwargs.setdefault('min_speed_threshold', 2.5)
         kwargs.setdefault('x_bin_size', 1)
         kwargs.setdefault('y_bin_size', 1)
         kwargs.setdefault('environment_edges', None)
@@ -28,10 +28,12 @@ class PlaceCell:
         kwargs.setdefault('saving_path', os.getcwd())
         kwargs.setdefault('saving', False)
         kwargs.setdefault('saving_string', 'SpatialMetrics')
+        kwargs.setdefault('percentile_threshold', 95)
+        kwargs.setdefault('min_num_of_pixels', 4)
 
         valid_kwargs = ['animal_id','day','neuron','dataset','trial','video_srate',
-                        'mintimespent','minvisits','speed_threshold','smoothing_size',
-                        'x_bin_size','y_bin_size','shift_time','num_cores',
+                        'min_time_spent','min_visits','min_speed_threshold','smoothing_size',
+                        'x_bin_size','y_bin_size','shift_time','num_cores','percentile_threshold','min_num_of_pixels'
                         'num_surrogates','saving_path','saving','saving_string','environment_edges']
         
         
@@ -43,7 +45,7 @@ class PlaceCell:
         self.__dict__['input_parameters'] = kwargs
         
         
-    def main(self,I_timestamps,xy_timevector,x_coordinates,y_coordinates):
+    def main(self,I_timestamps,track_timevector,x_coordinates,y_coordinates):
 
         if len(I_timestamps) == 0:
             warnings.warn("Signal doesn't contain spike times")
@@ -51,67 +53,91 @@ class PlaceCell:
             
         else:
 
-            speed = self.get_speed(x_coordinates,y_coordinates,xy_timevector)
+            speed = hf.get_speed(x_coordinates, y_coordinates, track_timevector)
+            x_grid, y_grid, x_center_bins, y_center_bins, x_center_bins_repeated, y_center_bins_repeated = hf.get_position_grid(
+                x_coordinates, y_coordinates, self.x_bin_size, self.y_bin_size,
+                environment_edges=self.environment_edges)
 
-            x_coordinates_valid,y_coordinates_valid = self.get_valid_timepoints(speed,x_coordinates,y_coordinates,self.speed_threshold)
-    
-            x_grid,y_grid,x_center_bins,y_center_bins,x_center_bins_repeated,y_center_bins_repeated = self.get_position_grid(x_coordinates,                           y_coordinates, self.x_bin_size, self.y_bin_size,environment_edges = self.environment_edges)
+            position_binned = hf.get_binned_2Dposition(x_coordinates, y_coordinates, x_grid, y_grid)
 
-            spike_rate_occupancy = self.get_spike_occupancy(I_timestamps,x_coordinates_valid,y_coordinates_valid,x_grid,y_grid)
+            visits_bins, new_visits_times = hf.get_visits(x_coordinates, y_coordinates, position_binned,
+                                                          x_center_bins, y_center_bins)
+            time_spent_inside_bins = hf.get_position_time_spent(position_binned, self.mean_video_srate)
 
-            position_occupancy = self.get_occupancy(x_coordinates_valid,y_coordinates_valid,x_grid,y_grid,self.video_srate)
+            I_keep = self.get_valid_timepoints(speed, visits_bins, time_spent_inside_bins,
+                                               self.min_speed_threshold, self.min_visits, self.min_time_spent)
 
-            visits_occupancy = self.get_visits(x_coordinates_valid,y_coordinates_valid,x_grid,y_grid,x_center_bins,y_center_bins)
+            x_coordinates_valid = x_coordinates[I_keep].copy()
+            y_coordinates_valid = y_coordinates[I_keep].copy()
+            track_timevector_valid = track_timevector[I_keep].copy()
+            visits_bins_valid = visits_bins[I_keep].copy()
+            position_binned_valid = position_binned[I_keep].copy()
+            I_timestamps_valid = np.setdiff1d(I_timestamps, np.where(I_keep)[0])
 
-            place_field,place_field_smoothed = self.validate_place_field(spike_rate_occupancy,position_occupancy,                                                     visits_occupancy,self.mintimespent, self.minvisits,self.smoothing_size)
+            spike_rate_occupancy = self.get_spike_occupancy(I_timestamps_valid,x_coordinates_valid,y_coordinates_valid,
+                                                            x_grid,y_grid)
 
-            I_sec,I_spk = self.get_spatial_metrics(place_field,position_occupancy)
+            position_occupancy_valid = hf.get_occupancy(x_coordinates_valid, y_coordinates_valid, x_grid, y_grid,
+                                                  self.mean_video_srate)
 
-            sparsity = self.get_sparsity(place_field_smoothed,position_occupancy)
+            position_occupancy = hf.get_occupancy(x_coordinates,y_coordinates, x_grid, y_grid,
+                                                  self.mean_video_srate)
 
- 
-            results = self.parallelize_surrogate(I_timestamps,x_coordinates,y_coordinates,xy_timevector,position_occupancy,visits_occupancy,x_grid,y_grid,self.video_srate,self.mintimespent,self.minvisits,self.smoothing_size,self.shift_time,self.num_cores,self.num_surrogates)
+            visits_occupancy = hf.get_visits_occupancy(x_coordinates, y_coordinates, new_visits_times, x_grid, y_grid,
+                                                       self.min_visits)
 
-            I_sec_permutation = results[:,0]
-            I_spk_permutation = results[:,1]
+            place_field,place_field_smoothed = self.get_place_field(spike_rate_occupancy,position_occupancy_valid,self.smoothing_size)
+
+            I_sec,I_spk = self.get_spatial_metrics(place_field,position_occupancy_valid)
+
+            sparsity = self.get_sparsity(place_field_smoothed,position_occupancy_valid)
+
+            results = self.parallelize_surrogate(I_timestamps,I_keep,x_coordinates_valid,y_coordinates_valid,track_timevector_valid,position_occupancy_valid,x_grid,y_grid,self.video_srate,self.smoothing_size,self.shift_time,self.num_cores,self.num_surrogates)
+
+            I_sec_permutation = []
+            I_spk_permutation = []
+            place_field_shuffled = []
+            place_field_smoothed_shuffled = []
+            for perm in range(self.num_surrogates):
+                I_sec_permutation.append(results[perm][0])
+                I_spk_permutation.append(results[perm][1])
+                place_field_shuffled.append(results[perm][2])
+                place_field_smoothed_shuffled.append(results[perm][3])
+
+            I_sec_permutation = np.array(I_sec_permutation)
+            I_spk_permutation = np.array(I_spk_permutation)
+            place_field_shuffled = np.array(place_field_shuffled)
+            place_field_smoothed_shuffled = np.array(place_field_smoothed_shuffled)
 
             I_sec_zscored,I_sec_centered = self.get_mutual_information_zscored(I_sec,I_sec_permutation)
             I_spk_zscored,I_spk_centered = self.get_mutual_information_zscored(I_spk,I_spk_permutation)
-            
-            
-            spatial_map_smoothed_threshold = np.copy(place_field_smoothed)
-            I_threshold = 2*np.nanstd(spatial_map_smoothed_threshold)
 
-            total_visited_pixels = np.nansum(visits_occupancy != 0)
-            pixels_above = np.nansum(spatial_map_smoothed_threshold > I_threshold)
-            pixels_total = spatial_map_smoothed_threshold.shape[0]*spatial_map_smoothed_threshold.shape[1]
+            num_of_islands, islands_x_max, islands_y_max, pixels_place_cell_absolute, pixels_place_cell_relative = \
+                hf.field_coordinates_using_shuffled(place_field_smoothed, place_field_smoothed_shuffled,
+                                                    visits_occupancy,
+                                                    percentile_threshold=self.percentile_threshold,
+                                                    min_num_of_pixels=self.min_num_of_pixels)
 
-            pixels_place_cell_relative = pixels_above/total_visited_pixels
-            pixels_place_cell_absolute = pixels_above/pixels_total
+            sparsity = hf.get_sparsity(place_field, position_occupancy)
 
-            place_field_above_to_island = np.copy(spatial_map_smoothed_threshold)
-            place_field_above_to_island[place_field_above_to_island < I_threshold] = 0
-            place_field_above_to_island[place_field_above_to_island >= I_threshold] = 1
+            x_peaks_location = x_coordinates_valid[I_timestamps_valid]
+            y_peaks_location = y_coordinates_valid[I_timestamps_valid]
 
-            if np.any(place_field_above_to_island==1):
-                sys.setrecursionlimit(10000)
-                num_of_islands = self.number_of_islands(np.copy(place_field_above_to_island))
 
-            else:
-                num_of_islands = 0
-            
 
             inputdict = dict()
             inputdict['spike_rate_occupancy'] = spike_rate_occupancy
             inputdict['place_field'] = place_field
             inputdict['place_field_smoothed'] = place_field_smoothed        
-            inputdict['ocuppancy_map'] = position_occupancy
+            inputdict['occupancy_map'] = position_occupancy
             inputdict['visits_map'] = visits_occupancy
             inputdict['x_grid'] = x_grid
             inputdict['y_grid'] = y_grid
             inputdict['x_center_bins'] = x_center_bins
-            inputdict['y_center_bins'] = y_center_bins         
-            inputdict['numb_events'] = I_timestamps.shape[0]
+            inputdict['y_center_bins'] = y_center_bins
+            inputdict['x_peaks_location'] = x_peaks_location
+            inputdict['y_peaks_location'] = y_peaks_location
+            inputdict['numb_events'] = I_timestamps_valid.shape[0]
             inputdict['I_sec'] = I_sec
             inputdict['I_spk'] = I_spk
             inputdict['I_spk_permutation'] = I_spk_permutation
@@ -122,15 +148,17 @@ class PlaceCell:
             inputdict['I_spk_centered'] = I_spk_centered
             inputdict['sparsity'] = sparsity
             inputdict['num_of_islands'] = num_of_islands
+            inputdict['islands_x_max'] = islands_x_max
+            inputdict['islands_y_max'] = islands_y_max
             inputdict['place_cell_extension_absolute'] = pixels_place_cell_absolute
             inputdict['place_cell_extension_relative'] = pixels_place_cell_relative
 
             inputdict['input_parameters'] = self.__dict__['input_parameters']
             
-            filename = self.filename_constructor(self.saving_string,self.animal_id,self.dataset,self.day,self.neuron,self.trial)
+            filename = hf.filename_constructor(self.saving_string,self.animal_id,self.dataset,self.day,self.neuron,self.trial)
         
         if self.saving == True:
-            self.caller_saving(inputdict,filename,self.saving_path)
+            hf.caller_saving(inputdict,filename,self.saving_path)
             print(filename + ' saved')
         else:
             print('File not saved')
@@ -145,66 +173,26 @@ class PlaceCell:
         
         return mutual_info_zscored,mutual_info_centered
 
-    
-    def filename_constructor(self,saving_string,animal_id,dataset,day,neuron,trial):
-
-        first_string =  saving_string
-        animal_id_string = '.' + animal_id
-        dataset_string = '.Dataset.' + dataset
-        day_string = '.Day.' + str(day)
-        neuron_string = '.Neuron.' + str(neuron)
-        trial_string = '.Trial.' + str(trial)
-
-        filename_checklist = np.array([first_string,animal_id, dataset, day, neuron, trial])
-        inlcude_this = np.where(filename_checklist != None)[0]
-
-        filename_backbone = [first_string, animal_id_string,dataset_string, day_string, neuron_string, trial_string]
-
-        filename = ''.join([filename_backbone[i] for i in inlcude_this])
-               
-        return filename
-    
-    def caller_saving(self,inputdict,filename,saving_path):
-        os.chdir(saving_path)
-        output = open(filename, 'wb') 
-        np.save(output,inputdict)
-        output.close()
-     
-
-    def get_sparsity(self,place_field,position_occupancy):
-        
-        position_occupancy_norm = np.nansum(position_occupancy/np.nansum(position_occupancy))
-        sparsity = np.nanmean(position_occupancy_norm*place_field)**2/np.nanmean(position_occupancy_norm*place_field**2)
-
-        return sparsity
-    
-   
-
-    def get_speed(self,x_coordinates,y_coordinates,xy_timevector):
-
-        speed = np.sqrt(np.diff(x_coordinates)**2 + np.diff(y_coordinates)**2)
-        speed = hf.smooth(speed/np.diff(xy_timevector),window_len=10)
-        speed = np.hstack([speed,0])
-        return speed
-
-    def get_valid_timepoints(self,speed,x_coordinates,y_coordinates,speed_threshold):
-
-        x_coordinates_valid = np.copy(x_coordinates)
-        y_coordinates_valid = np.copy(y_coordinates)
-        I_speed_non_valid = speed <= speed_threshold
-        x_coordinates_valid[I_speed_non_valid] = np.nan
-        y_coordinates_valid[I_speed_non_valid] = np.nan
-        
-        return x_coordinates_valid,y_coordinates_valid
 
 
-    def validate_place_field(self,spike_rate_occupancy,position_occupancy,visits_occupancy,mintimespent, minvisits,smoothing_size):
+    def get_valid_timepoints(self,speed, visits_bins, time_spent_inside_bins, min_speed_threshold,
+                             min_visits, min_time_spent):
+        # min speed
+        I_speed_thres = speed >= min_speed_threshold
+
+        # min visits
+        I_visits_times_thres = visits_bins >= min_visits
+
+        # min time spent
+        I_time_spent_thres = time_spent_inside_bins >= min_time_spent
+
+        I_keep = I_speed_thres * I_visits_times_thres * I_time_spent_thres
+        return I_keep
+
+
+    def get_place_field(self,spike_rate_occupancy,position_occupancy,smoothing_size):
 
         place_field = spike_rate_occupancy/position_occupancy
-
-        Valid=(position_occupancy>=mintimespent)*(visits_occupancy>=minvisits)*1.
-        Valid[Valid == 0] = np.nan
-        place_field = place_field*Valid
 
         place_field_to_smooth = np.copy(place_field)
         place_field_to_smooth[np.isnan(place_field_to_smooth)] = 0
@@ -213,28 +201,6 @@ class PlaceCell:
         return place_field,place_field_smoothed
 
 
-    def get_binned_2Dposition(self,x_coordinates,y_coordinates,x_grid,y_grid):
-
-        # calculate position occupancy
-        position_binned = np.zeros(x_coordinates.shape)*np.nan
-        count = 0
-        for xx in range(0,x_grid.shape[0]-1):
-            for yy in range(0,y_grid.shape[0]-1):
-                if xx == x_grid.shape[0]-2:
-                    check_x_ocuppancy = np.logical_and(x_coordinates >= x_grid[xx],x_coordinates <= (x_grid[xx+1]))
-                else:
-                    check_x_ocuppancy = np.logical_and(x_coordinates >= x_grid[xx],x_coordinates < (x_grid[xx+1]))
-
-                if yy == y_grid.shape[0]-2:
-                    check_y_ocuppancy = np.logical_and(y_coordinates >= y_grid[yy],y_coordinates <= (y_grid[yy+1]))
-                else:   
-                    check_y_ocuppancy = np.logical_and(y_coordinates >= y_grid[yy],y_coordinates < (y_grid[yy+1]))
-
-                
-                position_binned[np.logical_and(check_x_ocuppancy,check_y_ocuppancy)] = count
-                count += 1
-
-        return position_binned
 
     def get_spiketimes_binarized(self,I_timestamps,xy_timevector,video_srate):
         # this way only works when two spikes don't fall in the same bin
@@ -300,149 +266,48 @@ class PlaceCell:
         for xx in range(0,x_grid.shape[0]-1):
             for yy in range(0,y_grid.shape[0]-1):
 
-                check_x_ocuppancy = np.logical_and(x_coordinates >= x_grid[xx],x_coordinates < (x_grid[xx+1]))
-                check_y_ocuppancy = np.logical_and(y_coordinates >= y_grid[yy],y_coordinates < (y_grid[yy+1]))
-                I_location = np.where(np.logical_and(check_x_ocuppancy,check_y_ocuppancy))[0]
+                check_x_occupancy = np.logical_and(x_coordinates >= x_grid[xx],x_coordinates < (x_grid[xx+1]))
+                check_y_occupancy = np.logical_and(y_coordinates >= y_grid[yy],y_coordinates < (y_grid[yy+1]))
+                I_location = np.where(np.logical_and(check_x_occupancy,check_y_occupancy))[0]
                 # spike_rate_occupancy[yy,xx] = np.sum(np.in1d(I_timestamps,I_location))/I_location.shape[0]
                 spike_rate_occupancy[yy,xx] = np.sum(np.in1d(I_timestamps,I_location))
         return spike_rate_occupancy
 
 
 
-    def get_position_grid(self,x_coordinates,y_coordinates,x_bin_size,y_bin_size,environment_edges=None):
+    def parallelize_surrogate(self,I_timestamps,I_keep,x_coordinates_valid,y_coordinates_valid,track_timevector_valid,position_occupancy_valid,
+                              x_grid,y_grid,video_srate,smoothing_size,
+                              shift_time,num_cores,num_surrogates):
 
-        # x_bin_size and y_bin_size in cm
-        # environment_edges = [[x1, x2], [y1, y2]]
-        
-        if environment_edges==None:
-            x_min = np.nanmin(x_coordinates)
-            x_max = np.nanmax(x_coordinates)
-            y_min = np.nanmin(y_coordinates)
-            y_max = np.nanmax(y_coordinates)
-            
-            environment_edges = [[x_min,x_max],[y_min,y_max]]
-
-
-        x_grid = np.arange(environment_edges[0][0]- x_bin_size,environment_edges[0][1] + x_bin_size,x_bin_size)
-
-        y_grid = np.arange(environment_edges[1][0]- y_bin_size,environment_edges[1][1] + y_bin_size,y_bin_size)
-
-        x_center_bins = x_grid[0:-1] + x_bin_size/2
-        y_center_bins = y_grid[0:-1] + y_bin_size/2
-
-        x_center_bins_repeated = np.repeat(x_center_bins,y_center_bins.shape[0])
-        y_center_bins_repeated = np.tile(y_center_bins,x_center_bins.shape[0])
-
-
-        return x_grid,y_grid,x_center_bins,y_center_bins,x_center_bins_repeated,y_center_bins_repeated
-
-
-
-    def get_occupancy(self,x_coordinates,y_coordinates,x_grid,y_grid,video_srate):
-        # calculate position occupancy
-        position_occupancy = np.zeros((y_grid.shape[0]-1,x_grid.shape[0]-1))
-        for xx in range(0,x_grid.shape[0]-1):
-            for yy in range(0,y_grid.shape[0]-1):
-
-                check_x_ocuppancy = np.logical_and(x_coordinates >= x_grid[xx],x_coordinates < (x_grid[xx+1]))
-                check_y_ocuppancy = np.logical_and(y_coordinates >= y_grid[yy],y_coordinates < (y_grid[yy+1]))
-
-                position_occupancy[yy,xx] = np.sum(np.logical_and(check_x_ocuppancy,check_y_ocuppancy))/video_srate
-
-        return position_occupancy
-
-
-
-
-
-    def get_visits(self,x_coordinates,y_coordinates,x_grid,y_grid,x_center_bins,y_center_bins):
-
-        I_x_coord = []
-        I_y_coord = []
-
-        for xx in range(0,x_coordinates.shape[0]):
-            I_x_coord.append(np.argmin(np.abs(x_coordinates[xx] - x_center_bins)))
-            I_y_coord.append(np.argmin(np.abs(y_coordinates[xx] - y_center_bins)))
-
-        I_x_coord = np.array(I_x_coord)
-        I_y_coord = np.array(I_y_coord)
-
-        dx = np.diff(np.hstack([I_x_coord[0]-1,I_x_coord]))
-        dy = np.diff(np.hstack([I_y_coord[0]-1,I_y_coord]))
-
-        newvisitstimes = (-1*(dy == 0))*(dx==0)+1
-        newvisitstimes2 = (np.logical_or((dy != 0), (dx!=0))*1)
-
-        I_visit = np.where(newvisitstimes>0)[0]
-
-        # calculate visits
-
-        x_coordinate_visit = x_coordinates[I_visit]
-        y_coordinate_visit = y_coordinates[I_visit]
-
-        visits_occupancy = np.zeros((y_grid.shape[0]-1,x_grid.shape[0]-1))        
-        for xx in range(0,x_grid.shape[0]-1):
-            for yy in range(0,y_grid.shape[0]-1):
-
-                check_x_ocuppancy = np.logical_and(x_coordinate_visit >= x_grid[xx],x_coordinate_visit < (x_grid[xx+1]))
-                check_y_ocuppancy = np.logical_and(y_coordinate_visit >= y_grid[yy],y_coordinate_visit < (y_grid[yy+1]))
-
-                visits_occupancy[yy,xx] = np.sum(np.logical_and(check_x_ocuppancy,check_y_ocuppancy))
-
-        return visits_occupancy
-
-
-
-    def parallelize_surrogate(self,I_timestamps,x_coordinates,y_coordinates,xy_timevector,position_occupancy,visits_occupancy,x_grid,y_grid,video_srate,mintimespent,minvisits,smoothing_size,shift_time,num_cores,num_surrogates):
-
-        results = Parallel(n_jobs=num_cores,verbose = 1)(delayed(self.get_spatial_metrics_surrogate)(I_timestamps,x_coordinates,y_coordinates,xy_timevector,position_occupancy,visits_occupancy,x_grid,y_grid,video_srate,mintimespent,minvisits,smoothing_size,shift_time) for permi in range(num_surrogates))
+        results = Parallel(n_jobs=num_cores,verbose = 1)(delayed(self.get_spatial_metrics_surrogate)(I_timestamps,I_keep,x_coordinates_valid,
+                                                                                                     y_coordinates_valid,track_timevector_valid,
+                                                                                                     position_occupancy_valid,
+                                                                                                     x_grid,y_grid,video_srate,
+                                                                                                     smoothing_size,shift_time)
+                                                         for permi in range(num_surrogates))
         return np.array(results)
 
 
-    def get_spatial_metrics_surrogate(self,I_timestamps,x_coordinates,y_coordinates,xy_timevector,position_occupancy,visits_occupancy,x_grid,y_grid,video_srate,mintimespent,minvisits,smoothing_size,shift_time):
-        I_timestamps_shuffled = self.get_surrogate(I_timestamps,xy_timevector,video_srate,shift_time)
+    def get_spatial_metrics_surrogate(self,I_timestamps,I_keep,x_coordinates_valid,y_coordinates_valid,track_timevector_valid,
+                                      position_occupancy_valid,x_grid,y_grid,video_srate,smoothing_size,shift_time):
 
-        spike_rate_occupancy_shuffled = self.get_spike_occupancy(I_timestamps_shuffled,x_coordinates,y_coordinates,x_grid,y_grid)
-        place_field_shuffled,place_field_smoothed_shuffled = self.validate_place_field(spike_rate_occupancy_shuffled,position_occupancy,visits_occupancy, mintimespent,minvisits,smoothing_size)
-        I_sec_shuffled,I_spk_shuffled = self.get_spatial_metrics(place_field_shuffled,position_occupancy)
+        I_timestamps_shuffled = self.get_surrogate(I_timestamps,track_timevector_valid,video_srate,shift_time)
 
-        return I_sec_shuffled,I_spk_shuffled
+        I_timestamps_shuffled_valid = np.setdiff1d(I_timestamps_shuffled, np.where(I_keep)[0])
+
+        spike_rate_occupancy_shuffled = self.get_spike_occupancy(I_timestamps_shuffled_valid,x_coordinates_valid,
+                                                                 y_coordinates_valid,x_grid,y_grid)
+        place_field_shuffled, place_field_smoothed_shuffled = self.get_place_field(spike_rate_occupancy_shuffled,
+                                                                                   position_occupancy_valid, smoothing_size)
+
+        I_sec_shuffled,I_spk_shuffled = self.get_spatial_metrics(place_field_shuffled,position_occupancy_valid)
+
+
+        return I_sec_shuffled,I_spk_shuffled,place_field_shuffled,place_field_smoothed_shuffled
 
 
     
-    
-    def number_of_islands(self,input_array):
 
-
-        row = input_array.shape[0]
-        col = input_array.shape[1]
-        count = 0
-
-        for i in range(row):
-            for j in range(col):
-                if input_array[i,j] == 1:
-                    self.dfs(input_array,row,col,i,j)
-                    count+=1
-        return count
-
-    def dfs(self,input_array,row,col,i,j):
-
-        if input_array[i,j] == 0:
-            return 
-        input_array[i,j] = 0
-
-        if i != 0:
-            self.dfs(input_array,row,col,i-1,j)
-
-        if i != row-1:
-            self.dfs(input_array,row,col,i+1,j)
-
-        if j != 0:
-            self.dfs(input_array,row,col,i,j-1)
-
-        if j != col - 1:
-            self.dfs(input_array,row,col,i,j+1)
-            
             
             
 

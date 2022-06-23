@@ -56,7 +56,6 @@ class PlaceCell:
         else:
             speed = hf.get_speed(x_coordinates, y_coordinates, track_timevector)
 
-
             x_grid, y_grid, x_center_bins, y_center_bins, x_center_bins_repeated, y_center_bins_repeated = \
                 hf.get_position_grid(x_coordinates, y_coordinates, self.x_bin_size,
                                        self.y_bin_size, environment_edges=self.environment_edges)
@@ -266,10 +265,10 @@ class PlaceCell:
         place_field = np.nan * np.zeros((y_grid.shape[0] - 1, x_grid.shape[0] - 1))
         for xx in range(0, x_grid.shape[0] - 1):
             for yy in range(0, y_grid.shape[0] - 1):
-                check_x_ocuppancy = np.logical_and(x_coordinates >= x_grid[xx], x_coordinates < (x_grid[xx + 1]))
-                check_y_ocuppancy = np.logical_and(y_coordinates >= y_grid[yy], y_coordinates < (y_grid[yy + 1]))
+                check_x_occupancy = np.logical_and(x_coordinates >= x_grid[xx], x_coordinates < (x_grid[xx + 1]))
+                check_y_occupancy = np.logical_and(y_coordinates >= y_grid[yy], y_coordinates < (y_grid[yy + 1]))
 
-                place_field[yy, xx] = np.nanmean(calcium_imag[np.logical_and(check_x_ocuppancy, check_y_ocuppancy)])
+                place_field[yy, xx] = np.nanmean(calcium_imag[np.logical_and(check_x_occupancy, check_y_occupancy)])
 
         place_field_to_smooth = np.copy(place_field)
         place_field_to_smooth[np.isnan(place_field_to_smooth)] = 0
