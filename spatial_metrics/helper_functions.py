@@ -242,7 +242,6 @@ def dfs(input_array, input_array2, count, row, col, i, j):
 
 
 def field_coordinates_using_shuffled(place_field_smoothed, place_field_smoothed_shuffled, visits_map, percentile_threshold=95,min_num_of_pixels=4):
-    place_field_threshold = np.percentile(place_field_smoothed_shuffled, percentile_threshold, 0)
 
     min_num_of_pixels = 4
     percentile_threshold = 95
@@ -256,7 +255,7 @@ def field_coordinates_using_shuffled(place_field_smoothed, place_field_smoothed_
     field_above_threshold_binary[field_above_threshold_binary > place_field_threshold] = 1
 
     if np.any(field_above_threshold_binary > 0):
-        sys.setrecursionlimit(10000)
+        sys.setrecursionlimit(10000000)
         place_field_identity = identify_islands(np.copy(field_above_threshold_binary))
         num_of_islands_pre = np.unique(place_field_identity)[1:].shape[0]
 
@@ -295,6 +294,8 @@ def field_coordinates_using_shuffled(place_field_smoothed, place_field_smoothed_
         num_of_islands = 0
         islands_y_max = np.nan
         islands_x_max = np.nan
+        pixels_place_cell_relative = np.nan
+        pixels_place_cell_absolute = np.nan
 
     return num_of_islands, islands_x_max, islands_y_max,pixels_place_cell_absolute,pixels_place_cell_relative
 

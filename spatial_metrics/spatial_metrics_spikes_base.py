@@ -1,10 +1,8 @@
 import numpy as np
 import os
-import sys
-from scipy import stats as stats
 import spatial_metrics.helper_functions as hf
-import spatial_metrics.detect_peaks as dp
 from joblib import Parallel, delayed
+import warnings
 
 class PlaceCell:
     def __init__(self,**kwargs):
@@ -33,15 +31,13 @@ class PlaceCell:
 
         valid_kwargs = ['animal_id','day','neuron','dataset','trial','video_srate',
                         'min_time_spent','min_visits','min_speed_threshold','smoothing_size',
-                        'x_bin_size','y_bin_size','shift_time','num_cores','percentile_threshold','min_num_of_pixels'
+                        'x_bin_size','y_bin_size','shift_time','num_cores','percentile_threshold','min_num_of_pixels',
                         'num_surrogates','saving_path','saving','saving_string','environment_edges']
-        
-        
+
         for k, v in kwargs.items():
             if k not in valid_kwargs:
                 raise TypeError("Invalid keyword argument %s" % k)
             setattr(self, k, v)
-            
         self.__dict__['input_parameters'] = kwargs
         
         
@@ -54,6 +50,7 @@ class PlaceCell:
         else:
 
             speed = hf.get_speed(x_coordinates, y_coordinates, track_timevector)
+
             x_grid, y_grid, x_center_bins, y_center_bins, x_center_bins_repeated, y_center_bins_repeated = hf.get_position_grid(
                 x_coordinates, y_coordinates, self.x_bin_size, self.y_bin_size,
                 environment_edges=self.environment_edges)
@@ -62,7 +59,8 @@ class PlaceCell:
 
             visits_bins, new_visits_times = hf.get_visits(x_coordinates, y_coordinates, position_binned,
                                                           x_center_bins, y_center_bins)
-            time_spent_inside_bins = hf.get_position_time_spent(position_binned, self.mean_video_srate)
+
+            time_spent_inside_bins = hf.get_position_time_spent(position_binned, self.video_srate)
 
             I_keep = self.get_valid_timepoints(speed, visits_bins, time_spent_inside_bins,
                                                self.min_speed_threshold, self.min_visits, self.min_time_spent)
@@ -72,16 +70,19 @@ class PlaceCell:
             track_timevector_valid = track_timevector[I_keep].copy()
             visits_bins_valid = visits_bins[I_keep].copy()
             position_binned_valid = position_binned[I_keep].copy()
-            I_timestamps_valid = np.setdiff1d(I_timestamps, np.where(I_keep)[0])
+            # I_timestamps_valid = np.intersect1d(I_timestamps, np.where(I_keep)[0])
+
+            I_keep_spk = np.where(I_keep)[0]
+            I_timestamps_valid = np.where(np.in1d(I_keep_spk, I_timestamps))[0]
 
             spike_rate_occupancy = self.get_spike_occupancy(I_timestamps_valid,x_coordinates_valid,y_coordinates_valid,
                                                             x_grid,y_grid)
 
             position_occupancy_valid = hf.get_occupancy(x_coordinates_valid, y_coordinates_valid, x_grid, y_grid,
-                                                  self.mean_video_srate)
+                                                  self.video_srate)
 
             position_occupancy = hf.get_occupancy(x_coordinates,y_coordinates, x_grid, y_grid,
-                                                  self.mean_video_srate)
+                                                  self.video_srate)
 
             visits_occupancy = hf.get_visits_occupancy(x_coordinates, y_coordinates, new_visits_times, x_grid, y_grid,
                                                        self.min_visits)
@@ -90,9 +91,7 @@ class PlaceCell:
 
             I_sec,I_spk = self.get_spatial_metrics(place_field,position_occupancy_valid)
 
-            sparsity = self.get_sparsity(place_field_smoothed,position_occupancy_valid)
-
-            results = self.parallelize_surrogate(I_timestamps,I_keep,x_coordinates_valid,y_coordinates_valid,track_timevector_valid,position_occupancy_valid,x_grid,y_grid,self.video_srate,self.smoothing_size,self.shift_time,self.num_cores,self.num_surrogates)
+            results = self.parallelize_surrogate(I_timestamps,I_keep,x_coordinates_valid,y_coordinates_valid,track_timevector,position_occupancy_valid,x_grid,y_grid,self.video_srate,self.smoothing_size,self.shift_time,self.num_cores,self.num_surrogates)
 
             I_sec_permutation = []
             I_spk_permutation = []
@@ -103,7 +102,6 @@ class PlaceCell:
                 I_spk_permutation.append(results[perm][1])
                 place_field_shuffled.append(results[perm][2])
                 place_field_smoothed_shuffled.append(results[perm][3])
-
             I_sec_permutation = np.array(I_sec_permutation)
             I_spk_permutation = np.array(I_spk_permutation)
             place_field_shuffled = np.array(place_field_shuffled)
@@ -114,8 +112,7 @@ class PlaceCell:
 
             num_of_islands, islands_x_max, islands_y_max, pixels_place_cell_absolute, pixels_place_cell_relative = \
                 hf.field_coordinates_using_shuffled(place_field_smoothed, place_field_smoothed_shuffled,
-                                                    visits_occupancy,
-                                                    percentile_threshold=self.percentile_threshold,
+                                                    visits_occupancy, percentile_threshold=self.percentile_threshold,
                                                     min_num_of_pixels=self.min_num_of_pixels)
 
             sparsity = hf.get_sparsity(place_field, position_occupancy)
@@ -123,12 +120,12 @@ class PlaceCell:
             x_peaks_location = x_coordinates_valid[I_timestamps_valid]
             y_peaks_location = y_coordinates_valid[I_timestamps_valid]
 
-
-
             inputdict = dict()
             inputdict['spike_rate_occupancy'] = spike_rate_occupancy
             inputdict['place_field'] = place_field
-            inputdict['place_field_smoothed'] = place_field_smoothed        
+            inputdict['place_field_smoothed'] = place_field_smoothed
+            inputdict['place_field_shuffled'] = place_field_shuffled
+            inputdict['place_field_smoothed_shuffled'] = place_field_smoothed_shuffled
             inputdict['occupancy_map'] = position_occupancy
             inputdict['visits_map'] = visits_occupancy
             inputdict['x_grid'] = x_grid
@@ -152,7 +149,7 @@ class PlaceCell:
             inputdict['islands_y_max'] = islands_y_max
             inputdict['place_cell_extension_absolute'] = pixels_place_cell_absolute
             inputdict['place_cell_extension_relative'] = pixels_place_cell_relative
-
+            inputdict['sparsity'] = sparsity
             inputdict['input_parameters'] = self.__dict__['input_parameters']
             
             filename = hf.filename_constructor(self.saving_string,self.animal_id,self.dataset,self.day,self.neuron,self.trial)
@@ -162,17 +159,14 @@ class PlaceCell:
             print(filename + ' saved')
         else:
             print('File not saved')
-        
         return inputdict
 
-    
 
     def get_mutual_information_zscored(self,mutual_info_original,mutual_info_shuffled):
         mutual_info_centered = mutual_info_original-np.nanmean(mutual_info_shuffled)
         mutual_info_zscored = (mutual_info_original-np.nanmean(mutual_info_shuffled))/np.nanstd(mutual_info_shuffled)
         
         return mutual_info_zscored,mutual_info_centered
-
 
 
     def get_valid_timepoints(self,speed, visits_bins, time_spent_inside_bins, min_speed_threshold,
@@ -199,7 +193,6 @@ class PlaceCell:
         place_field_smoothed = hf.gaussian_smooth_2d(place_field_to_smooth,smoothing_size)
 
         return place_field,place_field_smoothed
-
 
 
     def get_spiketimes_binarized(self,I_timestamps,xy_timevector,video_srate):
@@ -275,12 +268,12 @@ class PlaceCell:
 
 
 
-    def parallelize_surrogate(self,I_timestamps,I_keep,x_coordinates_valid,y_coordinates_valid,track_timevector_valid,position_occupancy_valid,
+    def parallelize_surrogate(self,I_timestamps,I_keep,x_coordinates_valid,y_coordinates_valid,track_timevector,position_occupancy_valid,
                               x_grid,y_grid,video_srate,smoothing_size,
                               shift_time,num_cores,num_surrogates):
 
         results = Parallel(n_jobs=num_cores,verbose = 1)(delayed(self.get_spatial_metrics_surrogate)(I_timestamps,I_keep,x_coordinates_valid,
-                                                                                                     y_coordinates_valid,track_timevector_valid,
+                                                                                                     y_coordinates_valid,track_timevector,
                                                                                                      position_occupancy_valid,
                                                                                                      x_grid,y_grid,video_srate,
                                                                                                      smoothing_size,shift_time)
@@ -288,20 +281,21 @@ class PlaceCell:
         return np.array(results)
 
 
-    def get_spatial_metrics_surrogate(self,I_timestamps,I_keep,x_coordinates_valid,y_coordinates_valid,track_timevector_valid,
+    def get_spatial_metrics_surrogate(self,I_timestamps,I_keep,x_coordinates_valid,y_coordinates_valid,track_timevector,
                                       position_occupancy_valid,x_grid,y_grid,video_srate,smoothing_size,shift_time):
 
-        I_timestamps_shuffled = self.get_surrogate(I_timestamps,track_timevector_valid,video_srate,shift_time)
+        I_timestamps_shuffled = self.get_surrogate(I_timestamps,track_timevector,video_srate,shift_time)
 
-        I_timestamps_shuffled_valid = np.setdiff1d(I_timestamps_shuffled, np.where(I_keep)[0])
+        I_keep_spk = np.where(I_keep)[0]
+        I_timestamps_shuffled_valid = np.where(np.in1d(I_keep_spk, I_timestamps_shuffled))[0]
 
         spike_rate_occupancy_shuffled = self.get_spike_occupancy(I_timestamps_shuffled_valid,x_coordinates_valid,
                                                                  y_coordinates_valid,x_grid,y_grid)
+
         place_field_shuffled, place_field_smoothed_shuffled = self.get_place_field(spike_rate_occupancy_shuffled,
                                                                                    position_occupancy_valid, smoothing_size)
 
         I_sec_shuffled,I_spk_shuffled = self.get_spatial_metrics(place_field_shuffled,position_occupancy_valid)
-
 
         return I_sec_shuffled,I_spk_shuffled,place_field_shuffled,place_field_smoothed_shuffled
 
