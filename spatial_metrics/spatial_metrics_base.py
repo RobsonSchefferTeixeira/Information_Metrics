@@ -98,6 +98,9 @@ class PlaceCell:
             mutual_info_NN_original = self.get_mutual_information_NN(calcium_imag_valid, position_binned_valid)
             mutual_info_skaggs_original = self.get_mutual_info_skaggs(calcium_imag_valid, position_binned_valid)
 
+            mutual_info_distribution_smoothed, mutual_info_distribution_bezzi_smoothed = self.get_mutual_information_2d(
+                calcium_imag_valid_binned,position_binned_valid, y_grid, x_grid, self.nbins_cal, nbins_pos,self.smoothing_size)
+
             results = self.parallelize_surrogate(calcium_imag, I_keep, position_binned_valid, self.mean_video_srate,
                                                  self.shift_time, self.nbins_cal, nbins_pos, x_coordinates_valid,
                                                  y_coordinates_valid, x_grid, y_grid, self.smoothing_size,
@@ -109,6 +112,9 @@ class PlaceCell:
             mutual_info_NN_shuffled = []
             mutual_info_kullback_leibler_shuffled = []
             mutual_info_skaggs_shuffled = []
+            mutual_info_distribution_smoothed_shuffled = []
+            mutual_info_distribution_bezzi_smoothed_shuffled = []
+
             for perm in range(self.num_surrogates):
                 mutual_info_shuffled.append(results[perm][0])
                 mutual_info_kullback_leibler_shuffled.append(results[perm][1])
@@ -116,6 +122,8 @@ class PlaceCell:
                 mutual_info_skaggs_shuffled.append(results[perm][3])
                 place_field_shuffled.append(results[perm][4])
                 place_field_smoothed_shuffled.append(results[perm][5])
+                mutual_info_distribution_smoothed_shuffled.append(results[perm][6])
+                mutual_info_distribution_bezzi_smoothed_shuffled.append(results[perm][7])
 
             mutual_info_NN_shuffled = np.array(mutual_info_NN_shuffled)
             mutual_info_shuffled = np.array(mutual_info_shuffled)
@@ -134,6 +142,8 @@ class PlaceCell:
 
             mutual_info_skaggs_zscored, mutual_info_skaggs_centered = self.get_mutual_information_zscored(
                 mutual_info_skaggs_original, mutual_info_skaggs_shuffled)
+
+
 
             num_of_islands, islands_x_max, islands_y_max,pixels_place_cell_absolute,pixels_place_cell_relative = \
                 hf.field_coordinates_using_shuffled(place_field_smoothed,place_field_smoothed_shuffled,visits_occupancy,
@@ -154,6 +164,12 @@ class PlaceCell:
 
             inputdict['place_field_shuffled'] = place_field_shuffled
             inputdict['place_field_smoothed_shuffled'] = place_field_smoothed_shuffled
+
+            inputdict['mutual_info_distribution_smoothed'] = mutual_info_distribution_smoothed
+            inputdict['mutual_info_distribution_bezzi_smoothed'] = mutual_info_distribution_bezzi_smoothed
+
+            inputdict['mutual_info_distribution_smoothed_shuffled'] = mutual_info_distribution_smoothed_shuffled
+            inputdict['mutual_info_distribution_bezzi_smoothed_shuffled'] = mutual_info_distribution_bezzi_smoothed_shuffled
 
             inputdict['occupancy_map'] = position_occupancy
             inputdict['visits_map'] = visits_occupancy
@@ -207,30 +223,6 @@ class PlaceCell:
 
         return inputdict
 
-    #     def filename_constructor(self,saving_string,animal_id,dataset,day,neuron,trial):
-
-    #         first_string =  saving_string
-    #         animal_id_string = '.' + animal_id
-    #         dataset_string = '.Dataset.' + dataset
-    #         day_string = '.Day.' + str(day)
-    #         neuron_string = '.Neuron.' + str(neuron)
-    #         trial_string = '.Trial.' + str(trial)
-
-    #         filename_checklist = np.array([first_string,animal_id, dataset, day, neuron, trial])
-    #         inlcude_this = np.where(filename_checklist != None)[0]
-
-    #         filename_backbone = [first_string, animal_id_string,dataset_string, day_string, neuron_string, trial_string]
-
-    #         filename = ''.join([filename_backbone[i] for i in inlcude_this])
-
-    #         return filename
-
-    #     def caller_saving(self,inputdict,filename,saving_path):
-    #         os.chdir(saving_path)
-    #         output = open(filename, 'wb')
-    #         np.save(output,inputdict)
-    #         output.close()
-    #         print('File saved.')
 
     def get_sparsity(self, place_field, position_occupancy):
 
@@ -379,9 +371,71 @@ class PlaceCell:
                                                                                    x_coordinates_valid,
                                                                                    y_coordinates_valid, x_grid, y_grid,
                                                                                    smoothing_size)
+        mutual_info_distribution_smoothed,mutual_info_distribution_bezzi_smoothed = self.get_mutual_information_2d(calcium_imag_shuffled_binned,
+                                                                                                  position_binned_valid,y_grid,
+                                                                                                  x_grid,nbins_cal,nbins_pos,
+                                                                                                  smoothing_size)
 
         return mutual_info_shuffled, modulation_index_shuffled, mutual_info_shuffled_NN, mutual_info_skaggs_shuffled,\
-               place_field_shuffled, place_field_smoothed_shuffled
+               place_field_shuffled, place_field_smoothed_shuffled,mutual_info_distribution_smoothed,mutual_info_distribution_bezzi_smoothed
+
+    def get_mutual_information_2d(self,calcium_imag_binned,position_binned,y_grid,x_grid,nbins_cal,nbins_pos,smoothing_size):
+
+        total_num_events = calcium_imag_binned.shape[0]
+
+        I_pos_xi = []
+        I_pos_xi_c = []
+        P_xi = []
+        for i in range(nbins_pos):
+
+            x_i = np.where(position_binned == i)[0]
+            num_x_i_events = x_i.shape[0]
+            P_xi.append(num_x_i_events / total_num_events)
+
+            x_i_c = np.where(position_binned != i)[0]
+            num_x_i_c_events = x_i_c.shape[0]
+
+            mutual_info_xi = 0
+            mutual_info_xi_c = 0
+            if num_x_i_events > 0:
+                for k in range(nbins_cal):
+
+                    num_k_events = np.where(calcium_imag_binned == k)[0].shape[0]
+                    P_k = num_k_events / total_num_events
+
+                    num_k_events_given_x_i = np.where(calcium_imag_binned[x_i] == k)[0].shape[0]
+                    P_k_xi = num_k_events_given_x_i / num_x_i_events
+
+                    num_k_events_given_x_i_c = np.where(calcium_imag_binned[x_i_c] == k)[0].shape[0]
+                    P_k_xi_c = num_k_events_given_x_i_c / num_x_i_c_events
+
+                    if (P_k != 0) & (P_k_xi != 0):
+                        mutual_info_xi += P_k_xi * np.log2(P_k_xi / P_k)
+
+                    if (P_k != 0) & (P_k_xi_c != 0):
+                        mutual_info_xi_c += P_k_xi_c * np.log2(P_k_xi_c / P_k)
+
+            I_pos_xi.append(mutual_info_xi)
+            I_pos_xi_c.append(mutual_info_xi_c)
+
+        I_pos_xi = np.array(I_pos_xi)
+        I_pos_xi_c = np.array(I_pos_xi_c)
+
+        P_xi_c = 1 - np.array(P_xi)
+        P_xi = np.array(P_xi)
+
+        I_bezzi = P_xi * I_pos_xi + P_xi_c * I_pos_xi_c
+        mutual_info_distribution_bezzi = I_bezzi.reshape((y_grid.shape[0] - 1), (x_grid.shape[0] - 1)).T
+
+        mutual_info_distribution = P_xi * I_pos_xi
+        mutual_info_distribution = mutual_info_distribution.reshape((y_grid.shape[0] - 1), (x_grid.shape[0] - 1)).T
+
+        mutual_info_distribution_smoothed = hf.gaussian_smooth_2d(mutual_info_distribution, smoothing_size)
+        mutual_info_distribution_bezzi_smoothed = hf.gaussian_smooth_2d(mutual_info_distribution_bezzi, smoothing_size)
+
+
+        return mutual_info_distribution_smoothed,mutual_info_distribution_bezzi_smoothed
+
 
     def get_kullback_leibler_normalized(self, calcium_imag, position_binned):
 
