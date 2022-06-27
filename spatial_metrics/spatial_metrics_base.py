@@ -54,6 +54,15 @@ class PlaceCell:
             filename = self.filename_constructor(self.saving_string, self.animal_id, self.dataset, self.day,
                                                  self.neuron, self.trial)
         else:
+            
+            if np.any(np.isnan(calcium_imag)):
+                I_keep = ~np.isnan(calcium_imag)
+                calcium_imag = calcium_imag[I_keep]
+                track_timevector = track_timevector[I_keep]
+                x_coordinates = x_coordinates[I_keep]
+                y_coordinates = y_coordinates[I_keep]
+
+    
             speed = hf.get_speed(x_coordinates, y_coordinates, track_timevector)
 
             x_grid, y_grid, x_center_bins, y_center_bins, x_center_bins_repeated, y_center_bins_repeated = \
@@ -98,7 +107,7 @@ class PlaceCell:
             mutual_info_NN_original = self.get_mutual_information_NN(calcium_imag_valid, position_binned_valid)
             mutual_info_skaggs_original = self.get_mutual_info_skaggs(calcium_imag_valid, position_binned_valid)
 
-            mutual_info_distribution_smoothed, mutual_info_distribution_bezzi_smoothed = self.get_mutual_information_2d(
+            mutual_info_distribution, mutual_info_distribution_bezzi = self.get_mutual_information_2d(
                 calcium_imag_valid_binned,position_binned_valid, y_grid, x_grid, self.nbins_cal, nbins_pos,self.smoothing_size)
 
             results = self.parallelize_surrogate(calcium_imag, I_keep, position_binned_valid, self.mean_video_srate,
@@ -112,8 +121,8 @@ class PlaceCell:
             mutual_info_NN_shuffled = []
             mutual_info_kullback_leibler_shuffled = []
             mutual_info_skaggs_shuffled = []
-            mutual_info_distribution_smoothed_shuffled = []
-            mutual_info_distribution_bezzi_smoothed_shuffled = []
+            mutual_info_distribution_shuffled = []
+            mutual_info_distribution_bezzi_shuffled = []
 
             for perm in range(self.num_surrogates):
                 mutual_info_shuffled.append(results[perm][0])
@@ -122,8 +131,8 @@ class PlaceCell:
                 mutual_info_skaggs_shuffled.append(results[perm][3])
                 place_field_shuffled.append(results[perm][4])
                 place_field_smoothed_shuffled.append(results[perm][5])
-                mutual_info_distribution_smoothed_shuffled.append(results[perm][6])
-                mutual_info_distribution_bezzi_smoothed_shuffled.append(results[perm][7])
+                mutual_info_distribution_shuffled.append(results[perm][6])
+                mutual_info_distribution_bezzi_shuffled.append(results[perm][7])
 
             mutual_info_NN_shuffled = np.array(mutual_info_NN_shuffled)
             mutual_info_shuffled = np.array(mutual_info_shuffled)
@@ -131,6 +140,10 @@ class PlaceCell:
             mutual_info_skaggs_shuffled = np.array(mutual_info_skaggs_shuffled)
             place_field_shuffled = np.array(place_field_shuffled)
             place_field_smoothed_shuffled = np.array(place_field_smoothed_shuffled)
+            mutual_info_distribution_shuffled = np.array(mutual_info_distribution_shuffled)
+            mutual_info_distribution_bezzi_shuffled = np.array(mutual_info_distribution_bezzi_shuffled)
+
+            
 
             mutual_info_zscored, mutual_info_centered = self.get_mutual_information_zscored(mutual_info_original,
                                                                                             mutual_info_shuffled)
@@ -145,7 +158,7 @@ class PlaceCell:
 
 
 
-            num_of_islands, islands_x_max, islands_y_max,pixels_place_cell_absolute,pixels_place_cell_relative = \
+            num_of_islands, islands_x_max, islands_y_max,pixels_place_cell_absolute,pixels_place_cell_relative,place_field_identity = \
                 hf.field_coordinates_using_shuffled(place_field_smoothed,place_field_smoothed_shuffled,visits_occupancy,
                                                     percentile_threshold=self.percentile_threshold,
                                                     min_num_of_pixels = self.min_num_of_pixels)
@@ -165,11 +178,11 @@ class PlaceCell:
             inputdict['place_field_shuffled'] = place_field_shuffled
             inputdict['place_field_smoothed_shuffled'] = place_field_smoothed_shuffled
 
-            inputdict['mutual_info_distribution_smoothed'] = mutual_info_distribution_smoothed
-            inputdict['mutual_info_distribution_bezzi_smoothed'] = mutual_info_distribution_bezzi_smoothed
+            inputdict['mutual_info_distribution'] = mutual_info_distribution
+            inputdict['mutual_info_distribution_bezzi'] = mutual_info_distribution_bezzi
 
-            inputdict['mutual_info_distribution_smoothed_shuffled'] = mutual_info_distribution_smoothed_shuffled
-            inputdict['mutual_info_distribution_bezzi_smoothed_shuffled'] = mutual_info_distribution_bezzi_smoothed_shuffled
+            inputdict['mutual_info_distribution_shuffled'] = mutual_info_distribution_shuffled
+            inputdict['mutual_info_distribution_bezzi_shuffled'] = mutual_info_distribution_bezzi_shuffled
 
             inputdict['occupancy_map'] = position_occupancy
             inputdict['visits_map'] = visits_occupancy
@@ -182,6 +195,7 @@ class PlaceCell:
             inputdict['y_peaks_location'] = y_peaks_location
             inputdict['events_amplitude'] = peaks_amplitude
 
+            inputdict['place_field_identity'] = place_field_identity
             inputdict['num_of_islands'] = num_of_islands
             inputdict['islands_x_max'] = islands_x_max
             inputdict['islands_y_max'] = islands_y_max
@@ -371,13 +385,13 @@ class PlaceCell:
                                                                                    x_coordinates_valid,
                                                                                    y_coordinates_valid, x_grid, y_grid,
                                                                                    smoothing_size)
-        mutual_info_distribution_smoothed,mutual_info_distribution_bezzi_smoothed = self.get_mutual_information_2d(calcium_imag_shuffled_binned,
+        mutual_info_distribution,mutual_info_distribution_bezzi = self.get_mutual_information_2d(calcium_imag_shuffled_binned,
                                                                                                   position_binned_valid,y_grid,
                                                                                                   x_grid,nbins_cal,nbins_pos,
                                                                                                   smoothing_size)
 
         return mutual_info_shuffled, modulation_index_shuffled, mutual_info_shuffled_NN, mutual_info_skaggs_shuffled,\
-               place_field_shuffled, place_field_smoothed_shuffled,mutual_info_distribution_smoothed,mutual_info_distribution_bezzi_smoothed
+               place_field_shuffled, place_field_smoothed_shuffled,mutual_info_distribution,mutual_info_distribution_bezzi
 
     def get_mutual_information_2d(self,calcium_imag_binned,position_binned,y_grid,x_grid,nbins_cal,nbins_pos,smoothing_size):
 
@@ -425,16 +439,16 @@ class PlaceCell:
         P_xi = np.array(P_xi)
 
         I_bezzi = P_xi * I_pos_xi + P_xi_c * I_pos_xi_c
-        mutual_info_distribution_bezzi = I_bezzi.reshape((y_grid.shape[0] - 1), (x_grid.shape[0] - 1)).T
+        mutual_info_distribution_bezzi = I_bezzi.reshape((x_grid.shape[0] - 1), (y_grid.shape[0] - 1)).T
 
         mutual_info_distribution = P_xi * I_pos_xi
-        mutual_info_distribution = mutual_info_distribution.reshape((y_grid.shape[0] - 1), (x_grid.shape[0] - 1)).T
+        mutual_info_distribution = mutual_info_distribution.reshape((x_grid.shape[0] - 1), (y_grid.shape[0] - 1)).T
 
         mutual_info_distribution_smoothed = hf.gaussian_smooth_2d(mutual_info_distribution, smoothing_size)
         mutual_info_distribution_bezzi_smoothed = hf.gaussian_smooth_2d(mutual_info_distribution_bezzi, smoothing_size)
 
 
-        return mutual_info_distribution_smoothed,mutual_info_distribution_bezzi_smoothed
+        return mutual_info_distribution,mutual_info_distribution_bezzi
 
 
     def get_kullback_leibler_normalized(self, calcium_imag, position_binned):

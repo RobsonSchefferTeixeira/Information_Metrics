@@ -50,6 +50,14 @@ class PlaceCellBinarized:
             inputdict = np.nan
 
         else:
+            
+            if np.any(np.isnan(calcium_imag)):
+                I_keep = ~np.isnan(calcium_imag)
+                calcium_imag = calcium_imag[I_keep]
+                track_timevector = track_timevector[I_keep]
+                x_coordinates = x_coordinates[I_keep]
+                y_coordinates = y_coordinates[I_keep]
+                
             speed = hf.get_speed(x_coordinates, y_coordinates, track_timevector)
 
             x_grid, y_grid, x_center_bins, y_center_bins, x_center_bins_repeated, y_center_bins_repeated = hf.get_position_grid(
@@ -75,6 +83,7 @@ class PlaceCellBinarized:
 
             position_occupancy = hf.get_occupancy(x_coordinates_valid, y_coordinates_valid, x_grid, y_grid,
                                                   self.mean_video_srate)
+            
             visits_occupancy = hf.get_visits_occupancy(x_coordinates, y_coordinates, new_visits_times, x_grid, y_grid,
                                                        self.min_visits)
 
@@ -104,7 +113,7 @@ class PlaceCellBinarized:
             mutual_info_zscored, mutual_info_centered = self.get_mutual_information_zscored(mutual_info_original,
                                                                                             mutual_info_shuffled)
 
-            num_of_islands, islands_x_max, islands_y_max,pixels_place_cell_absolute,pixels_place_cell_relative = \
+            num_of_islands, islands_x_max, islands_y_max,pixels_place_cell_absolute,pixels_place_cell_relative,place_field_identity = \
                 hf.field_coordinates_using_shuffled(place_field_smoothed,place_field_smoothed_shuffled,visits_occupancy,
                                                     percentile_threshold=self.percentile_threshold,
                                                     min_num_of_pixels = self.min_num_of_pixels)
@@ -134,6 +143,7 @@ class PlaceCellBinarized:
             inputdict['y_peaks_location'] = y_peaks_location
             inputdict['events_amplitude'] = peaks_amplitude
 
+            inputdict['place_field_identity'] = place_field_identity
             inputdict['num_of_islands'] = num_of_islands
             inputdict['islands_x_max'] = islands_x_max
             inputdict['islands_y_max'] = islands_y_max

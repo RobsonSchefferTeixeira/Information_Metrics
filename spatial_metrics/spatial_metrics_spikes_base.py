@@ -110,7 +110,7 @@ class PlaceCell:
             I_sec_zscored,I_sec_centered = self.get_mutual_information_zscored(I_sec,I_sec_permutation)
             I_spk_zscored,I_spk_centered = self.get_mutual_information_zscored(I_spk,I_spk_permutation)
 
-            num_of_islands, islands_x_max, islands_y_max, pixels_place_cell_absolute, pixels_place_cell_relative = \
+            num_of_islands, islands_x_max, islands_y_max, pixels_place_cell_absolute, pixels_place_cell_relative,place_field_identity = \
                 hf.field_coordinates_using_shuffled(place_field_smoothed, place_field_smoothed_shuffled,
                                                     visits_occupancy, percentile_threshold=self.percentile_threshold,
                                                     min_num_of_pixels=self.min_num_of_pixels)
@@ -144,6 +144,8 @@ class PlaceCell:
             inputdict['I_sec_centered'] = I_sec_centered
             inputdict['I_spk_centered'] = I_spk_centered
             inputdict['sparsity'] = sparsity
+            
+            inputdict['place_field_identity'] = place_field_identity
             inputdict['num_of_islands'] = num_of_islands
             inputdict['islands_x_max'] = islands_x_max
             inputdict['islands_y_max'] = islands_y_max

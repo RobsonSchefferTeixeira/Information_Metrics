@@ -243,8 +243,6 @@ def dfs(input_array, input_array2, count, row, col, i, j):
 
 def field_coordinates_using_shuffled(place_field_smoothed, place_field_smoothed_shuffled, visits_map, percentile_threshold=95,min_num_of_pixels=4):
 
-    min_num_of_pixels = 4
-    percentile_threshold = 95
     place_field_smoothed_shuffled = place_field_smoothed_shuffled.copy()
     place_field_smoothed = place_field_smoothed.copy()
 
@@ -296,48 +294,71 @@ def field_coordinates_using_shuffled(place_field_smoothed, place_field_smoothed_
         islands_x_max = np.nan
         pixels_place_cell_relative = np.nan
         pixels_place_cell_absolute = np.nan
+        place_field_identity = np.nan
+        
+    return num_of_islands, islands_x_max, islands_y_max,pixels_place_cell_absolute,pixels_place_cell_relative,place_field_identity
 
-    return num_of_islands, islands_x_max, islands_y_max,pixels_place_cell_absolute,pixels_place_cell_relative
 
-def field_coordinates(place_field, smoothing_size=1, field_threshold=2):
+
+
+def field_coordinates_using_threshold(place_field, visits_map,smoothing_size=1, field_threshold=2,min_num_of_pixels=4):
+    
     place_field_to_smooth = np.copy(place_field)
     place_field_to_smooth[np.isnan(place_field_to_smooth)] = 0
     place_field_smoothed = gaussian_smooth_2d(place_field_to_smooth, smoothing_size)
 
     I_threshold = field_threshold * np.nanstd(place_field_smoothed)
 
-    field_above_threshold = np.copy(place_field_smoothed)
-    field_above_threshold[field_above_threshold < I_threshold] = 0
-
     field_above_threshold_binary = np.copy(place_field_smoothed)
     field_above_threshold_binary[field_above_threshold_binary < I_threshold] = 0
     field_above_threshold_binary[field_above_threshold_binary >= I_threshold] = 1
 
     if np.any(field_above_threshold_binary > 0):
-        sys.setrecursionlimit(10000)
+        sys.setrecursionlimit(10000000)
         place_field_identity = identify_islands(np.copy(field_above_threshold_binary))
-        islands_id = np.unique(place_field_identity)[1:]
-        num_of_islands = islands_id.shape[0]
+        num_of_islands_pre = np.unique(place_field_identity)[1:].shape[0]
 
+        island_counter = 0
+        for ii in range(1, num_of_islands_pre + 1):
+            if np.where(place_field_identity == ii)[0].shape[0] > min_num_of_pixels:
+                island_counter += 1
+            else:
+                place_field_identity[np.where(place_field_identity == ii)] = 0
+
+        num_of_islands = island_counter
+
+        islands_id = np.unique(place_field_identity)[1:]
         islands_y_max = []
         islands_x_max = []
-
+        pixels_above = []
         for ii in islands_id:
             max_val = np.max(place_field_smoothed[(place_field_identity == ii)])
             I_y_max, I_x_max = np.where(place_field_smoothed == max_val)
             islands_y_max.append(I_y_max[0])
             islands_x_max.append(I_x_max[0])
 
+            pixels_above.append(np.nansum(place_field_identity == ii))
+
         islands_x_max = np.array(islands_x_max)
         islands_y_max = np.array(islands_y_max)
+        pixels_above = np.array(pixels_above)
 
+        total_visited_pixels = np.nansum(visits_map != 0)
+        pixels_total = place_field_smoothed.shape[0] * place_field_smoothed.shape[1]
+
+        pixels_place_cell_relative = pixels_above / total_visited_pixels
+        pixels_place_cell_absolute = pixels_above / pixels_total
 
     else:
         num_of_islands = 0
         islands_y_max = np.nan
         islands_x_max = np.nan
+        pixels_place_cell_relative = np.nan
+        pixels_place_cell_absolute = np.nan
+        place_field_identity = np.nan
+        
 
-    return num_of_islands, islands_x_max, islands_y_max
+    return num_of_islands, islands_x_max, islands_y_max,pixels_place_cell_absolute,pixels_place_cell_relative,place_field_identity
 
 
 def preprocess_signal(input_signal, mean_video_srate, signal_type, z_threshold=2):
