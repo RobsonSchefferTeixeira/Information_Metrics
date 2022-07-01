@@ -271,7 +271,7 @@ def field_coordinates_using_shuffled(place_field_smoothed, place_field_smoothed_
         islands_x_max = []
         pixels_above = []
         for ii in islands_id:
-            max_val = np.max(place_field_smoothed[(place_field_identity == ii)])
+            max_val = np.nanmax(place_field_smoothed[(place_field_identity == ii)])
             I_y_max, I_x_max = np.where(place_field_smoothed == max_val)
             islands_y_max.append(I_y_max[0])
             islands_x_max.append(I_x_max[0])
@@ -304,6 +304,8 @@ def field_coordinates_using_shuffled(place_field_smoothed, place_field_smoothed_
 def field_coordinates_using_threshold(place_field, visits_map,smoothing_size=1, field_threshold=2,min_num_of_pixels=4):
     
     place_field_to_smooth = np.copy(place_field)
+    I_nan = np.isnan(place_field)
+    
     place_field_to_smooth[np.isnan(place_field_to_smooth)] = 0
     place_field_smoothed = gaussian_smooth_2d(place_field_to_smooth, smoothing_size)
 
@@ -312,7 +314,10 @@ def field_coordinates_using_threshold(place_field, visits_map,smoothing_size=1, 
     field_above_threshold_binary = np.copy(place_field_smoothed)
     field_above_threshold_binary[field_above_threshold_binary < I_threshold] = 0
     field_above_threshold_binary[field_above_threshold_binary >= I_threshold] = 1
-
+    field_above_threshold_binary[I_nan] = 0
+    
+    
+    
     if np.any(field_above_threshold_binary > 0):
         sys.setrecursionlimit(10000000)
         place_field_identity = identify_islands(np.copy(field_above_threshold_binary))
@@ -332,7 +337,7 @@ def field_coordinates_using_threshold(place_field, visits_map,smoothing_size=1, 
         islands_x_max = []
         pixels_above = []
         for ii in islands_id:
-            max_val = np.max(place_field_smoothed[(place_field_identity == ii)])
+            max_val = np.nanmax(place_field_smoothed[(place_field_identity == ii)])
             I_y_max, I_x_max = np.where(place_field_smoothed == max_val)
             islands_y_max.append(I_y_max[0])
             islands_x_max.append(I_x_max[0])
@@ -494,3 +499,10 @@ def gaussian2d_kernel(s):
         x_count += 1
 
     return gaussian_kernel
+
+
+def min_max_norm(input_array):
+    
+    output_array = (input_array - np.nanmin(input_array,1).reshape([-1,1]))/(np.nanmax(input_array,1).reshape([-1,1]) - np.nanmin(input_array,1).reshape([-1,1]))
+
+    return output_array
