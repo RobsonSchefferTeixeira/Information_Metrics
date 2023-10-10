@@ -2,6 +2,9 @@ import numpy as np
 import os
 import sys
 from scipy import interpolate
+import numpy as np
+from scipy import signal as sig
+import math
 
 def get_sparsity(place_field, position_occupancy):
     position_occupancy_norm = np.nansum(position_occupancy / np.nansum(position_occupancy))
@@ -99,9 +102,9 @@ def get_position_grid(x_coordinates, y_coordinates, x_bin_size, y_bin_size, envi
 
         environment_edges = [[x_min, x_max], [y_min, y_max]]
 
-    x_grid = np.arange(environment_edges[0][0] - x_bin_size, environment_edges[0][1] + x_bin_size, x_bin_size)
+    x_grid = np.arange(environment_edges[0][0] - x_bin_size/2, environment_edges[0][1] + x_bin_size/2, x_bin_size)
 
-    y_grid = np.arange(environment_edges[1][0] - y_bin_size, environment_edges[1][1] + y_bin_size, y_bin_size)
+    y_grid = np.arange(environment_edges[1][0] - y_bin_size/2, environment_edges[1][1] + y_bin_size/2, y_bin_size)
 
     x_center_bins = x_grid[0:-1] + x_bin_size / 2
     y_center_bins = y_grid[0:-1] + y_bin_size / 2
@@ -132,9 +135,9 @@ def get_binned_2Dposition(x_coordinates, y_coordinates, x_grid, y_grid):
 
     return position_binned
 
-def get_speed(x_coordinates, y_coordinates, timevector):
+def get_speed(x_coordinates, y_coordinates, timevector,window_len=10):
     speed = np.sqrt(np.diff(x_coordinates) ** 2 + np.diff(y_coordinates) ** 2)
-    speed = smooth(speed / np.diff(timevector), window_len = 10)
+    speed = smooth(speed / np.diff(timevector), window_len = window_len)
     speed = np.hstack([speed, 0])
     return speed
 
@@ -297,7 +300,6 @@ def field_coordinates_using_shuffled(place_field_smoothed, place_field_smoothed_
         place_field_identity = np.nan
         
     return num_of_islands, islands_x_max, islands_y_max,pixels_place_cell_absolute,pixels_place_cell_relative,place_field_identity
-
 
 
 
@@ -472,37 +474,139 @@ def smooth(x, window_len=11, window='hanning'):
     return y[int(window_len / 2 - 1):-int(window_len / 2)]
 
 
-def gaussian_smooth_2d(input_matrix, s_in):
-    import numpy as np
-    from scipy import signal as sig
 
-    gaussian2d = gaussian2d_kernel(s_in)
+def gaussian_smooth_1d(input_data, sigma_points):
+    """
+    Perform 1D Gaussian smoothing on input data.
+    Notice that when using it for time series, sigma_points are set in poins, not time.
+    In order to set the correct amount of points that correspond to ms, for instance,
+    one should use it like this: sigma_points = (s/1000)*sampling_rate
+    where s in the standard deviation in ms.
 
-    smoothed_matrix = sig.convolve2d(input_matrix, gaussian2d, mode='same')
+    Parameters:
+        input_data (numpy.ndarray): The 1D input data to be smoothed.
+        sigma_points (float): The standard deviation of the Gaussian kernel in data points.
 
-    return smoothed_matrix
+    Returns:
+        smoothed_data (numpy.ndarray): The smoothed 1D data.
+    """
+    # Generate a 1D Gaussian kernel.
+    gaussian_kernel_1d = generate_1d_gaussian_kernel(sigma_points)
 
+    # Convolve the input data with the Gaussian kernel.
+    smoothed_data = sig.convolve(input_data, gaussian_kernel_1d, mode='same')
+    
+    return smoothed_data
 
-def gaussian2d_kernel(s):
-    import numpy as np
-    x_vec = np.arange(-100, 101, 1)
-    y_vec = np.arange(-100, 101, 1)
-    #     s = 2
-    gaussian_kernel = np.zeros([y_vec.shape[0], x_vec.shape[0]])
-    x_count = 0
-    for xx in x_vec:
-        y_count = 0
-        for yy in y_vec:
-            gaussian_kernel[y_count, x_count] = np.exp(-((xx ** 2 + yy ** 2) / (2 * (s ** 2))))
+def generate_1d_gaussian_kernel(sigma):
+    """
+    Generate a 1D Gaussian kernel with a specified standard deviation.
 
-            y_count += 1
-        x_count += 1
+    Parameters:
+        sigma (float): The standard deviation of the Gaussian kernel.
+
+    Returns:
+        gaussian_kernel (numpy.ndarray): The 1D Gaussian kernel.
+    """
+    x_values = np.arange(-3.0 * sigma, 3.0 * sigma + 1.0)
+    constant = 1 / (np.sqrt(2 * math.pi) * sigma)
+    gaussian_kernel = np.zeros(x_values.shape[0])
+    
+    for x_count, x_val in enumerate(x_values):
+        gaussian_kernel[x_count] = constant * np.exp(-((x_val**2) / (2 * (sigma**2))))
 
     return gaussian_kernel
 
 
-def min_max_norm(input_array):
-    
-    output_array = (input_array - np.nanmin(input_array,1).reshape([-1,1]))/(np.nanmax(input_array,1).reshape([-1,1]) - np.nanmin(input_array,1).reshape([-1,1]))
+def gaussian_smooth_2d(input_matrix, sigma_points):
+    """
+    Perform 2D Gaussian smoothing on input data.
 
-    return output_array
+    Parameters:
+        input_matrix (numpy.ndarray): The 2D input matrix to be smoothed.
+        sigma_points (float): The standard deviation of the 2D Gaussian kernel in data points.
+
+    Returns:
+        smoothed_matrix (numpy.ndarray): The smoothed 2D data.
+    """
+    # Generate a 2D Gaussian kernel.
+    gaussian_kernel_2d = generate_2d_gaussian_kernel(sigma_points)
+
+    # Convolve the input matrix with the 2D Gaussian kernel.
+    smoothed_matrix = sig.convolve2d(input_matrix, gaussian_kernel_2d, mode='same')
+
+    return smoothed_matrix
+
+def generate_2d_gaussian_kernel(sigma):
+    """
+    Generate a 2D Gaussian kernel with a specified standard deviation.
+
+    Parameters:
+        sigma (float): The standard deviation of the 2D Gaussian kernel.
+
+    Returns:
+        gaussian_kernel (numpy.ndarray): The 2D Gaussian kernel.
+    """
+    x_values = np.arange(-3.0 * sigma, 3.0 * sigma + 1.0)
+    y_values = np.arange(-3.0 * sigma, 3.0 * sigma + 1.0)
+    
+    gaussian_kernel = np.zeros([y_values.shape[0], x_values.shape[0]])
+    
+    for x_count, x_val in enumerate(x_values):
+        for y_count, y_val in enumerate(y_values):
+            gaussian_kernel[y_count, x_count] = np.exp(-((x_val**2 + y_val**2) / (2 * (sigma**2))))
+
+    return gaussian_kernel
+
+
+def min_max_norm(input_signal, axis=0, custom_min=0, custom_max=1):
+    """
+    Perform min-max normalization on an input signal with the option to set custom minimum and maximum values.
+
+    Parameters:
+        input_signal (numpy.ndarray): The input signal to be normalized.
+        axis (int, optional): The axis along which normalization is performed (default is 0).
+        custom_min (float, optional): Custom minimum value for normalization (default is 0).
+        custom_max (float, optional): Custom maximum value for normalization (default is 1).
+
+    Returns:
+        scaled_signal (numpy.ndarray): The min-max normalized signal within the custom range.
+    """
+    # Calculate the minimum and maximum values of the input signal along the specified axis,
+    # handling NaN values.
+    min_value = np.nanmin(input_signal, axis=axis, keepdims=True)
+    max_value = np.nanmax(input_signal, axis=axis, keepdims=True)
+
+    # Perform min-max normalization with custom minimum and maximum values.
+    scaled_signal = (((custom_max - custom_min) * (input_signal - min_value)) / 
+                     (max_value - min_value)) + custom_min
+
+    return scaled_signal
+
+
+def z_score_norm(input_matrix, axis=0):
+    """
+    Perform z-score normalization on an input matrix.
+
+    Parameters:
+        input_matrix (numpy.ndarray): The input matrix to be normalized.
+        axis (int, optional): The axis along which normalization is performed (default is 0).
+
+    Returns:
+        z_scored_matrix (numpy.ndarray): The z-score normalized matrix.
+    """
+    # Calculate the mean and standard deviation along the specified axis, handling NaN values.
+    mean = np.nanmean(input_matrix, axis=axis, keepdims=True)
+    std = np.nanstd(input_matrix, axis=axis, keepdims=True)
+
+    # Check for cases where all values in std are zero to avoid division by zero.
+    all_same_values = np.all(std == 0, axis=axis, keepdims=True)
+
+    # If all values in std are zero, set std to 1 to prevent division by zero.
+    std[all_same_values] = 1
+
+    # Calculate the z-scored matrix using the formula (input_matrix - mean) / std.
+    z_scored_matrix = (input_matrix - mean) / std
+
+    # Return the z-scored matrix.
+    return z_scored_matrix

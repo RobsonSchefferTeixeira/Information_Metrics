@@ -57,8 +57,7 @@ class PlaceCell:
 
             position_binned = hf.get_binned_2Dposition(x_coordinates, y_coordinates, x_grid, y_grid)
 
-            visits_bins, new_visits_times = hf.get_visits(x_coordinates, y_coordinates, position_binned,
-                                                          x_center_bins, y_center_bins)
+            visits_bins, new_visits_times = hf.get_visits(x_coordinates, y_coordinates, position_binned, x_center_bins, y_center_bins)
 
             time_spent_inside_bins = hf.get_position_time_spent(position_binned, self.video_srate)
 
@@ -73,19 +72,19 @@ class PlaceCell:
             # I_timestamps_valid = np.intersect1d(I_timestamps, np.where(I_keep)[0])
 
             I_keep_spk = np.where(I_keep)[0]
-            I_timestamps_valid = np.where(np.in1d(I_keep_spk, I_timestamps))[0]
+            # I_timestamps_valid = np.where(np.in1d(I_keep_spk, I_timestamps))[0]
+            # I_timestamps_valid = I_timestamps[np.in1d(I_timestamps,I_keep_spk)].copy()
+            I_timestamps_aux = I_timestamps[np.in1d(I_timestamps,I_keep_spk)]
+            I_timestamps_valid = I_keep_spk.searchsorted(I_timestamps_aux)
 
-            spike_rate_occupancy = self.get_spike_occupancy(I_timestamps_valid,x_coordinates_valid,y_coordinates_valid,
-                                                            x_grid,y_grid)
 
-            position_occupancy_valid = hf.get_occupancy(x_coordinates_valid, y_coordinates_valid, x_grid, y_grid,
-                                                  self.video_srate)
+            spike_rate_occupancy = self.get_spike_occupancy(I_timestamps_valid,x_coordinates_valid,y_coordinates_valid,x_grid,y_grid)
 
-            position_occupancy = hf.get_occupancy(x_coordinates,y_coordinates, x_grid, y_grid,
-                                                  self.video_srate)
+            position_occupancy_valid = hf.get_occupancy(x_coordinates_valid, y_coordinates_valid, x_grid, y_grid, self.video_srate)
 
-            visits_occupancy = hf.get_visits_occupancy(x_coordinates, y_coordinates, new_visits_times, x_grid, y_grid,
-                                                       self.min_visits)
+            position_occupancy = hf.get_occupancy(x_coordinates,y_coordinates, x_grid, y_grid, self.video_srate)
+
+            visits_occupancy = hf.get_visits_occupancy(x_coordinates, y_coordinates, new_visits_times, x_grid, y_grid,self.min_visits)
 
             place_field,place_field_smoothed = self.get_place_field(spike_rate_occupancy,position_occupancy_valid,self.smoothing_size)
 
@@ -144,7 +143,6 @@ class PlaceCell:
             inputdict['I_sec_centered'] = I_sec_centered
             inputdict['I_spk_centered'] = I_spk_centered
             inputdict['sparsity'] = sparsity
-            
             inputdict['place_field_identity'] = place_field_identity
             inputdict['num_of_islands'] = num_of_islands
             inputdict['islands_x_max'] = islands_x_max
@@ -154,7 +152,7 @@ class PlaceCell:
             inputdict['sparsity'] = sparsity
             inputdict['input_parameters'] = self.__dict__['input_parameters']
             
-            filename = hf.filename_constructor(self.saving_string,self.animal_id,self.dataset,self.day,self.neuron,self.trial)
+        filename = hf.filename_constructor(self.saving_string,self.animal_id,self.dataset,self.day,self.neuron,self.trial)
         
         if self.saving == True:
             hf.caller_saving(inputdict,filename,self.saving_path)

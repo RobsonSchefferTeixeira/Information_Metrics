@@ -100,7 +100,7 @@ class SpatialPrediction:
                 
             Input_Variable,Target_Variable = self.define_input_variables(calcium_imag_valid,position_binned_valid,time_bin=1)
 
-            concat_accuracy,concat_continuous_error,concat_mean_error = self.run_all_folds(Input_Variable,Target_Variable,x_coordinates_valid,y_coordinates_valid,self.num_of_folds,x_center_bins_repeated,y_center_bins_repeated,self.mean_video_srate)
+            concat_accuracy,concat_continuous_error,concat_mean_error,concat_continuous_accuracy = self.run_all_folds(Input_Variable,Target_Variable,x_coordinates_valid,y_coordinates_valid,self.num_of_folds,x_center_bins_repeated,y_center_bins_repeated,self.mean_video_srate)
 
             spatial_error = self.get_spatial_error(concat_continuous_error,Target_Variable,x_center_bins,y_center_bins)
             smoothed_spatial_error = self.smooth_spatial_error(spatial_error,spatial_bins=self.smoothing_size)
@@ -108,6 +108,7 @@ class SpatialPrediction:
             inputdict = dict()
             inputdict['concat_accuracy'] = concat_accuracy
             inputdict['concat_continuous_error'] = concat_continuous_error
+            inputdict['concat_continuous_accuracy'] = concat_continuous_accuracy
             inputdict['concat_mean_error'] = concat_mean_error     
             inputdict['spatial_error'] = spatial_error
             inputdict['spatial_error_smoothed'] = smoothed_spatial_error
@@ -141,13 +142,16 @@ class SpatialPrediction:
     
     def run_all_folds(self,Input_Variable,Target_Variable,x_coordinates_valid,y_coordinates_valid,num_of_folds,x_center_bins_repeated,y_center_bins_repeated,mean_video_srate):
 
+        concat_continuous_accuracy = []
         concat_continuous_error = []
         concat_mean_error = []
         concat_accuracy = []
         for fold in range(1,num_of_folds+1):
             X_train,y_train,X_test,y_test,Trials_training_set,Trials_testing_set = self.get_fold_trials(Input_Variable,Target_Variable,fold,num_of_folds)
             classifier_accuracy,y_pred,predict_proba = self.run_classifier(X_train,y_train,X_test,y_test)
-
+            
+            concat_continuous_accuracy.append((y_pred == y_test).astype(int))
+            
             x_coordinates_test = x_coordinates_valid[Trials_testing_set].copy()
             y_coordinates_test = y_coordinates_valid[Trials_testing_set].copy()
 
@@ -157,11 +161,12 @@ class SpatialPrediction:
             concat_continuous_error.append(continuous_error)
             concat_mean_error.append(mean_error)
 
+        concat_continuous_accuracy = np.concatenate(concat_continuous_accuracy)
         concat_accuracy = np.array(concat_accuracy)
         concat_continuous_error = np.concatenate(concat_continuous_error)
         concat_mean_error = np.array(concat_mean_error)
 
-        return concat_accuracy,concat_continuous_error,concat_mean_error
+        return concat_accuracy,concat_continuous_error,concat_mean_error,concat_continuous_accuracy
 
     def get_fold_trials(self,Input_Variable,Target_Variable,fold,num_of_folds):
 
@@ -170,9 +175,10 @@ class SpatialPrediction:
 
         if fold==(num_of_folds):
             Trials_testing_set =  np.arange(I_start[fold-1],Input_Variable.shape[0]).astype(int)
+        elif (fold == 0) | (fold > num_of_folds):
+            raise ValueError('Fold number must be a integer between 1 and num_of_folds') 
         else:
             Trials_testing_set =  np.arange(I_start[fold-1],I_start[fold]).astype(int)
-
 
         Trials_training_set = np.setdiff1d(range(Input_Variable.shape[0]),Trials_testing_set)
 
@@ -208,6 +214,7 @@ class SpatialPrediction:
         return accuracy_original,y_pred,predict_proba
 
 
+    
     def get_spatial_error(self,continuous_error,y_test,x_center_bins,y_center_bins):
 
         pred_dist_grid_original = np.zeros((y_center_bins.shape[0],x_center_bins.shape[0]))*np.nan
@@ -326,6 +333,7 @@ class SpatialPredictionSurrogates(SpatialPrediction):
             events_y_localization = []
             numb_events = []
             events_amp = []
+            concat_continuous_accuracy = []
             for surr in range(self.num_surrogates):
                 concat_accuracy.append(results[surr][0])
                 concat_continuous_error.append(results[surr][1])
@@ -337,10 +345,12 @@ class SpatialPredictionSurrogates(SpatialPrediction):
                 events_y_localization.append(results[surr][7])
                 numb_events.append(results[surr][8])
                 events_amp.append(results[surr][9])
+                concat_continuous_accuracy.append(results[surr][10])
 
             inputdict = dict()
             inputdict['concat_accuracy'] = concat_accuracy
             inputdict['concat_continuous_error'] = concat_continuous_error
+            inputdict['concat_continuous_accuracy'] = concat_continuous_accuracy
             inputdict['concat_mean_error'] = concat_mean_error
             inputdict['spatial_error'] = spatial_error
             inputdict['spatial_error_smoothed'] = smoothed_spatial_error
@@ -384,7 +394,7 @@ class SpatialPredictionSurrogates(SpatialPrediction):
         
         Input_Variable_Shuffled,Target_Variable = self.define_input_variables(calcium_imag_shuffled_valid,position_binned_valid,time_bin=1)
         
-        concat_accuracy,concat_continuous_error,concat_mean_error = self.run_all_folds(Input_Variable_Shuffled,Target_Variable, x_coordinates_valid,y_coordinates_valid,self.num_of_folds,x_center_bins_repeated,y_center_bins_repeated,self.mean_video_srate)
+        concat_accuracy,concat_continuous_error,concat_mean_error,concat_continuous_accuracy = self.run_all_folds(Input_Variable_Shuffled,                           Target_Variable,x_coordinates_valid,y_coordinates_valid,self.num_of_folds,x_center_bins_repeated,                                                     y_center_bins_repeated,self.mean_video_srate)
         
         spatial_error = self.get_spatial_error(concat_continuous_error,Target_Variable,x_center_bins,y_center_bins)
         smoothed_spatial_error = self.smooth_spatial_error(spatial_error,spatial_bins=2)
@@ -403,7 +413,7 @@ class SpatialPredictionSurrogates(SpatialPrediction):
             numb_events.append(I_peaks.shape[0])
             events_amp.append(np.squeeze(calcium_imag_shuffled_valid[cc,:][I_peaks]))
 
-        return concat_accuracy,concat_continuous_error,concat_mean_error,spatial_error,smoothed_spatial_error,all_I_peaks,events_x_localization,events_y_localization,numb_events,events_amp
+        return concat_accuracy,concat_continuous_error,concat_mean_error,spatial_error,smoothed_spatial_error,all_I_peaks,events_x_localization,events_y_localization,numb_events,events_amp,concat_continuous_accuracy
 
     def get_surrogate(self,input_vector,mean_video_srate,shift_time):
         input_vector = np.atleast_2d(input_vector)

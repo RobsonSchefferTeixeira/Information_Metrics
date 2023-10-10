@@ -102,23 +102,22 @@ class SpatialPrediction:
             Input_Variable, Target_Variable = self.define_input_variables(spikes_binned, position_binned_to_input,
                                                                           time_bin=1)
 
-            concat_accuracy, concat_continuous_error, concat_mean_error = self.run_all_folds(Input_Variable,
-                                                                                             Target_Variable,
-                                                                                             x_coordinates_binned,
-                                                                                             y_coordinates_binned,
-                                                                                             self.num_of_folds,
-                                                                                             x_center_bins_repeated,
-                                                                                             y_center_bins_repeated,
-                                                                                             self.mean_video_srate)
+            concat_accuracy, concat_continuous_error, concat_mean_error,concat_continuous_accuracy = self.run_all_folds(Input_Variable,
+                                                                                                                         Target_Variable,
+                                                                                                                         x_coordinates_binned,
+                                                                                                                         y_coordinates_binned,
+                                                                                                                         self.num_of_folds,
+                                                                                                                         x_center_bins_repeated,
+                                                                                                                         y_center_bins_repeated,
+                                                                                                                         self.mean_video_srate)
 
-            spatial_error = self.get_spatial_error(concat_continuous_error, Target_Variable, x_center_bins,
-                                                   y_center_bins)
-
+            spatial_error = self.get_spatial_error(concat_continuous_error, Target_Variable, x_center_bins,y_center_bins)
             smoothed_spatial_error = self.smooth_spatial_error(spatial_error, spatial_bins=self.smoothing_size)
 
             inputdict = dict()
             inputdict['concat_accuracy'] = concat_accuracy
             inputdict['concat_continuous_error'] = concat_continuous_error
+            inputdict['concat_continuous_accuracy'] = concat_continuous_accuracy
             inputdict['concat_mean_error'] = concat_mean_error
             inputdict['spatial_error'] = spatial_error
             inputdict['spatial_error_smoothed'] = smoothed_spatial_error
@@ -134,7 +133,6 @@ class SpatialPrediction:
 
             filename = hf.filename_constructor(self.saving_string, self.animal_id, self.dataset, self.day, self.neuron,
                                                self.trial)
-
             if self.saving == True:
                 hf.caller_saving(inputdict, filename, self.saving_path)
             else:
@@ -172,6 +170,7 @@ class SpatialPrediction:
 
         return spikes_binned,x_coordinates_binned,y_coordinates_binned,xy_timevector_binned
 
+    
     def define_input_variables(self, calcium_imag_valid, position_binned_valid, time_bin):
 
         calcium_imag_valid_norm = hf.min_max_norm(calcium_imag_valid)
@@ -182,6 +181,7 @@ class SpatialPrediction:
     def run_all_folds(self, Input_Variable, Target_Variable, x_coordinates_valid, y_coordinates_valid, num_of_folds,
                       x_center_bins_repeated, y_center_bins_repeated, mean_video_srate):
 
+        concat_continuous_accuracy = []
         concat_continuous_error = []
         concat_mean_error = []
         concat_accuracy = []
@@ -190,6 +190,8 @@ class SpatialPrediction:
                 Input_Variable, Target_Variable, fold, num_of_folds)
             classifier_accuracy, y_pred, predict_proba = self.run_classifier(X_train, y_train, X_test, y_test)
 
+            concat_continuous_accuracy.append((y_pred == y_test).astype(int))
+            
             x_coordinates_test = x_coordinates_valid[Trials_testing_set].copy()
             y_coordinates_test = y_coordinates_valid[Trials_testing_set].copy()
 
@@ -197,15 +199,17 @@ class SpatialPrediction:
                                                                      y_coordinates_test, x_center_bins_repeated,
                                                                      y_center_bins_repeated)
 
+            
             concat_accuracy.append(classifier_accuracy)
             concat_continuous_error.append(continuous_error)
             concat_mean_error.append(mean_error)
-
+            
+        concat_continuous_accuracy = np.concatenate(concat_continuous_accuracy)
         concat_accuracy = np.array(concat_accuracy)
         concat_continuous_error = np.concatenate(concat_continuous_error)
         concat_mean_error = np.array(concat_mean_error)
 
-        return concat_accuracy, concat_continuous_error, concat_mean_error
+        return concat_accuracy,concat_continuous_error,concat_mean_error,concat_continuous_accuracy
 
     def get_fold_trials(self, Input_Variable, Target_Variable, fold, num_of_folds):
 
@@ -302,20 +306,12 @@ class SpatialPrediction:
 
 class SpatialPredictionSurrogates(SpatialPrediction):
 
-    def main(self, calcium_imag, xy_timevector, x_coordinates, y_coordinates):
+    def main(self, I_timestamps, xy_timevector, x_coordinates, y_coordinates):
 
-        if np.all(np.isnan(calcium_imag)):
-            warnings.warn("Signal contains only NaN's")
+        if len(I_timestamps) == 0:
+            warnings.warn("Signal does not contain spikes")
             inputdict = np.nan
         else:
-
-            calcium_imag = np.atleast_2d(calcium_imag)
-            if np.any(np.isnan(calcium_imag)):
-                I_keep = ~np.isnan(calcium_imag)
-                calcium_imag = calcium_imag[:, I_keep]
-                xy_timevector = xy_timevector[I_keep]
-                x_coordinates = x_coordinates[I_keep]
-                y_coordinates = y_coordinates[I_keep]
 
             speed = hf.get_speed(x_coordinates, y_coordinates, xy_timevector)
 
@@ -327,137 +323,163 @@ class SpatialPredictionSurrogates(SpatialPrediction):
 
             visits_bins, new_visits_times = hf.get_visits(x_coordinates, y_coordinates, position_binned,
                                                           x_center_bins, y_center_bins)
+
             time_spent_inside_bins = hf.get_position_time_spent(position_binned, self.mean_video_srate)
 
-            I_keep = self.get_valid_timepoints(calcium_imag, speed, visits_bins, time_spent_inside_bins,
+            I_keep = self.get_valid_timepoints(speed, visits_bins, time_spent_inside_bins,
                                                self.min_speed_threshold, self.min_visits, self.min_time_spent)
 
-            calcium_imag_valid = calcium_imag[:, I_keep].copy()
             x_coordinates_valid = x_coordinates[I_keep].copy()
             y_coordinates_valid = y_coordinates[I_keep].copy()
             xy_timevector_valid = xy_timevector[I_keep].copy()
             visits_bins_valid = visits_bins[I_keep].copy()
             position_binned_valid = position_binned[I_keep].copy()
 
-            results = self.parallelize_surrogate(calcium_imag, I_keep, position_binned_valid, x_coordinates_valid,
-                                                 y_coordinates_valid, self.num_of_folds, x_center_bins, y_center_bins,
-                                                 self.x_bin_size, self.y_bin_size, x_center_bins_repeated,
-                                                 y_center_bins_repeated, self.mean_video_srate, self.num_cores,
-                                                 self.num_surrogates, self.shift_time)
 
+            results = self.parallelize_surrogate(I_timestamps,xy_timevector, I_keep, position_binned_valid,                                                                                                      x_coordinates_valid,y_coordinates_valid,                                                                                                          self.num_of_folds, x_center_bins, y_center_bins,                                                                                                  self.x_bin_size,self.y_bin_size,x_center_bins_repeated,                                                                                          y_center_bins_repeated,self.mean_video_srate,                                                                                                    self.shift_time,self.num_cores,self.num_surrogates,self.smoothing_size,  
+                                                               x_grid, y_grid,self.non_overlap,self.window_length)
+            
+            
             concat_accuracy = []
             concat_continuous_error = []
+            concat_continuous_accuracy = []
             concat_mean_error = []
-            I_peaks = []
             spatial_error = []
             smoothed_spatial_error = []
             numb_events = []
-            events_amp = []
-            events_x_localization = []
-            events_y_localization = []
-            spatial_error = []
-            smoothed_spatial_error = []
             all_I_peaks = []
             events_x_localization = []
             events_y_localization = []
-            numb_events = []
-            events_amp = []
+                        
             for surr in range(self.num_surrogates):
                 concat_accuracy.append(results[surr][0])
                 concat_continuous_error.append(results[surr][1])
-                concat_mean_error.append(results[surr][2])
-                spatial_error.append(results[surr][3])
-                smoothed_spatial_error.append(results[surr][4])
-                all_I_peaks.append(results[surr][5])
-                events_x_localization.append(results[surr][6])
-                events_y_localization.append(results[surr][7])
-                numb_events.append(results[surr][8])
-                events_amp.append(results[surr][9])
+                concat_continuous_accuracy.append(results[surr][2])
+                concat_mean_error.append(results[surr][3])
+                spatial_error.append(results[surr][4])
+                smoothed_spatial_error.append(results[surr][5])
+                numb_events.append(results[surr][6])
+                all_I_peaks.append(results[surr][7])
+                events_x_localization.append(results[surr][8])
+                events_y_localization.append(results[surr][9])
+                
 
+                
             inputdict = dict()
             inputdict['concat_accuracy'] = concat_accuracy
             inputdict['concat_continuous_error'] = concat_continuous_error
+            inputdict['concat_continuous_accuracy'] = concat_continuous_accuracy
             inputdict['concat_mean_error'] = concat_mean_error
             inputdict['spatial_error'] = spatial_error
             inputdict['spatial_error_smoothed'] = smoothed_spatial_error
+            inputdict['numb_events'] = numb_events
+            inputdict['events_index'] = all_I_peaks
+            inputdict['events_x_localization'] = events_x_localization
+            inputdict['events_y_localization'] = events_y_localization
+            
             inputdict['x_grid'] = x_grid
             inputdict['y_grid'] = y_grid
             inputdict['x_center_bins'] = x_center_bins
             inputdict['y_center_bins'] = y_center_bins
-            inputdict['numb_events'] = numb_events
-            inputdict['events_index'] = all_I_peaks
-            inputdict['events_amp'] = events_amp
-            inputdict['events_x_localization'] = events_x_localization
-            inputdict['events_y_localization'] = events_y_localization
+
             inputdict['input_parameters'] = self.__dict__['input_parameters']
 
             filename = hf.filename_constructor(self.saving_string, self.animal_id, self.dataset, self.day, self.neuron,
                                                self.trial)
-
             if self.saving == True:
                 hf.caller_saving(inputdict, filename, self.saving_path)
             else:
                 print('File not saved!')
 
         return inputdict
+    
+    
+    
+    
+    def parallelize_surrogate(self,I_timestamps, xy_timevector,I_keep, position_binned_valid,x_coordinates_valid, y_coordinates_valid,num_of_folds,x_center_bins, y_center_bins,x_bin_size,y_bin_size,x_center_bins_repeated, y_center_bins_repeated,mean_video_srate,shift_time,num_cores,num_surrogates,smoothing_size,x_grid, y_grid,non_overlap,window_length):
 
-    def parallelize_surrogate(self, calcium_imag, I_keep, position_binned_valid, x_coordinates_valid,
-                              y_coordinates_valid, num_of_folds, x_center_bins, y_center_bins,
-                              x_bin_size, y_bin_size, x_center_bins_repeated, y_center_bins_repeated, mean_video_srate,
-                              num_cores, num_surrogates, shift_time):
-
-        results = Parallel(n_jobs=num_cores)(
-            delayed(self.shuffle_and_run_all_folds)(calcium_imag, I_keep, position_binned_valid, x_coordinates_valid,
-                                                    y_coordinates_valid, num_of_folds, x_center_bins, y_center_bins,
-                                                    x_bin_size, y_bin_size, x_center_bins_repeated,
-                                                    y_center_bins_repeated, mean_video_srate, shift_time) for permi in
-            range(num_surrogates))
-
+        results = Parallel(n_jobs=num_cores,verbose = 1)(delayed(self.shuffle_and_run_all_folds)(I_timestamps,xy_timevector,I_keep,                                                                                        position_binned_valid, x_coordinates_valid,                                                                                                      y_coordinates_valid,                                                                                                                              num_of_folds, x_center_bins, y_center_bins,                                                                                                      x_bin_size,y_bin_size,x_center_bins_repeated,                                                                                                    y_center_bins_repeated,mean_video_srate,                                                                                                          shift_time,smoothing_size,x_grid, y_grid,non_overlap,window_length)                                                                                                        for permi in range(num_surrogates))
         return results
-
-    def shuffle_and_run_all_folds(self, calcium_imag, I_keep, position_binned_valid, x_coordinates_valid,
+    
+    
+            
+    def shuffle_and_run_all_folds(self, I_timestamps, xy_timevector,I_keep, position_binned_valid, x_coordinates_valid,
                                   y_coordinates_valid, num_of_folds, x_center_bins, y_center_bins, x_bin_size,
                                   y_bin_size, x_center_bins_repeated, y_center_bins_repeated, mean_video_srate,
-                                  shift_time):
+                                  shift_time,smoothing_size,x_grid, y_grid,non_overlap,window_length):
 
-        calcium_imag_shuffled = self.get_surrogate(calcium_imag, mean_video_srate, shift_time)
-        calcium_imag_shuffled_valid = calcium_imag_shuffled[:, I_keep].copy()
+        I_timestamps_shuffled = self.get_surrogate(I_timestamps,xy_timevector,mean_video_srate,shift_time)
+        
+        xy_timevector_valid = xy_timevector[I_keep].copy()
 
-        Input_Variable_Shuffled, Target_Variable = self.define_input_variables(calcium_imag_shuffled_valid,
-                                                                               position_binned_valid, time_bin=1)
+        I_keep_spk = np.where(I_keep)[0]
+        I_timestamps_shuffled_valid = []
+        for nn in range(len(I_timestamps_shuffled)):
+            I_timestamps_shuffled_valid.append(np.where(np.in1d(I_keep_spk, I_timestamps_shuffled[nn]))[0])
 
-        concat_accuracy, concat_continuous_error, concat_mean_error = self.run_all_folds(Input_Variable_Shuffled,
-                                                                                         Target_Variable,
-                                                                                         x_coordinates_valid,
-                                                                                         y_coordinates_valid,
-                                                                                         self.num_of_folds,
-                                                                                         x_center_bins_repeated,
-                                                                                         y_center_bins_repeated,
-                                                                                         self.mean_video_srate)
+        
+        spikes_binned,x_coordinates_binned,y_coordinates_binned,xy_timevector_binned = self.get_binned_variables(
+            I_timestamps_shuffled_valid, xy_timevector_valid, x_coordinates_valid, y_coordinates_valid, mean_video_srate,
+            window_length, non_overlap)
 
-        spatial_error = self.get_spatial_error(concat_continuous_error, Target_Variable, x_center_bins, y_center_bins)
-        smoothed_spatial_error = self.smooth_spatial_error(spatial_error, spatial_bins=2)
 
+
+        position_binned_to_input = hf.get_binned_2Dposition(x_coordinates_binned,y_coordinates_binned,x_grid, y_grid)
+
+        Input_Variable_Shuffled, Target_Variable = self.define_input_variables(spikes_binned,position_binned_to_input, time_bin=1)
+        
         all_I_peaks = []
         events_x_localization = []
         events_y_localization = []
         numb_events = []
-        events_amp = []
-        for cc in range(calcium_imag_shuffled_valid.shape[0]):
-            I_peaks = dp.detect_peaks(np.squeeze(calcium_imag_shuffled_valid[cc, :]), mpd=0.5 * self.mean_video_srate,
-                                      mph=1. * np.nanstd(np.squeeze(calcium_imag_shuffled_valid[cc, :])))
-
+        for cc in range(len(I_timestamps_shuffled_valid)):
+            I_peaks = np.squeeze(I_timestamps_shuffled_valid[cc])
             events_x_localization.append(x_coordinates_valid[I_peaks])
             events_y_localization.append(y_coordinates_valid[I_peaks])
             all_I_peaks.append(I_peaks)
             numb_events.append(I_peaks.shape[0])
-            events_amp.append(np.squeeze(calcium_imag_shuffled_valid[cc, :][I_peaks]))
 
-        return concat_accuracy, concat_continuous_error, concat_mean_error, spatial_error, smoothed_spatial_error, all_I_peaks, events_x_localization, events_y_localization, numb_events, events_amp
 
-    def get_surrogate(self, input_vector, mean_video_srate, shift_time):
-        input_vector = np.atleast_2d(input_vector)
-        I_break = np.random.choice(np.arange(-shift_time * mean_video_srate, mean_video_srate * shift_time), 1)[
-            0].astype(int)
-        input_vector_shuffled = np.concatenate([input_vector[:, I_break:], input_vector[:, 0:I_break]], 1)
-        return input_vector_shuffled
+        concat_accuracy, concat_continuous_error, concat_mean_error,concat_continuous_accuracy = self.run_all_folds(Input_Variable_Shuffled,
+                                                                                                                     Target_Variable,
+                                                                                                                     x_coordinates_binned,
+                                                                                                                     y_coordinates_binned,
+                                                                                                                     num_of_folds,
+                                                                                                                     x_center_bins_repeated,
+                                                                                                                     y_center_bins_repeated,
+                                                                                                                     mean_video_srate)
+
+        spatial_error = self.get_spatial_error(concat_continuous_error, Target_Variable, x_center_bins,y_center_bins)
+        
+        smoothed_spatial_error = self.smooth_spatial_error(spatial_error, spatial_bins=smoothing_size)
+
+        return concat_accuracy,concat_continuous_error,concat_continuous_accuracy,concat_mean_error,spatial_error,                                              smoothed_spatial_error,numb_events,all_I_peaks,events_x_localization,events_y_localization
+
+    def get_surrogate(self,I_timestamps,xy_timevector,mean_video_srate,shift_time):
+        eps = np.finfo(np.float64).eps
+        xy_timevector_hist = np.append(xy_timevector,xy_timevector[-1] + eps)
+        spike_timevector = []
+        for nn in range(len(I_timestamps)):
+            spike_timevector_aux = np.histogram(xy_timevector[I_timestamps[nn]],xy_timevector_hist)[0]
+            spike_timevector.append(spike_timevector_aux)
+        spike_timevector = np.array(spike_timevector)
+
+        I_break = np.random.choice(np.linspace(-shift_time*mean_video_srate,mean_video_srate*shift_time),1)[0].astype(int)
+        input_vector_shuffled = np.concatenate([spike_timevector[:,I_break:], spike_timevector[:,0:I_break]],1)
+
+        I_timestamps_shuffled = []
+        for nn in range(len(I_timestamps)):
+            timestamps_shuffled = np.repeat(xy_timevector, input_vector_shuffled[nn,:])
+            I_timestamps_shuffled_aux = self.searchsorted2(xy_timevector, timestamps_shuffled)
+            I_keep = np.abs(xy_timevector[I_timestamps_shuffled_aux]-timestamps_shuffled)<0.1
+            I_timestamps_shuffled.append(I_timestamps_shuffled_aux)
+
+        return I_timestamps_shuffled
+    
+    def searchsorted2(self,known_array, test_array):
+        index_sorted = np.argsort(known_array)
+        known_array_sorted = known_array[index_sorted]
+        known_array_middles = known_array_sorted[1:] - np.diff(known_array_sorted.astype('f'))/2
+        idx1 = np.searchsorted(known_array_middles, test_array)
+        indices = index_sorted[idx1]
+        return indices

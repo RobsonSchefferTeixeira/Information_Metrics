@@ -225,6 +225,38 @@ def generate_arrivals(_lambda = 0.5,total_Time=100):
 
     return All_arrival_time
 
+
+def generate_poisson_spikes(rate, duration, srate=1000):
+    """
+    Generate spiking activity based on a Poisson distribution using the inverse of the exponential CDF.
+
+    Parameters:
+        rate (float): Average firing rate in spikes per second.
+        duration (float): Duration of the spike train in seconds.
+        srate (float, optional): Sampling rate in samples per second (default is 1000).
+
+    Returns:
+        spike_times (numpy.ndarray): Array of spike times in seconds.
+    """
+    # Calculate the expected number of spikes in the given duration.
+    expected_spikes = rate * duration
+
+    # Generate spike times using the inverse of the exponential CDF.
+    spike_times = []
+    time = 0
+    while time < duration:
+        rand_value = np.random.uniform()
+        inter_spike_interval = -np.log(1 - rand_value) / rate
+        time += inter_spike_interval
+        spike_times.append(time)
+
+    # Remove any spike times that exceed the duration.
+    spike_times = np.array([t for t in spike_times if t <= duration])
+
+    return spike_times
+
+
+
 def get_bins_edges(x_coordinates,y_coordinates,x_nbins,y_nbins):
     
     x_bins = np.linspace(np.nanmin(x_coordinates),np.nanmax(x_coordinates),x_nbins)

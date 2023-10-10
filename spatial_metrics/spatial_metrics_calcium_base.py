@@ -4,6 +4,8 @@ import spatial_metrics.helper_functions as hf
 import spatial_metrics.detect_peaks as dp
 from joblib import Parallel, delayed
 from sklearn.feature_selection import mutual_info_classif
+from sklearn.feature_selection import mutual_info_regression
+
 import warnings
 
 
@@ -48,6 +50,7 @@ class PlaceCell:
 
     def main(self, calcium_imag, track_timevector, x_coordinates, y_coordinates):
 
+        
         if np.all(np.isnan(calcium_imag)):
             warnings.warn("Signal contains only NaN's")
             inputdict = np.nan
@@ -385,6 +388,7 @@ class PlaceCell:
                                                                                    x_coordinates_valid,
                                                                                    y_coordinates_valid, x_grid, y_grid,
                                                                                    smoothing_size)
+        
         mutual_info_distribution,mutual_info_distribution_bezzi = self.get_mutual_information_2d(calcium_imag_shuffled_binned,
                                                                                                   position_binned_valid,y_grid,
                                                                                                   x_grid,nbins_cal,nbins_pos,
