@@ -1,6 +1,6 @@
 import numpy as np
 import os
-import spatial_metrics.helper_functions as hf
+from spatial_metrics import helper_functions as hf
 from joblib import Parallel, delayed
 import warnings
 

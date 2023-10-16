@@ -2,8 +2,8 @@ import numpy as np
 import os
 from joblib import Parallel, delayed
 from sklearn.naive_bayes import GaussianNB
-import spatial_metrics.detect_peaks as dp
-import spatial_metrics.helper_functions as hf
+from spatial_metrics import detect_peaks as dp
+from spatial_metrics import helper_functions as hf
 import warnings
 
 

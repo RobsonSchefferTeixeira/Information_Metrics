@@ -8,13 +8,13 @@ from scipy import interpolate
 def generate_random_walk_old(input_srate = 100.,input_total_Time = 500,rho1  = 1.,sigma = 0.02,mu_e  = 0.,smooth_coeff = 0.5):
 
     # global srate
-    srate = float(np.copy(input_srate))
+    sampling_rate = float(np.copy(input_srate))
     
     # global total_Time
     total_Time = float(np.copy(input_total_Time))
     
     # global total_points
-    total_points = int(total_Time*srate)
+    total_points = int(total_Time*sampling_rate)
     
     y_coordinates    = np.zeros(total_points)
     x_coordinates    = np.zeros(total_points)
@@ -38,11 +38,11 @@ def generate_random_walk_old(input_srate = 100.,input_total_Time = 500,rho1  = 1
         else:
             x_coordinates[t] = x_coordinates[t-1]    
 
-    x_coordinates = smooth(np.squeeze(x_coordinates),round_up_to_even(int(smooth_coeff*srate)))
-    y_coordinates = smooth(np.squeeze(y_coordinates),round_up_to_even(int(smooth_coeff*srate)))
+    x_coordinates = smooth(np.squeeze(x_coordinates),round_up_to_even(int(smooth_coeff*sampling_rate)))
+    y_coordinates = smooth(np.squeeze(y_coordinates),round_up_to_even(int(smooth_coeff*sampling_rate)))
 
-    timevector = np.linspace(0,total_points/srate,total_points)
-    dt = 1/srate
+    timevector = np.linspace(0,total_points/sampling_rate,total_points)
+    dt = 1/sampling_rate
     speed = np.sqrt(np.diff(x_coordinates)**2 + np.diff(y_coordinates)**2) / dt
     speed = np.hstack([speed,0])
     
@@ -119,13 +119,13 @@ def generate_random_walk(input_srate = 100.,input_total_Time = 500,head_directio
     environment_edges = kwargs.get('environment_edges')
 
     # global srate
-    srate = float(np.copy(input_srate))
+    sampling_rate = float(np.copy(input_srate))
     
     # global total_Time
     total_Time = float(np.copy(input_total_Time))
     
     # global total_points
-    total_points = int(total_Time*srate)
+    total_points = int(total_Time*sampling_rate)
     
 
     total_points_head = int(total_Time*head_direction_srate)
@@ -148,7 +148,7 @@ def generate_random_walk(input_srate = 100.,input_total_Time = 500,head_directio
 
     total_points_spd = int(total_Time*speed_srate)
     speeds = np.zeros(total_points_spd)
-    randomspeeds = np.random.exponential(100./srate,total_points_spd)
+    randomspeeds = np.random.exponential(100./sampling_rate,total_points_spd)
     for t in range(1,total_points_spd):
         speeds[t] = randomspeeds[t-1]
 
@@ -191,16 +191,16 @@ def generate_random_walk(input_srate = 100.,input_total_Time = 500,head_directio
     y_coordinates[y_coordinates < environment_edges[1][0]] = environment_edges[1][0]
     y_coordinates[y_coordinates > environment_edges[1][1]] = environment_edges[1][1]
 
-    x_coordinates = smooth(np.squeeze(x_coordinates),round_up_to_even(int(smooth_coeff*srate)))
-    y_coordinates = smooth(np.squeeze(y_coordinates),round_up_to_even(int(smooth_coeff*srate)))
+    x_coordinates = smooth(np.squeeze(x_coordinates),round_up_to_even(int(smooth_coeff*sampling_rate)))
+    y_coordinates = smooth(np.squeeze(y_coordinates),round_up_to_even(int(smooth_coeff*sampling_rate)))
     
 
-    timevector = np.linspace(0,total_Time,total_points)
-    dt = 1/srate
+    time_vector = np.linspace(0,total_Time,total_points)
+    dt = 1/sampling_rate
     speed = np.sqrt(np.diff(x_coordinates)**2 + np.diff(y_coordinates)**2) / dt
     speed = np.hstack([speed,0])
     
-    return x_coordinates,y_coordinates,speed,timevector
+    return x_coordinates,y_coordinates,speed,time_vector
 
 
 
@@ -226,14 +226,13 @@ def generate_arrivals(_lambda = 0.5,total_Time=100):
     return All_arrival_time
 
 
-def generate_poisson_spikes(rate, duration, srate=1000):
+def generate_poisson_spikes(rate, duration):
     """
     Generate spiking activity based on a Poisson distribution using the inverse of the exponential CDF.
 
     Parameters:
         rate (float): Average firing rate in spikes per second.
         duration (float): Duration of the spike train in seconds.
-        srate (float, optional): Sampling rate in samples per second (default is 1000).
 
     Returns:
         spike_times (numpy.ndarray): Array of spike times in seconds.
@@ -297,10 +296,10 @@ def digitize_spiketimes(x_coordinates,y_coordinates,I_timestamps,x_nbins=100,y_n
     return modulated_timestamps
 
 
-def generate_calcium_signal(modulated_timestamps,total_points,srate,noise_level = 0.01, b = 5.):
+def generate_calcium_signal(modulated_timestamps,total_points,sampling_rate,noise_level = 0.01, b = 5.):
 
-    dt = 1/srate
-    timevector = np.linspace(0,total_points/srate,total_points)
+    dt = 1/sampling_rate
+    timevector = np.linspace(0,total_points/sampling_rate,total_points)
 
     I_pf_timestamps = (modulated_timestamps).astype(int)
 

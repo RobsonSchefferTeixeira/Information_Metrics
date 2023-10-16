@@ -1,11 +1,10 @@
 import numpy as np
 import os
-import spatial_metrics.helper_functions as hf
-import spatial_metrics.detect_peaks as dp
+from spatial_metrics import helper_functions as hf
+from spatial_metrics import detect_peaks as dp
 from joblib import Parallel, delayed
 from sklearn.feature_selection import mutual_info_classif
 from sklearn.feature_selection import mutual_info_regression
-
 import warnings
 
 
@@ -50,6 +49,8 @@ class PlaceCell:
 
     def main(self, calcium_imag, track_timevector, x_coordinates, y_coordinates):
 
+        warnings.filterwarnings("ignore", category=RuntimeWarning)
+        
         
         if np.all(np.isnan(calcium_imag)):
             warnings.warn("Signal contains only NaN's")
@@ -269,7 +270,7 @@ class PlaceCell:
         return I_keep
 
     def get_place_field(self, calcium_imag, x_coordinates, y_coordinates, x_grid, y_grid, smoothing_size):
-
+        warnings.filterwarnings("ignore", category=RuntimeWarning)
         # calculate mean calcium per pixel
         place_field = np.nan * np.zeros((y_grid.shape[0] - 1, x_grid.shape[0] - 1))
         for xx in range(0, x_grid.shape[0] - 1):
@@ -352,16 +353,34 @@ class PlaceCell:
 
         return results
 
-    def get_surrogate(self, input_vector, mean_video_srate, shift_time):
-        # eps = np.finfo(float).eps
+    def get_surrogate(self,input_vector, sampling_rate, shift_time):
+        """
+        Generate a surrogate signal by applying a time shift to the input vector.
 
-        I_break = np.random.choice(np.arange(-shift_time * mean_video_srate, mean_video_srate * shift_time), 1)[
-            0].astype(int)
-        # I_break = np.random.choice(np.arange(0,input_vector.shape[0]),1)[0].astype(int)
+        This function creates a surrogate signal by shifting the input vector in time 
+        while maintaining the same signal characteristics.
 
-        input_vector_shuffled = np.concatenate([input_vector[I_break:], input_vector[0:I_break]])
+        Parameters:
+            input_vector (numpy.ndarray): The input signal to generate a surrogate for.
+            sampling_rate (float): The sampling rate of the input signal (samples per second).
+            shift_time (float): The desired time shift for the surrogate signal (seconds).
+
+        Returns:
+            input_vector_shuffled (numpy.ndarray): The surrogate signal obtained by applying the time shift.
+        """
+        if len(input_vector) < np.abs(sampling_rate * shift_time):
+            # Adjust the shift time if it exceeds the length of the input signal.
+            shift_time = np.floor(len(input_vector) / sampling_rate)
+
+        # Generate a random time shift in samples within the specified range.
+        shift_samples = np.random.randint(-shift_time * sampling_rate, sampling_rate * shift_time + 1)
+
+        # Apply the time shift to create the surrogate signal.
+        input_vector_shuffled = np.concatenate([input_vector[shift_samples:], input_vector[0:shift_samples]])
+        # np.roll could be used instead
 
         return input_vector_shuffled
+
 
     def get_mutual_info_surrogate(self, calcium_imag, I_keep, position_binned_valid, mean_video_srate, shift_time,
                                   nbins_cal, nbins_pos, x_coordinates_valid, y_coordinates_valid, x_grid, y_grid,
@@ -457,6 +476,7 @@ class PlaceCell:
 
     def get_kullback_leibler_normalized(self, calcium_imag, position_binned):
 
+        warnings.filterwarnings("ignore", category=RuntimeWarning)
         position_bins = np.unique(position_binned)
         nbin = position_bins.shape[0]
 
@@ -473,6 +493,8 @@ class PlaceCell:
         return modulation_index
 
     def get_mutual_info_skaggs(self, calcium_imag, position_binned):
+        
+        warnings.filterwarnings("ignore", category=RuntimeWarning)
 
         overall_mean_amplitude = np.nanmean(calcium_imag)
 

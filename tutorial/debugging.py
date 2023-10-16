@@ -11,7 +11,6 @@ import spatial_metrics.detect_peaks as dp
 import spatial_metrics.spatial_metrics_spikes_base as pl_spk
 import spatial_metrics.spatial_prediction_spikes_base as sp_spk
 
-
 srate = 100. # points/frames per second
 total_Time = 1000 # in seconds
 _lambda = 20 # how much your neuron should spike

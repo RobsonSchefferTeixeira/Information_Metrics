@@ -102,9 +102,8 @@ def get_position_grid(x_coordinates, y_coordinates, x_bin_size, y_bin_size, envi
 
         environment_edges = [[x_min, x_max], [y_min, y_max]]
 
-    x_grid = np.arange(environment_edges[0][0] - x_bin_size/2, environment_edges[0][1] + x_bin_size/2, x_bin_size)
-
-    y_grid = np.arange(environment_edges[1][0] - y_bin_size/2, environment_edges[1][1] + y_bin_size/2, y_bin_size)
+    x_grid = np.linspace(environment_edges[0][0], environment_edges[0][1], int((environment_edges[0][1] - environment_edges[0][0])/x_bin_size)+1)
+    y_grid = np.linspace(environment_edges[1][0], environment_edges[1][1], int((environment_edges[1][1] - environment_edges[1][0])/y_bin_size)+1)
 
     x_center_bins = x_grid[0:-1] + x_bin_size / 2
     y_center_bins = y_grid[0:-1] + y_bin_size / 2
@@ -136,6 +135,7 @@ def get_binned_2Dposition(x_coordinates, y_coordinates, x_grid, y_grid):
     return position_binned
 
 def get_speed(x_coordinates, y_coordinates, timevector,window_len=10):
+    # TODO: improve this
     speed = np.sqrt(np.diff(x_coordinates) ** 2 + np.diff(y_coordinates) ** 2)
     speed = smooth(speed / np.diff(timevector), window_len = window_len)
     speed = np.hstack([speed, 0])
@@ -298,9 +298,38 @@ def field_coordinates_using_shuffled(place_field_smoothed, place_field_smoothed_
         pixels_place_cell_relative = np.nan
         pixels_place_cell_absolute = np.nan
         place_field_identity = np.nan
-        
-    return num_of_islands, islands_x_max, islands_y_max,pixels_place_cell_absolute,pixels_place_cell_relative,place_field_identity
 
+    
+    return num_of_islands, islands_x_max, islands_y_max,pixels_place_cell_absolute,pixels_place_cell_relative,correct_island_identifiers(place_field_identity)
+
+
+def correct_island_identifiers(island_ids):
+    """
+    Correct island identifiers by renumbering them sequentially starting from 0.
+
+    Parameters:
+        island_ids (numpy.ndarray): Array of island identifiers.
+
+    Returns:
+        corrected_ids (numpy.ndarray): Corrected island identifiers.
+    """
+    # Check if all island identifiers are NaN; no correction needed.
+    if np.all(np.isnan(island_ids)):
+        return island_ids
+
+    # Find unique island identifiers.
+    unique_ids = np.unique(island_ids)
+
+    # Make a copy of the original island identifiers.
+    corrected_ids = np.zeros(island_ids.shape)*np.nan
+
+    # If there is more than one unique identifier, renumber them sequentially starting from 0.
+    if len(unique_ids) > 1:
+        for new_id, old_id in enumerate(unique_ids[1:]):
+            # Update island identifiers based on the new sequential numbering.
+            corrected_ids[island_ids == old_id] = new_id
+
+    return corrected_ids
 
 
 def field_coordinates_using_threshold(place_field, visits_map,smoothing_size=1, field_threshold=2,min_num_of_pixels=4):
@@ -365,7 +394,7 @@ def field_coordinates_using_threshold(place_field, visits_map,smoothing_size=1, 
         place_field_identity = np.nan
         
 
-    return num_of_islands, islands_x_max, islands_y_max,pixels_place_cell_absolute,pixels_place_cell_relative,place_field_identity
+    return num_of_islands, islands_x_max, islands_y_max,pixels_place_cell_absolute,pixels_place_cell_relative,correct_island_identifiers(place_field_identity)
 
 
 def preprocess_signal(input_signal, mean_video_srate, signal_type, z_threshold=2):

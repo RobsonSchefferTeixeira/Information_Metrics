@@ -2,11 +2,12 @@ import numpy as np
 import os
 import sys
 from scipy import stats as stats
-import spatial_metrics.helper_functions as hf
-import spatial_metrics.detect_peaks as dp
+from spatial_metrics import helper_functions as hf
+from spatial_metrics import detect_peaks as dp
 from joblib import Parallel, delayed
 from sklearn.feature_selection import mutual_info_classif
 import warnings
+
 
 class PlaceCell:
     def __init__(self,**kwargs):
@@ -580,10 +581,3 @@ class PlaceCell:
 
         if j != col - 1:
             self.dfs(input_array,row,col,i,j+1)
-
-
-
-
-    
-    
-
