@@ -321,17 +321,39 @@ class PlaceCell:
 
         return joint_entropy
 
-    def get_entropy(self, binned_input, nbins):
+    def get_entropy(self, binned_input, num_bins):
 
+        """
+        Calculate the entropy of binned data.
+
+        Parameters:
+            binned_data (numpy.ndarray): An array of data points sorted into bins.
+            num_bins (int): The number of bins used to group the data.
+
+        Returns:
+            entropy (float): The calculated entropy of the binned data.
+        """
+        
         eps = np.finfo(float).eps
 
-        hdat = np.histogram(binned_input, nbins)[0]
+        hdat = np.histogram(binned_input, num_bins)[0]
         hdat = hdat / np.nansum(hdat)
         entropy = -np.nansum(hdat * np.log2(hdat + eps))
 
         return entropy
 
     def get_mutual_information(self, entropy1, entropy2, joint_entropy):
+        """
+        Calculate the mutual information between two random variables.
+
+        Parameters:
+            entropy1 (float): Entropy of the first random variable.
+            entropy2 (float): Entropy of the second random variable.
+            joint_entropy (float): Joint entropy of both random variables.
+
+        Returns:
+            mutual_info (float): The calculated mutual information between the random variables.
+        """
         mutual_info = entropy1 + entropy2 - joint_entropy
         return mutual_info
 
