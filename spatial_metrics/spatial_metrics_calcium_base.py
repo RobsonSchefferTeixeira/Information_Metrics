@@ -243,7 +243,18 @@ class PlaceCell:
 
 
     def get_sparsity(self, place_field, position_occupancy):
+        """
+        Calculate the sparsity of a place field with respect to position occupancy.
 
+        Parameters:
+        - place_field (numpy.ndarray): A place field map representing spatial preferences.
+        - position_occupancy (numpy.ndarray): Positional occupancy map, typically representing time spent in each spatial bin.
+
+        Returns:
+        - sparsity (float): The sparsity measure indicating how selective the place field is with respect to position occupancy.
+
+        """
+        
         position_occupancy_norm = np.nansum(position_occupancy / np.nansum(position_occupancy))
         sparsity = np.nanmean(position_occupancy_norm * place_field) ** 2 / np.nanmean(
             position_occupancy_norm * place_field ** 2)
