@@ -17,7 +17,7 @@ class PlaceCell:
         kwargs.setdefault('neuron', None)
         kwargs.setdefault('trial', None)
         kwargs.setdefault('dataset', None)
-        kwargs.setdefault('mean_video_srate', 30.)
+        kwargs.setdefault('sampling_rate', 30.)
         kwargs.setdefault('min_time_spent', 0.1)
         kwargs.setdefault('min_visits', 1)
         kwargs.setdefault('min_speed_threshold', 2.5)
@@ -35,7 +35,7 @@ class PlaceCell:
         kwargs.setdefault('percentile_threshold', 95)
         kwargs.setdefault('min_num_of_pixels', 4)
 
-        valid_kwargs = ['animal_id', 'day', 'neuron', 'dataset', 'trial', 'mean_video_srate',
+        valid_kwargs = ['animal_id', 'day', 'neuron', 'dataset', 'trial', 'sampling_rate',
                         'min_time_spent', 'min_visits', 'min_speed_threshold', 'smoothing_size',
                         'x_bin_size', 'y_bin_size', 'shift_time', 'num_cores', 'percentile_threshold','min_num_of_pixels',
                         'num_surrogates', 'saving_path', 'saving', 'saving_string', 'environment_edges', 'nbins_cal']
@@ -77,7 +77,7 @@ class PlaceCell:
 
             visits_bins, new_visits_times = hf.get_visits(x_coordinates, y_coordinates, position_binned,
                                                             x_center_bins, y_center_bins)
-            time_spent_inside_bins = hf.get_position_time_spent(position_binned, self.mean_video_srate)
+            time_spent_inside_bins = hf.get_position_time_spent(position_binned, self.sampling_rate)
 
             I_keep = self.get_valid_timepoints(calcium_imag, speed, visits_bins, time_spent_inside_bins,
                                                self.min_speed_threshold, self.min_visits, self.min_time_spent)
@@ -90,7 +90,7 @@ class PlaceCell:
             position_binned_valid = position_binned[I_keep].copy()
 
             position_occupancy = hf.get_occupancy(x_coordinates_valid, y_coordinates_valid, x_grid, y_grid,
-                                                    self.mean_video_srate)
+                                                    self.sampling_rate)
             visits_occupancy = hf.get_visits_occupancy(x_coordinates, y_coordinates, new_visits_times, x_grid, y_grid,
                                                          self.min_visits)
 
@@ -114,60 +114,60 @@ class PlaceCell:
             mutual_info_distribution, mutual_info_distribution_bezzi = self.get_mutual_information_2d(
                 calcium_imag_valid_binned,position_binned_valid, y_grid, x_grid, self.nbins_cal, nbins_pos,self.smoothing_size)
 
-            results = self.parallelize_surrogate(calcium_imag, I_keep, position_binned_valid, self.mean_video_srate,
+            results = self.parallelize_surrogate(calcium_imag, I_keep, position_binned_valid, self.sampling_rate,
                                                  self.shift_time, self.nbins_cal, nbins_pos, x_coordinates_valid,
                                                  y_coordinates_valid, x_grid, y_grid, self.smoothing_size,
                                                  self.num_cores, self.num_surrogates)
 
-            place_field_shuffled = []
-            place_field_smoothed_shuffled = []
-            mutual_info_shuffled = []
-            mutual_info_NN_shuffled = []
-            mutual_info_kullback_leibler_shuffled = []
-            mutual_info_skaggs_shuffled = []
-            mutual_info_distribution_shuffled = []
-            mutual_info_distribution_bezzi_shuffled = []
+            place_field_shifted = []
+            place_field_smoothed_shifted = []
+            mutual_info_shifted = []
+            mutual_info_NN_shifted = []
+            mutual_info_kullback_leibler_shifted = []
+            mutual_info_skaggs_shifted = []
+            mutual_info_distribution_shifted = []
+            mutual_info_distribution_bezzi_shifted = []
 
             for perm in range(self.num_surrogates):
-                mutual_info_shuffled.append(results[perm][0])
-                mutual_info_kullback_leibler_shuffled.append(results[perm][1])
-                mutual_info_NN_shuffled.append(results[perm][2])
-                mutual_info_skaggs_shuffled.append(results[perm][3])
-                place_field_shuffled.append(results[perm][4])
-                place_field_smoothed_shuffled.append(results[perm][5])
-                mutual_info_distribution_shuffled.append(results[perm][6])
-                mutual_info_distribution_bezzi_shuffled.append(results[perm][7])
+                mutual_info_shifted.append(results[perm][0])
+                mutual_info_kullback_leibler_shifted.append(results[perm][1])
+                mutual_info_NN_shifted.append(results[perm][2])
+                mutual_info_skaggs_shifted.append(results[perm][3])
+                place_field_shifted.append(results[perm][4])
+                place_field_smoothed_shifted.append(results[perm][5])
+                mutual_info_distribution_shifted.append(results[perm][6])
+                mutual_info_distribution_bezzi_shifted.append(results[perm][7])
 
-            mutual_info_NN_shuffled = np.array(mutual_info_NN_shuffled)
-            mutual_info_shuffled = np.array(mutual_info_shuffled)
-            mutual_info_kullback_leibler_shuffled = np.array(mutual_info_kullback_leibler_shuffled)
-            mutual_info_skaggs_shuffled = np.array(mutual_info_skaggs_shuffled)
-            place_field_shuffled = np.array(place_field_shuffled)
-            place_field_smoothed_shuffled = np.array(place_field_smoothed_shuffled)
-            mutual_info_distribution_shuffled = np.array(mutual_info_distribution_shuffled)
-            mutual_info_distribution_bezzi_shuffled = np.array(mutual_info_distribution_bezzi_shuffled)
+            mutual_info_NN_shifted = np.array(mutual_info_NN_shifted)
+            mutual_info_shifted = np.array(mutual_info_shifted)
+            mutual_info_kullback_leibler_shifted = np.array(mutual_info_kullback_leibler_shifted)
+            mutual_info_skaggs_shifted = np.array(mutual_info_skaggs_shifted)
+            place_field_shifted = np.array(place_field_shifted)
+            place_field_smoothed_shifted = np.array(place_field_smoothed_shifted)
+            mutual_info_distribution_shifted = np.array(mutual_info_distribution_shifted)
+            mutual_info_distribution_bezzi_shifted = np.array(mutual_info_distribution_bezzi_shifted)
 
             
 
             mutual_info_zscored, mutual_info_centered = self.get_mutual_information_zscored(mutual_info_original,
-                                                                                            mutual_info_shuffled)
+                                                                                            mutual_info_shifted)
             mutual_info_kullback_leibler_zscored, mutual_info_kullback_leibler_centered = self.get_mutual_information_zscored(
-                mutual_info_kullback_leibler_original, mutual_info_kullback_leibler_shuffled)
+                mutual_info_kullback_leibler_original, mutual_info_kullback_leibler_shifted)
 
             mutual_info_NN_zscored, mutual_info_NN_centered = self.get_mutual_information_zscored(
-                mutual_info_NN_original, mutual_info_NN_shuffled)
+                mutual_info_NN_original, mutual_info_NN_shifted)
 
             mutual_info_skaggs_zscored, mutual_info_skaggs_centered = self.get_mutual_information_zscored(
-                mutual_info_skaggs_original, mutual_info_skaggs_shuffled)
+                mutual_info_skaggs_original, mutual_info_skaggs_shifted)
 
 
 
             num_of_islands, islands_x_max, islands_y_max,pixels_place_cell_absolute,pixels_place_cell_relative,place_field_identity = \
-                hf.field_coordinates_using_shuffled(place_field_smoothed,place_field_smoothed_shuffled,visits_occupancy,
+                hf.field_coordinates_using_shifted(place_field_smoothed,place_field_smoothed_shifted,visits_occupancy,
                                                     percentile_threshold=self.percentile_threshold,
                                                     min_num_of_pixels = self.min_num_of_pixels)
 
-            I_peaks = dp.detect_peaks(calcium_imag_valid, mpd=0.5 * self.mean_video_srate,
+            I_peaks = dp.detect_peaks(calcium_imag_valid, mpd=0.5 * self.sampling_rate,
                                       mph=1. * np.nanstd(calcium_imag_valid))
             peaks_amplitude = calcium_imag_valid[I_peaks]
             x_peaks_location = x_coordinates_valid[I_peaks]
@@ -179,14 +179,14 @@ class PlaceCell:
             inputdict['place_field'] = place_field
             inputdict['place_field_smoothed'] = place_field_smoothed
 
-            inputdict['place_field_shuffled'] = place_field_shuffled
-            inputdict['place_field_smoothed_shuffled'] = place_field_smoothed_shuffled
+            inputdict['place_field_shifted'] = place_field_shifted
+            inputdict['place_field_smoothed_shifted'] = place_field_smoothed_shifted
 
             inputdict['mutual_info_distribution'] = mutual_info_distribution
             inputdict['mutual_info_distribution_bezzi'] = mutual_info_distribution_bezzi
 
-            inputdict['mutual_info_distribution_shuffled'] = mutual_info_distribution_shuffled
-            inputdict['mutual_info_distribution_bezzi_shuffled'] = mutual_info_distribution_bezzi_shuffled
+            inputdict['mutual_info_distribution_shifted'] = mutual_info_distribution_shifted
+            inputdict['mutual_info_distribution_bezzi_shifted'] = mutual_info_distribution_bezzi_shifted
 
             inputdict['occupancy_map'] = position_occupancy
             inputdict['visits_map'] = visits_occupancy
@@ -209,22 +209,22 @@ class PlaceCell:
             inputdict['place_cell_extension_relative'] = pixels_place_cell_relative
 
             inputdict['mutual_info_original'] = mutual_info_original
-            inputdict['mutual_info_shuffled'] = mutual_info_shuffled
+            inputdict['mutual_info_shifted'] = mutual_info_shifted
             inputdict['mutual_info_zscored'] = mutual_info_zscored
             inputdict['mutual_info_centered'] = mutual_info_centered
 
             inputdict['mutual_info_kullback_leibler_original'] = mutual_info_kullback_leibler_original
-            inputdict['mutual_info_kullback_leibler_shuffled'] = mutual_info_kullback_leibler_shuffled
+            inputdict['mutual_info_kullback_leibler_shifted'] = mutual_info_kullback_leibler_shifted
             inputdict['mutual_info_kullback_leibler_zscored'] = mutual_info_kullback_leibler_zscored
             inputdict['mutual_info_kullback_leibler_centered'] = mutual_info_kullback_leibler_centered
 
             inputdict['mutual_info_NN_original'] = mutual_info_NN_original
-            inputdict['mutual_info_NN_shuffled'] = mutual_info_NN_shuffled
+            inputdict['mutual_info_NN_shifted'] = mutual_info_NN_shifted
             inputdict['mutual_info_NN_zscored'] = mutual_info_NN_zscored
             inputdict['mutual_info_NN_centered'] = mutual_info_NN_centered
 
             inputdict['mutual_info_skaggs_original'] = mutual_info_skaggs_original
-            inputdict['mutual_info_skaggs_shuffled'] = mutual_info_skaggs_shuffled
+            inputdict['mutual_info_skaggs_shifted'] = mutual_info_skaggs_shifted
             inputdict['mutual_info_skaggs_zscored'] = mutual_info_skaggs_zscored
             inputdict['mutual_info_skaggs_centered'] = mutual_info_skaggs_centered
 
@@ -368,18 +368,18 @@ class PlaceCell:
         mutual_info = entropy1 + entropy2 - joint_entropy
         return mutual_info
 
-    def get_mutual_information_zscored(self, mutual_info_original, mutual_info_shuffled):
-        mutual_info_centered = mutual_info_original - np.nanmean(mutual_info_shuffled)
-        mutual_info_zscored = (mutual_info_original - np.nanmean(mutual_info_shuffled)) / np.nanstd(
-            mutual_info_shuffled)
+    def get_mutual_information_zscored(self, mutual_info_original, mutual_info_shifted):
+        mutual_info_centered = mutual_info_original - np.nanmean(mutual_info_shifted)
+        mutual_info_zscored = (mutual_info_original - np.nanmean(mutual_info_shifted)) / np.nanstd(
+            mutual_info_shifted)
 
         return mutual_info_zscored, mutual_info_centered
 
-    def parallelize_surrogate(self, calcium_imag, I_keep, position_binned_valid, mean_video_srate, shift_time,
+    def parallelize_surrogate(self, calcium_imag, I_keep, position_binned_valid, sampling_rate, shift_time,
                               nbins_cal, nbins_pos, x_coordinates_valid, y_coordinates_valid, x_grid, y_grid,
                               smoothing_size, num_cores, num_surrogates):
         results = Parallel(n_jobs=num_cores)(
-            delayed(self.get_mutual_info_surrogate)(calcium_imag, I_keep, position_binned_valid, mean_video_srate,
+            delayed(self.get_mutual_info_surrogate)(calcium_imag, I_keep, position_binned_valid, sampling_rate,
                                                     shift_time, nbins_cal, nbins_pos, x_coordinates_valid,
                                                     y_coordinates_valid, x_grid, y_grid, smoothing_size)
             for _ in range(num_surrogates))
@@ -399,7 +399,7 @@ class PlaceCell:
             shift_time (float): The desired time shift for the surrogate signal (seconds).
 
         Returns:
-            input_vector_shuffled (numpy.ndarray): The surrogate signal obtained by applying the time shift.
+            input_vector_shifted (numpy.ndarray): The surrogate signal obtained by applying the time shift.
         """
         if len(input_vector) < np.abs(sampling_rate * shift_time):
             # Adjust the shift time if it exceeds the length of the input signal.
@@ -409,45 +409,45 @@ class PlaceCell:
         shift_samples = np.random.randint(-shift_time * sampling_rate, sampling_rate * shift_time + 1)
 
         # Apply the time shift to create the surrogate signal.
-        input_vector_shuffled = np.concatenate([input_vector[shift_samples:], input_vector[0:shift_samples]])
+        input_vector_shifted = np.concatenate([input_vector[shift_samples:], input_vector[0:shift_samples]])
         # np.roll could be used instead
 
-        return input_vector_shuffled
+        return input_vector_shifted
 
 
-    def get_mutual_info_surrogate(self, calcium_imag, I_keep, position_binned_valid, mean_video_srate, shift_time,
+    def get_mutual_info_surrogate(self, calcium_imag, I_keep, position_binned_valid, sampling_rate, shift_time,
                                   nbins_cal, nbins_pos, x_coordinates_valid, y_coordinates_valid, x_grid, y_grid,
                                   smoothing_size):
 
-        calcium_imag_shuffled = self.get_surrogate(calcium_imag, mean_video_srate, shift_time)
-        calcium_imag_shuffled_valid = calcium_imag_shuffled[I_keep].copy()
+        calcium_imag_shifted = self.get_surrogate(calcium_imag, sampling_rate, shift_time)
+        calcium_imag_shifted_valid = calcium_imag_shifted[I_keep].copy()
 
-        calcium_imag_shuffled_binned = self.get_binned_signal(calcium_imag_shuffled_valid, nbins_cal)
+        calcium_imag_shifted_binned = self.get_binned_signal(calcium_imag_shifted_valid, nbins_cal)
         entropy1 = self.get_entropy(position_binned_valid, nbins_pos)
-        entropy2 = self.get_entropy(calcium_imag_shuffled_binned, nbins_cal)
-        joint_entropy = self.get_joint_entropy(position_binned_valid, calcium_imag_shuffled_binned, nbins_pos,
+        entropy2 = self.get_entropy(calcium_imag_shifted_binned, nbins_cal)
+        joint_entropy = self.get_joint_entropy(position_binned_valid, calcium_imag_shifted_binned, nbins_pos,
                                                nbins_cal)
-        mutual_info_shuffled = self.get_mutual_information(entropy1, entropy2, joint_entropy)
+        mutual_info_shifted = self.get_mutual_information(entropy1, entropy2, joint_entropy)
 
-        mutual_info_shuffled_NN = self.get_mutual_information_NN(calcium_imag_shuffled_valid, position_binned_valid)
+        mutual_info_shifted_NN = self.get_mutual_information_NN(calcium_imag_shifted_valid, position_binned_valid)
 
-        modulation_index_shuffled = self.get_kullback_leibler_normalized(calcium_imag_shuffled_valid,
+        modulation_index_shifted = self.get_kullback_leibler_normalized(calcium_imag_shifted_valid,
                                                                          position_binned_valid)
 
-        mutual_info_skaggs_shuffled = self.get_mutual_info_skaggs(calcium_imag_shuffled_valid, position_binned_valid)
+        mutual_info_skaggs_shifted = self.get_mutual_info_skaggs(calcium_imag_shifted_valid, position_binned_valid)
 
-        place_field_shuffled, place_field_smoothed_shuffled = self.get_place_field(calcium_imag_shuffled_valid,
+        place_field_shifted, place_field_smoothed_shifted = self.get_place_field(calcium_imag_shifted_valid,
                                                                                    x_coordinates_valid,
                                                                                    y_coordinates_valid, x_grid, y_grid,
                                                                                    smoothing_size)
         
-        mutual_info_distribution,mutual_info_distribution_bezzi = self.get_mutual_information_2d(calcium_imag_shuffled_binned,
+        mutual_info_distribution,mutual_info_distribution_bezzi = self.get_mutual_information_2d(calcium_imag_shifted_binned,
                                                                                                   position_binned_valid,y_grid,
                                                                                                   x_grid,nbins_cal,nbins_pos,
                                                                                                   smoothing_size)
 
-        return mutual_info_shuffled, modulation_index_shuffled, mutual_info_shuffled_NN, mutual_info_skaggs_shuffled,\
-               place_field_shuffled, place_field_smoothed_shuffled,mutual_info_distribution,mutual_info_distribution_bezzi
+        return mutual_info_shifted, modulation_index_shifted, mutual_info_shifted_NN, mutual_info_skaggs_shifted,\
+               place_field_shifted, place_field_smoothed_shifted,mutual_info_distribution,mutual_info_distribution_bezzi
 
     def get_mutual_information_2d(self,calcium_imag_binned,position_binned,y_grid,x_grid,nbins_cal,nbins_pos,smoothing_size):
 

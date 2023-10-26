@@ -244,12 +244,12 @@ def dfs(input_array, input_array2, count, row, col, i, j):
         dfs(input_array, input_array2, count, row, col, i, j + 1)
 
 
-def field_coordinates_using_shuffled(place_field_smoothed, place_field_smoothed_shuffled, visits_map, percentile_threshold=95,min_num_of_pixels=4):
+def field_coordinates_using_shifted(place_field_smoothed, place_field_smoothed_shifted, visits_map, percentile_threshold=95,min_num_of_pixels=4):
 
-    place_field_smoothed_shuffled = place_field_smoothed_shuffled.copy()
+    place_field_smoothed_shifted = place_field_smoothed_shifted.copy()
     place_field_smoothed = place_field_smoothed.copy()
 
-    place_field_threshold = np.percentile(place_field_smoothed_shuffled, percentile_threshold, 0)
+    place_field_threshold = np.percentile(place_field_smoothed_shifted, percentile_threshold, 0)
 
     field_above_threshold_binary = place_field_smoothed.copy()
     field_above_threshold_binary[field_above_threshold_binary <= place_field_threshold] = 0
@@ -639,3 +639,74 @@ def z_score_norm(input_matrix, axis=0):
 
     # Return the z-scored matrix.
     return z_scored_matrix
+
+
+def find_matching_indexes(target_timestamps, reference_time_vector,error_threshold = 0.1):
+    """
+    Find the indexes in a reference time vector that match target timestamps with some maximum error.
+    It will find the closest point in reference_time_vector such that
+    reference_time_vector[matching_indexes] - target_timestamps < error_threshold
+
+    Parameters:
+        target_timestamps (array-like): Timestamps to match in the reference time vector.
+        reference_time_vector (array-like): The reference time vector.
+
+    Returns:
+        matching_indexes (array): Indexes in the reference time vector that match the target timestamps.
+        
+        
+    """
+    if len(target_timestamps) > 0:
+        # Find the indexes in the reference time vector that correspond to target timestamps.
+        matching_indexes = search_sorted_indices(reference_time_vector, target_timestamps)
+        
+        # Filter the indexes to retain only those with a matching error less than 100 ms.
+        
+        # matching_indexes = [idx for idx in matching_indexes if abs(reference_time_vector[idx] - target_timestamps[idx]) < error_threshold]
+        I_keep = np.abs((reference_time_vector[matching_indexes]-target_timestamps)) < error_threshold
+        matching_indexes = matching_indexes[I_keep]
+
+    else:
+        matching_indexes = []
+    
+    return matching_indexes
+
+def search_sorted_indices(known_array, test_array):
+    """
+    Search for the indexes in a sorted known array that correspond to values in a test array.
+
+    Parameters:
+        known_array (array-like): The sorted array containing known values.
+        test_array (array-like): The array containing values to search for in the known array.
+
+    Returns:
+        indices (array): Indexes in the known array that correspond to values in the test array.
+    """
+    # Sort the known array and calculate the middle values between sorted elements.
+    sorted_indices = np.argsort(known_array)
+    sorted_known_array = known_array[sorted_indices]
+    middle_values = sorted_known_array[1:] - np.diff(sorted_known_array.astype('f')) / 2
+    
+    # Search for the indexes in the middle values that correspond to values in the test array.
+    search_results = np.searchsorted(middle_values, test_array)
+    indices = sorted_indices[search_results]
+    
+    return indices
+
+
+def calculate_p_value(observed_statistic, surrogate_statistics):
+    # Calculate the proportion greater than or equal to observed statistic
+    greater_proportion = np.nansum(surrogate_statistics >= observed_statistic)/surrogate_statistics.shape[0]
+    
+    # Calculate the proportion less than or equal to the negative of observed statistic
+    less_proportion = np.nansum(surrogate_statistics <= -observed_statistic)/surrogate_statistics.shape[0]
+    
+    # Combine the two proportions to obtain the two-tailed p-value
+    p_value = 2 * np.nanmin([greater_proportion, less_proportion])
+
+    # if pvl is zero, then report it as p-val less than 1/surrogate_statistics.shape[0], since this is our resolution
+    if p_value == 0:
+        
+        p_value = 1/surrogate_statistics.shape[0]
+        
+    return p_value

@@ -15,13 +15,13 @@ class SpatialPrediction:
         kwargs.setdefault('neuron', None)
         kwargs.setdefault('trial', None)
         kwargs.setdefault('dataset', None)
-        kwargs.setdefault('mean_video_srate', 30.)
+        kwargs.setdefault('sampling_rate', 30.)
         kwargs.setdefault('min_time_spent', 0.1)
         kwargs.setdefault('min_visits', 1)
         kwargs.setdefault('min_speed_threshold', 2.5)
         kwargs.setdefault('x_bin_size', 1)  # in cm
         kwargs.setdefault('y_bin_size', 1)  # in cm
-        kwargs.setdefault('environment_edges', [])  # [[x1,x2],[y1,y2]]
+        kwargs.setdefault('environment_edges', None)  # [[x1,x2],[y1,y2]]
         kwargs.setdefault('shift_time', 10)  # in seconds
         kwargs.setdefault('num_cores', 1)
         kwargs.setdefault('num_surrogates', 200)
@@ -33,7 +33,7 @@ class SpatialPrediction:
         kwargs.setdefault('non_overlap', 0.1)
         kwargs.setdefault('window_length', 0.1)
 
-        valid_kwargs = ['animal_id', 'day', 'neuron', 'dataset', 'trial', 'mean_video_srate',
+        valid_kwargs = ['animal_id', 'day', 'neuron', 'dataset', 'trial', 'sampling_rate',
                         'min_time_spent', 'min_visits', 'min_speed_threshold', 'smoothing_size',
                         'x_bin_size', 'y_bin_size', 'shift_time', 'num_cores','non_overlap',
                         'num_surrogates', 'saving_path', 'saving', 'saving_string','window_length',
@@ -64,7 +64,7 @@ class SpatialPrediction:
             visits_bins, new_visits_times = hf.get_visits(x_coordinates, y_coordinates, position_binned,
                                                           x_center_bins, y_center_bins)
 
-            time_spent_inside_bins = hf.get_position_time_spent(position_binned, self.mean_video_srate)
+            time_spent_inside_bins = hf.get_position_time_spent(position_binned, self.sampling_rate)
 
             I_keep = self.get_valid_timepoints(speed, visits_bins, time_spent_inside_bins,
                                                self.min_speed_threshold, self.min_visits, self.min_time_spent)
@@ -83,7 +83,7 @@ class SpatialPrediction:
 
 
             spikes_binned,x_coordinates_binned,y_coordinates_binned,xy_timevector_binned = self.get_binned_variables(
-                I_timestamps_valid, xy_timevector_valid, x_coordinates_valid, y_coordinates_valid, self.mean_video_srate,
+                I_timestamps_valid, xy_timevector_valid, x_coordinates_valid, y_coordinates_valid, self.sampling_rate,
                 self.window_length, self.non_overlap)
 
             position_binned_to_input = hf.get_binned_2Dposition(x_coordinates_binned,y_coordinates_binned,x_grid, y_grid)
@@ -109,7 +109,7 @@ class SpatialPrediction:
                                                                                                                          self.num_of_folds,
                                                                                                                          x_center_bins_repeated,
                                                                                                                          y_center_bins_repeated,
-                                                                                                                         self.mean_video_srate)
+                                                                                                                         self.sampling_rate)
 
             spatial_error = self.get_spatial_error(concat_continuous_error, Target_Variable, x_center_bins,y_center_bins)
             smoothed_spatial_error = self.smooth_spatial_error(spatial_error, spatial_bins=self.smoothing_size)
@@ -140,10 +140,10 @@ class SpatialPrediction:
 
         return inputdict
 
-    def get_binned_variables(self,I_timestamps,xy_timevector,x_coordinates,y_coordinates,mean_video_srate,window_length,non_overlap):
+    def get_binned_variables(self,I_timestamps,xy_timevector,x_coordinates,y_coordinates,sampling_rate,window_length,non_overlap):
 
-        window_length = window_length*mean_video_srate
-        non_overlap = non_overlap*mean_video_srate
+        window_length = window_length*sampling_rate
+        non_overlap = non_overlap*sampling_rate
 
         timevector_length = xy_timevector.shape[0]
         number_of_bins = np.floor((timevector_length - window_length) / non_overlap + 1).astype(int)
@@ -179,7 +179,7 @@ class SpatialPrediction:
         return Input_Variable, Target_Variable
 
     def run_all_folds(self, Input_Variable, Target_Variable, x_coordinates_valid, y_coordinates_valid, num_of_folds,
-                      x_center_bins_repeated, y_center_bins_repeated, mean_video_srate):
+                      x_center_bins_repeated, y_center_bins_repeated, sampling_rate):
 
         concat_continuous_accuracy = []
         concat_continuous_error = []
@@ -324,7 +324,7 @@ class SpatialPredictionSurrogates(SpatialPrediction):
             visits_bins, new_visits_times = hf.get_visits(x_coordinates, y_coordinates, position_binned,
                                                           x_center_bins, y_center_bins)
 
-            time_spent_inside_bins = hf.get_position_time_spent(position_binned, self.mean_video_srate)
+            time_spent_inside_bins = hf.get_position_time_spent(position_binned, self.sampling_rate)
 
             I_keep = self.get_valid_timepoints(speed, visits_bins, time_spent_inside_bins,
                                                self.min_speed_threshold, self.min_visits, self.min_time_spent)
@@ -336,7 +336,7 @@ class SpatialPredictionSurrogates(SpatialPrediction):
             position_binned_valid = position_binned[I_keep].copy()
 
 
-            results = self.parallelize_surrogate(I_timestamps,xy_timevector, I_keep, position_binned_valid,                                                                                                      x_coordinates_valid,y_coordinates_valid,                                                                                                          self.num_of_folds, x_center_bins, y_center_bins,                                                                                                  self.x_bin_size,self.y_bin_size,x_center_bins_repeated,                                                                                          y_center_bins_repeated,self.mean_video_srate,                                                                                                    self.shift_time,self.num_cores,self.num_surrogates,self.smoothing_size,  
+            results = self.parallelize_surrogate(I_timestamps,xy_timevector, I_keep, position_binned_valid,                                                                                                      x_coordinates_valid,y_coordinates_valid,                                                                                                          self.num_of_folds, x_center_bins, y_center_bins,                                                                                                  self.x_bin_size,self.y_bin_size,x_center_bins_repeated,                                                                                          y_center_bins_repeated,self.sampling_rate,                                                                                                    self.shift_time,self.num_cores,self.num_surrogates,self.smoothing_size,  
                                                                x_grid, y_grid,self.non_overlap,self.window_length)
             
             
@@ -396,19 +396,19 @@ class SpatialPredictionSurrogates(SpatialPrediction):
     
     
     
-    def parallelize_surrogate(self,I_timestamps, xy_timevector,I_keep, position_binned_valid,x_coordinates_valid, y_coordinates_valid,num_of_folds,x_center_bins, y_center_bins,x_bin_size,y_bin_size,x_center_bins_repeated, y_center_bins_repeated,mean_video_srate,shift_time,num_cores,num_surrogates,smoothing_size,x_grid, y_grid,non_overlap,window_length):
+    def parallelize_surrogate(self,I_timestamps, xy_timevector,I_keep, position_binned_valid,x_coordinates_valid, y_coordinates_valid,num_of_folds,x_center_bins, y_center_bins,x_bin_size,y_bin_size,x_center_bins_repeated, y_center_bins_repeated,sampling_rate,shift_time,num_cores,num_surrogates,smoothing_size,x_grid, y_grid,non_overlap,window_length):
 
-        results = Parallel(n_jobs=num_cores,verbose = 1)(delayed(self.shuffle_and_run_all_folds)(I_timestamps,xy_timevector,I_keep,                                                                                        position_binned_valid, x_coordinates_valid,                                                                                                      y_coordinates_valid,                                                                                                                              num_of_folds, x_center_bins, y_center_bins,                                                                                                      x_bin_size,y_bin_size,x_center_bins_repeated,                                                                                                    y_center_bins_repeated,mean_video_srate,                                                                                                          shift_time,smoothing_size,x_grid, y_grid,non_overlap,window_length)                                                                                                        for permi in range(num_surrogates))
+        results = Parallel(n_jobs=num_cores,verbose = 1)(delayed(self.shuffle_and_run_all_folds)(I_timestamps,xy_timevector,I_keep,                                                                                        position_binned_valid, x_coordinates_valid,                                                                                                      y_coordinates_valid,                                                                                                                              num_of_folds, x_center_bins, y_center_bins,                                                                                                      x_bin_size,y_bin_size,x_center_bins_repeated,                                                                                                    y_center_bins_repeated,sampling_rate,                                                                                                          shift_time,smoothing_size,x_grid, y_grid,non_overlap,window_length)                                                                                                        for permi in range(num_surrogates))
         return results
     
     
             
     def shuffle_and_run_all_folds(self, I_timestamps, xy_timevector,I_keep, position_binned_valid, x_coordinates_valid,
                                   y_coordinates_valid, num_of_folds, x_center_bins, y_center_bins, x_bin_size,
-                                  y_bin_size, x_center_bins_repeated, y_center_bins_repeated, mean_video_srate,
+                                  y_bin_size, x_center_bins_repeated, y_center_bins_repeated, sampling_rate,
                                   shift_time,smoothing_size,x_grid, y_grid,non_overlap,window_length):
 
-        I_timestamps_shuffled = self.get_surrogate(I_timestamps,xy_timevector,mean_video_srate,shift_time)
+        I_timestamps_shuffled = self.get_surrogate(I_timestamps,xy_timevector,sampling_rate,shift_time)
         
         xy_timevector_valid = xy_timevector[I_keep].copy()
 
@@ -419,7 +419,7 @@ class SpatialPredictionSurrogates(SpatialPrediction):
 
         
         spikes_binned,x_coordinates_binned,y_coordinates_binned,xy_timevector_binned = self.get_binned_variables(
-            I_timestamps_shuffled_valid, xy_timevector_valid, x_coordinates_valid, y_coordinates_valid, mean_video_srate,
+            I_timestamps_shuffled_valid, xy_timevector_valid, x_coordinates_valid, y_coordinates_valid, sampling_rate,
             window_length, non_overlap)
 
 
@@ -447,7 +447,7 @@ class SpatialPredictionSurrogates(SpatialPrediction):
                                                                                                                      num_of_folds,
                                                                                                                      x_center_bins_repeated,
                                                                                                                      y_center_bins_repeated,
-                                                                                                                     mean_video_srate)
+                                                                                                                     sampling_rate)
 
         spatial_error = self.get_spatial_error(concat_continuous_error, Target_Variable, x_center_bins,y_center_bins)
         
@@ -455,7 +455,7 @@ class SpatialPredictionSurrogates(SpatialPrediction):
 
         return concat_accuracy,concat_continuous_error,concat_continuous_accuracy,concat_mean_error,spatial_error,                                              smoothed_spatial_error,numb_events,all_I_peaks,events_x_localization,events_y_localization
 
-    def get_surrogate(self,I_timestamps,xy_timevector,mean_video_srate,shift_time):
+    def get_surrogate(self,I_timestamps,xy_timevector,sampling_rate,shift_time):
         eps = np.finfo(np.float64).eps
         xy_timevector_hist = np.append(xy_timevector,xy_timevector[-1] + eps)
         spike_timevector = []
@@ -464,7 +464,7 @@ class SpatialPredictionSurrogates(SpatialPrediction):
             spike_timevector.append(spike_timevector_aux)
         spike_timevector = np.array(spike_timevector)
 
-        I_break = np.random.choice(np.linspace(-shift_time*mean_video_srate,mean_video_srate*shift_time),1)[0].astype(int)
+        I_break = np.random.choice(np.linspace(-shift_time*sampling_rate,sampling_rate*shift_time),1)[0].astype(int)
         input_vector_shuffled = np.concatenate([spike_timevector[:,I_break:], spike_timevector[:,0:I_break]],1)
 
         I_timestamps_shuffled = []
