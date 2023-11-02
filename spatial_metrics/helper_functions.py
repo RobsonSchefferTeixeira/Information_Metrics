@@ -65,18 +65,18 @@ def get_visits_occupancy( x_coordinates, y_coordinates, new_visits_times, x_grid
     return visits_occupancy
 
 
-def get_position_time_spent( position_binned, mean_video_srate):
+def get_position_time_spent( position_binned, sampling_rate):
     positions_id, positions_counts = np.unique(position_binned, return_counts=True)
 
     time_spent_inside_bins = np.zeros(position_binned.shape) * np.nan
     for ids in range(positions_id.shape[0]):
         if ~np.isnan(positions_id[ids]):
             I_pos = position_binned == positions_id[ids]
-            time_spent_inside_bins[I_pos] = positions_counts[ids] / mean_video_srate
+            time_spent_inside_bins[I_pos] = positions_counts[ids] / sampling_rate
 
     return time_spent_inside_bins
 
-def get_occupancy(x_coordinates, y_coordinates, x_grid, y_grid, mean_video_srate):
+def get_occupancy(x_coordinates, y_coordinates, x_grid, y_grid, sampling_rate):
     # calculate position occupancy
     position_occupancy = np.zeros((y_grid.shape[0] - 1, x_grid.shape[0] - 1))
     for xx in range(0, x_grid.shape[0] - 1):
@@ -85,7 +85,7 @@ def get_occupancy(x_coordinates, y_coordinates, x_grid, y_grid, mean_video_srate
             check_y_occupancy = np.logical_and(y_coordinates >= y_grid[yy], y_coordinates < (y_grid[yy + 1]))
 
             position_occupancy[yy, xx] = np.sum(
-                np.logical_and(check_x_occupancy, check_y_occupancy)) / mean_video_srate
+                np.logical_and(check_x_occupancy, check_y_occupancy)) / sampling_rate
 
     position_occupancy[position_occupancy == 0] = np.nan
     return position_occupancy
@@ -142,7 +142,7 @@ def get_speed(x_coordinates, y_coordinates, timevector,window_len=10):
     return speed
 
 
-def correct_lost_tracking(x_coordinates, y_coordinates, track_timevector, mean_video_srate, min_epoch_length=1):
+def correct_lost_tracking(x_coordinates, y_coordinates, track_timevector, sampling_rate, min_epoch_length=1):
     x_coordinates_interpolated = x_coordinates.copy()
     y_coordinates_interpolated = y_coordinates.copy()
 
@@ -153,7 +153,7 @@ def correct_lost_tracking(x_coordinates, y_coordinates, track_timevector, mean_v
     for cc in range(I_start.shape[0] - 1):
         beh_index = np.arange(I_start[cc], I_start[cc + 1])
 
-        epoch_length = (beh_index.shape[0] / mean_video_srate)
+        epoch_length = (beh_index.shape[0] / sampling_rate)
         all_epoch_length.append(epoch_length)
 
         if epoch_length <= min_epoch_length:
@@ -397,8 +397,8 @@ def field_coordinates_using_threshold(place_field, visits_map,smoothing_size=1, 
     return num_of_islands, islands_x_max, islands_y_max,pixels_place_cell_absolute,pixels_place_cell_relative,correct_island_identifiers(place_field_identity)
 
 
-def preprocess_signal(input_signal, mean_video_srate, signal_type, z_threshold=2):
-    filtered_signal = eegfilt(input_signal, mean_video_srate, 0, 2, order=2)
+def preprocess_signal(input_signal, sampling_rate, signal_type, z_threshold=2):
+    filtered_signal = eegfilt(input_signal, sampling_rate, 0, 2, order=2)
     diff_signal = np.hstack([np.diff(filtered_signal), 0])
 
     if signal_type == 'Raw':
