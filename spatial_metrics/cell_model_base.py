@@ -4,6 +4,7 @@ import numpy as np
 import math
 import random
 from scipy import interpolate
+from spatial_metrics import helper_functions as hf
 
 def generate_random_walk_old(input_srate = 100.,input_total_Time = 500,rho1  = 1.,sigma = 0.02,mu_e  = 0.,smooth_coeff = 0.5):
 
@@ -112,95 +113,73 @@ def smooth(x,window_len=11,window='hanning'):
     return y[int(window_len/2-1):-int(window_len/2)]
 
 
-def generate_random_walk(input_srate = 100.,input_total_Time = 500,head_direction_srate = 10., speed_srate = 5., rho1  = 1.,sigma = 0.02,mu_e  = 0.,smooth_coeff = 0.5, **kwargs):
 
-    # x_bin_size and y_bin_size in cm
-    # environment_edges = [[x1, x2], [y1, y2]]
-    environment_edges = kwargs.get('environment_edges')
 
-    # global srate
-    sampling_rate = float(np.copy(input_srate))
-    
-    # global total_Time
-    total_Time = float(np.copy(input_total_Time))
-    
-    # global total_points
-    total_points = int(total_Time*sampling_rate)
-    
+def generate_random_walk(input_srate=100., input_total_Time=500, head_direction_srate=10.,
+                         speed_srate=5., rho1=1., sigma=0.02, mu_e=0., smooth_points=0.1, **kwargs):
 
-    total_points_head = int(total_Time*head_direction_srate)
+    if smooth_points == 0:
+        smooth_points = 1
+
+    environment_edges = kwargs.get('environment_edges', [[0, 100], [0, 100]])
+
+    sampling_rate = float(input_srate)
+    total_Time = float(input_total_Time)
+    total_points = int(total_Time * sampling_rate)
+
+    total_points_head = int(total_Time * head_direction_srate)
     head_direction = np.zeros(total_points_head)
-
-    head_direction_sigma = math.pi/4
+    
+    head_direction_sigma = math.pi / 4
     head_direction_mu = 0
-    randomphases = np.random.normal(head_direction_mu,head_direction_sigma,total_points_head)
+    random_phases = np.random.normal(head_direction_mu, head_direction_sigma, total_points_head)
 
-    for t in range(1,total_points_head):
-        head_direction[t] = np.angle(np.exp(1j*(head_direction[t-1] + randomphases[t-1])))
+    for t in range(1, total_points_head):
+        head_direction[t] = np.angle(np.exp(1j * (head_direction[t - 1] + random_phases[t - 1])))
 
-
-    y_original = head_direction.copy()
-    x_original = np.linspace(0,total_Time,head_direction.shape[0])
-    interpol_func = interpolate.interp1d(x_original,y_original,kind = 'cubic')
-    x_new = np.linspace(0,total_Time,total_points)
+    x_original = np.linspace(0, total_Time, head_direction.shape[0])
+    interpol_func = interpolate.interp1d(x_original, head_direction, kind='cubic')
+    x_new = np.linspace(0, total_Time, total_points)
     head_direction_new = interpol_func(x_new)
 
+    total_points_spd = int(total_Time * speed_srate)
+    speeds = np.random.exponential(100. / sampling_rate, total_points_spd)
+    speeds_new = np.interp(x_new, np.linspace(0, total_Time, speeds.shape[0]), speeds)
 
-    total_points_spd = int(total_Time*speed_srate)
-    speeds = np.zeros(total_points_spd)
-    randomspeeds = np.random.exponential(100./sampling_rate,total_points_spd)
-    for t in range(1,total_points_spd):
-        speeds[t] = randomspeeds[t-1]
+    y_coordinates = np.zeros(total_points)
+    x_coordinates = np.zeros(total_points)
 
-    y_original = speeds
-    x_original = np.linspace(0,total_Time,speeds.shape[0])
-    interpol_func = interpolate.interp1d(x_original,y_original,kind = 'cubic')
-    x_new = np.linspace(0,total_Time,total_points)
-    speeds_new = interpol_func(x_new)
+    x_coordinates[0] = random.uniform(*environment_edges[0])
+    y_coordinates[0] = random.uniform(*environment_edges[1])
 
+    epsy = np.random.normal(mu_e, sigma, total_points)
+    epsx = np.random.normal(mu_e, sigma, total_points)
 
-    y_coordinates    = np.zeros(total_points)
-    x_coordinates    = np.zeros(total_points)
+    for t in range(1, total_points):
+        y_coordinates[t] = y_coordinates[t - 1] + speeds_new[t] * np.sin(head_direction_new[t]) + rho1 * epsy[t]
+        x_coordinates[t] = x_coordinates[t - 1] + speeds_new[t] * np.cos(head_direction_new[t]) + rho1 * epsx[t]
 
-    epsy   = np.random.normal(mu_e,sigma,total_points) 
-    epsx   = np.random.normal(mu_e,sigma,total_points) 
-
-    for t in range(1,total_points):
-
-        y_coordinates[t] = y_coordinates[t-1] + speeds_new[t]*np.sin(head_direction_new[t]) + rho1*epsy[t]
-        x_coordinates[t] = x_coordinates[t-1] + speeds_new[t]*np.cos(head_direction_new[t]) + rho1*epsx[t]
-
-        if environment_edges:
-            if y_coordinates[t] > environment_edges[1][1] or y_coordinates[t] < environment_edges[1][0] or x_coordinates[t] > environment_edges[0][1] or x_coordinates[t] < environment_edges[0][0]:
-
-                head_direction_new = head_direction_new+math.pi
-
-                y_coordinates[t] = y_coordinates[t-1] + speeds_new[t]*np.sin(head_direction_new[t]) + rho1*epsy[t]
-                x_coordinates[t] = x_coordinates[t-1] + speeds_new[t]*np.cos(head_direction_new[t]) + rho1*epsx[t]
-        else:
+        # Ensure the animal stays within the environment
+        if x_coordinates[t] >= environment_edges[0][1] or x_coordinates[t] <= environment_edges[0][0] \
+            or y_coordinates[t] >= environment_edges[1][1] or y_coordinates[t] <= environment_edges[1][0]:
             
-            if y_coordinates[t] > 100 or y_coordinates[t] < 0 or x_coordinates[t] > 100 or x_coordinates[t] < 0:
-                head_direction_new = head_direction_new+math.pi
-
-                y_coordinates[t] = y_coordinates[t-1] + speeds_new[t]*np.sin(head_direction_new[t]) + rho1*epsy[t]
-                x_coordinates[t] = x_coordinates[t-1] + speeds_new[t]*np.cos(head_direction_new[t]) + rho1*epsx[t]
-
-    x_coordinates[x_coordinates < environment_edges[0][0]] = environment_edges[0][0]
-    x_coordinates[x_coordinates > environment_edges[0][1]] = environment_edges[0][1]
-
-    y_coordinates[y_coordinates < environment_edges[1][0]] = environment_edges[1][0]
-    y_coordinates[y_coordinates > environment_edges[1][1]] = environment_edges[1][1]
-
-    x_coordinates = smooth(np.squeeze(x_coordinates),round_up_to_even(int(smooth_coeff*sampling_rate)))
-    y_coordinates = smooth(np.squeeze(y_coordinates),round_up_to_even(int(smooth_coeff*sampling_rate)))
+            # head_direction_new[t:] += math.pi
+            head_direction_new[t:] = np.angle(np.exp(1j*(head_direction_new[t:] + math.pi)))
+            
+            y_coordinates[t] = y_coordinates[t-1] + speeds_new[t] * np.sin(head_direction_new[t])
+            x_coordinates[t] = x_coordinates[t-1] + speeds_new[t] * np.cos(head_direction_new[t])
     
-
-    time_vector = np.linspace(0,total_Time,total_points)
-    dt = 1/sampling_rate
-    speed = np.sqrt(np.diff(x_coordinates)**2 + np.diff(y_coordinates)**2) / dt
-    speed = np.hstack([speed,0])
     
-    return x_coordinates,y_coordinates,speed,time_vector
+    x_coordinates = hf.gaussian_smooth_1d(x_coordinates.squeeze(), smooth_points)
+    y_coordinates = hf.gaussian_smooth_1d(y_coordinates.squeeze(), smooth_points)
+    
+    np.clip(x_coordinates, *environment_edges[0], out=x_coordinates)
+    np.clip(y_coordinates, *environment_edges[1], out=y_coordinates)
+
+    time_vector = np.linspace(0, total_Time, total_points)
+    speed, speed_smoothed = hf.get_speed(x_coordinates, y_coordinates, time_vector, sigma_points=smooth_points)
+
+    return x_coordinates, y_coordinates, speed, speed_smoothed, time_vector
 
 
 
@@ -292,7 +271,7 @@ def digitize_spiketimes(x_coordinates,y_coordinates,I_timestamps,x_nbins=100,y_n
         random_number = random.choices([0,1], [1-gaussian_kernel[y_digitized[spk],x_digitized[spk]],gaussian_kernel[y_digitized[spk],x_digitized[spk]]])[0]
         if random_number == 1:
             modulated_timestamps.append(I_timestamps[spk])
-    modulated_timestamps = np.array(modulated_timestamps)
+    modulated_timestamps = np.array(modulated_timestamps).astype(int)
     return modulated_timestamps
 
 

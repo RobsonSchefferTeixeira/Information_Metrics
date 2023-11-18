@@ -232,7 +232,8 @@ class SpatialPrediction:
         return X_train, y_train, X_test, y_test, Trials_training_set, Trials_testing_set
 
     def run_classifier(self, X_train, y_train, X_test, y_test):
-
+        # TODO: improve this
+        
         priors_in = np.ones(np.unique(y_train).shape[0]) / np.unique(y_train).shape[0]
 
         gnb = GaussianNB(priors=priors_in)

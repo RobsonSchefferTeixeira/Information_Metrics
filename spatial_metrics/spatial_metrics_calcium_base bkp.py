@@ -22,7 +22,7 @@ class PlaceCell:
         kwargs.setdefault('min_visits', 1)
         kwargs.setdefault('min_speed_threshold', 2.5)
         kwargs.setdefault('x_bin_size', 1)
-        kwargs.setdefault('y_bin_size', None)
+        kwargs.setdefault('y_bin_size', 1)
         kwargs.setdefault('environment_edges', None)
         kwargs.setdefault('smoothing_size', 2)
         kwargs.setdefault('shift_time', 10)
@@ -34,13 +34,11 @@ class PlaceCell:
         kwargs.setdefault('nbins_cal', 10)
         kwargs.setdefault('percentile_threshold', 95)
         kwargs.setdefault('min_num_of_pixels', 4)
-        kwargs.setdefault('speed_smoothing_points', 1)
-        
 
         valid_kwargs = ['animal_id', 'day', 'neuron', 'dataset', 'trial', 'sampling_rate',
                         'min_time_spent', 'min_visits', 'min_speed_threshold', 'smoothing_size',
                         'x_bin_size', 'y_bin_size', 'shift_time', 'num_cores', 'percentile_threshold','min_num_of_pixels',
-                        'num_surrogates', 'saving_path', 'saving', 'saving_string', 'environment_edges', 'nbins_cal','speed_smoothing_points']
+                        'num_surrogates', 'saving_path', 'saving', 'saving_string', 'environment_edges', 'nbins_cal']
 
         for k, v in kwargs.items():
             if k not in valid_kwargs:
@@ -49,7 +47,7 @@ class PlaceCell:
 
         self.__dict__['input_parameters'] = kwargs
 
-    def main(self, calcium_imag, time_vector, x_coordinates, y_coordinates=None):
+    def main(self, calcium_imag, track_timevector, x_coordinates, y_coordinates):
 
         warnings.filterwarnings("ignore", category=RuntimeWarning)
         
@@ -64,17 +62,18 @@ class PlaceCell:
             if np.any(np.isnan(calcium_imag)):
                 I_keep = ~np.isnan(calcium_imag)
                 calcium_imag = calcium_imag[I_keep]
-                time_vector = time_vector[I_keep]
+                track_timevector = track_timevector[I_keep]
                 x_coordinates = x_coordinates[I_keep]
-                if y_coordinates is not None:
-                    y_coordinates = y_coordinates[I_keep]
+                y_coordinates = y_coordinates[I_keep]
 
     
-            _,speed = hf.get_speed(x_coordinates, y_coordinates, time_vector,sigma_points=self.speed_smoothing_points)
+            speed = hf.get_speed(x_coordinates, y_coordinates, track_timevector)
 
-            x_grid, y_grid, x_center_bins, y_center_bins, x_center_bins_repeated, y_center_bins_repeated = hf.get_position_grid(x_coordinates, y_coordinates, self.x_bin_size,self.y_bin_size, environment_edges=self.environment_edges)
+            x_grid, y_grid, x_center_bins, y_center_bins, x_center_bins_repeated, y_center_bins_repeated = \
+                hf.get_position_grid(x_coordinates, y_coordinates, self.x_bin_size,
+                                       self.y_bin_size, environment_edges=self.environment_edges)
 
-            position_binned = hf.get_binned_position(x_coordinates, y_coordinates, x_grid, y_grid)
+            position_binned = hf.get_binned_2Dposition(x_coordinates, y_coordinates, x_grid, y_grid)
 
             visits_bins, new_visits_times = hf.get_visits(x_coordinates, y_coordinates, position_binned,
                                                             x_center_bins, y_center_bins)
@@ -86,7 +85,7 @@ class PlaceCell:
             calcium_imag_valid = calcium_imag[I_keep].copy()
             x_coordinates_valid = x_coordinates[I_keep].copy()
             y_coordinates_valid = y_coordinates[I_keep].copy()
-            time_vector_valid = time_vector[I_keep].copy()
+            track_timevector_valid = track_timevector[I_keep].copy()
             visits_bins_valid = visits_bins[I_keep].copy()
             position_binned_valid = position_binned[I_keep].copy()
 
@@ -110,9 +109,6 @@ class PlaceCell:
             mutual_info_kullback_leibler_original = self.get_kullback_leibler_normalized(calcium_imag_valid,
                                                                                          position_binned_valid)
             mutual_info_NN_original = self.get_mutual_information_NN(calcium_imag_valid, position_binned_valid)
-            
-            mutual_info_regression_original = self.get_mutual_information_regression(calcium_imag_valid, position_binned_valid)
-
             mutual_info_skaggs_original = self.get_mutual_info_skaggs(calcium_imag_valid, position_binned_valid)
 
             mutual_info_distribution, mutual_info_distribution_bezzi = self.get_mutual_information_2d(
@@ -131,7 +127,6 @@ class PlaceCell:
             mutual_info_skaggs_shifted = []
             mutual_info_distribution_shifted = []
             mutual_info_distribution_bezzi_shifted = []
-            mutual_info_regression_shifted = []
 
             for perm in range(self.num_surrogates):
                 mutual_info_shifted.append(results[perm][0])
@@ -142,7 +137,6 @@ class PlaceCell:
                 place_field_smoothed_shifted.append(results[perm][5])
                 mutual_info_distribution_shifted.append(results[perm][6])
                 mutual_info_distribution_bezzi_shifted.append(results[perm][7])
-                mutual_info_regression_shifted.append(results[perm][8])
 
             mutual_info_NN_shifted = np.array(mutual_info_NN_shifted)
             mutual_info_shifted = np.array(mutual_info_shifted)
@@ -152,7 +146,7 @@ class PlaceCell:
             place_field_smoothed_shifted = np.array(place_field_smoothed_shifted)
             mutual_info_distribution_shifted = np.array(mutual_info_distribution_shifted)
             mutual_info_distribution_bezzi_shifted = np.array(mutual_info_distribution_bezzi_shifted)
-            mutual_info_regression_shifted = np.array(mutual_info_regression_shifted)
+
             
 
             mutual_info_zscored, mutual_info_centered = self.get_mutual_information_zscored(mutual_info_original,
@@ -166,8 +160,6 @@ class PlaceCell:
             mutual_info_skaggs_zscored, mutual_info_skaggs_centered = self.get_mutual_information_zscored(
                 mutual_info_skaggs_original, mutual_info_skaggs_shifted)
 
-            mutual_info_regression_zscored, mutual_info_regression_centered = self.get_mutual_information_zscored(
-                mutual_info_regression_original, mutual_info_regression_shifted)
 
 
             num_of_islands, islands_x_max, islands_y_max,pixels_place_cell_absolute,pixels_place_cell_relative,place_field_identity = \
@@ -230,11 +222,6 @@ class PlaceCell:
             inputdict['mutual_info_NN_shifted'] = mutual_info_NN_shifted
             inputdict['mutual_info_NN_zscored'] = mutual_info_NN_zscored
             inputdict['mutual_info_NN_centered'] = mutual_info_NN_centered
-
-            inputdict['mutual_info_regression_original'] = mutual_info_regression_original
-            inputdict['mutual_info_regression_shifted'] = mutual_info_regression_shifted
-            inputdict['mutual_info_regression_zscored'] = mutual_info_regression_zscored
-            inputdict['mutual_info_regression_centered'] = mutual_info_regression_centered
 
             inputdict['mutual_info_skaggs_original'] = mutual_info_skaggs_original
             inputdict['mutual_info_skaggs_shifted'] = mutual_info_skaggs_shifted
@@ -313,16 +300,9 @@ class PlaceCell:
 
     def get_mutual_information_NN(self, calcium_imag, position_binned):
         mutual_info_NN_original = \
-        mutual_info_classif(calcium_imag.reshape(-1, 1), position_binned, discrete_features=False)[0]
+        mutual_info_classif(calcium_imag.reshape(-1, 1), position_binned, discrete_features=False, n_neighbors=5)[0]
 
         return mutual_info_NN_original
-
-    def get_mutual_information_regression(self, calcium_imag, position_binned):
-        mutual_info_regression_original = \
-        mutual_info_regression(calcium_imag.reshape(-1, 1), position_binned, discrete_features=False)[0]
-
-        return mutual_info_regression_original
-    
 
     def get_binned_signal(self, calcium_imag, nbins_cal):
 
@@ -451,8 +431,6 @@ class PlaceCell:
 
         mutual_info_shifted_NN = self.get_mutual_information_NN(calcium_imag_shifted_valid, position_binned_valid)
 
-        mutual_info_shifted_regression = self.get_mutual_information_regression(calcium_imag_shifted_valid, position_binned_valid)
-
         modulation_index_shifted = self.get_kullback_leibler_normalized(calcium_imag_shifted_valid,
                                                                          position_binned_valid)
 
@@ -469,7 +447,7 @@ class PlaceCell:
                                                                                                   smoothing_size)
 
         return mutual_info_shifted, modulation_index_shifted, mutual_info_shifted_NN, mutual_info_skaggs_shifted,\
-               place_field_shifted, place_field_smoothed_shifted,mutual_info_distribution,mutual_info_distribution_bezzi,mutual_info_shifted_regression
+               place_field_shifted, place_field_smoothed_shifted,mutual_info_distribution,mutual_info_distribution_bezzi
 
     def get_mutual_information_2d(self,calcium_imag_binned,position_binned,y_grid,x_grid,nbins_cal,nbins_pos,smoothing_size):
 

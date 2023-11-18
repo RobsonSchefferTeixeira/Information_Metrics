@@ -6,12 +6,116 @@ import numpy as np
 from scipy import signal as sig
 import math
 
+
+def identify_islands_1D(input_array):
+    length = len(input_array)
+    count = 0
+    input_array2 = np.copy(input_array)
+
+    for i in range(length):
+        if input_array[i] == 1:
+            count += 1
+            dfs_1D(input_array, input_array2, count, length, i)
+
+    return input_array2
+
+
+def dfs_1D(input_array, input_array2, count, length, i):
+    if input_array[i] == 0:
+        return
+    input_array[i] = 0
+    input_array2[i] = count
+
+    if i != 0:
+        dfs_1D(input_array, input_array2, count, length, i - 1)
+
+    if i != length - 1:
+        dfs_1D(input_array, input_array2, count, length, i + 1)
+
+
+def field_coordinates_using_shifted_1D(place_field, place_field_shifted, visits_map, percentile_threshold=95,min_num_of_pixels=4):
+
+    place_field_threshold = np.percentile(place_field_shifted, percentile_threshold, 0)
+
+    field_above_threshold_binary = place_field.copy()
+    field_above_threshold_binary[field_above_threshold_binary <= place_field_threshold] = 0
+    field_above_threshold_binary[field_above_threshold_binary > place_field_threshold] = 1
+
+    if np.any(field_above_threshold_binary > 0):
+        sys.setrecursionlimit(10000000)
+        place_field_identity = identify_islands_1D(np.copy(field_above_threshold_binary))
+        num_of_islands_pre = np.unique(place_field_identity)[1:].shape[0]
+
+        num_of_islands = 0
+        for ii in range(1, num_of_islands_pre + 1):
+            if np.where(place_field_identity == ii)[0].shape[0] > min_num_of_pixels:
+                num_of_islands += 1
+            else:
+                place_field_identity[np.where(place_field_identity == ii)] = 0
+
+
+        islands_id = np.unique(place_field_identity[~np.isnan(place_field_identity)])[1:]
+        islands_x_max = []
+        pixels_above = []
+        for ii in islands_id:
+            max_val = np.nanmax(place_field[(place_field_identity == ii)])
+            I_x_max = np.where(place_field == max_val)
+            islands_x_max.append(I_x_max[0])
+
+            pixels_above.append(np.nansum(place_field_identity == ii))
+
+        islands_x_max = np.squeeze(islands_x_max)
+        pixels_above = np.array(pixels_above)
+
+        total_visited_pixels = np.nansum(visits_map != 0)
+        pixels_total = place_field.shape[0]
+
+        pixels_place_cell_relative = pixels_above / total_visited_pixels
+        pixels_place_cell_absolute = pixels_above / pixels_total
+
+    else:
+        num_of_islands = 0
+        islands_x_max = np.nan
+        pixels_place_cell_relative = np.nan
+        pixels_place_cell_absolute = np.nan
+        place_field_identity = np.nan
+
+
+    return num_of_islands, islands_x_max,pixels_place_cell_absolute,pixels_place_cell_relative,correct_island_identifiers(place_field_identity)
+
+
+
 def get_sparsity(place_field, position_occupancy):
     position_occupancy_norm = np.nansum(position_occupancy / np.nansum(position_occupancy))
     sparsity = np.nanmean(position_occupancy_norm * place_field) ** 2 / np.nanmean(
         position_occupancy_norm * place_field ** 2)
 
     return sparsity
+
+def get_visits_1D( x_coordinates,position_binned, x_center_bins):
+    I_x_coord = []
+
+    for xx in range(0, x_coordinates.shape[0]):
+        if np.isnan(x_coordinates[xx]):
+            I_x_coord.append(np.nan)
+        else:
+            I_x_coord.append(np.nanargmin(np.abs(x_coordinates[xx] - x_center_bins)))
+
+    I_x_coord = np.array(I_x_coord)
+
+    dx = np.diff(np.hstack([I_x_coord[0] - 1, I_x_coord]))
+
+    new_visits_times = ((dx != 0) & (~np.isnan(dx)))
+
+    visits_id, visits_counts = np.unique(position_binned[new_visits_times], return_counts=True)
+
+    visits_bins = np.zeros(position_binned.shape) * np.nan
+    for ids in range(visits_id.shape[0]):
+        if ~np.isnan(visits_id[ids]):
+            I_pos = position_binned == visits_id[ids]
+            visits_bins[I_pos] = visits_counts[ids]
+
+    return visits_bins, new_visits_times * 1
 
 def get_visits( x_coordinates, y_coordinates, position_binned, x_center_bins, y_center_bins):
     I_x_coord = []
@@ -42,6 +146,22 @@ def get_visits( x_coordinates, y_coordinates, position_binned, x_center_bins, y_
             visits_bins[I_pos] = visits_counts[ids]
 
     return visits_bins, new_visits_times * 1
+
+def get_visits_occupancy_1D( x_coordinates, new_visits_times, x_grid, min_visits=1):
+    I_visit = np.where(new_visits_times > 0)[0]
+
+    x_coordinate_visit = x_coordinates[I_visit]
+
+    visits_occupancy = np.zeros(x_grid.shape[0] - 1) * np.nan
+    for xx in range(0, x_grid.shape[0] - 1):
+        check_x_occupancy = np.logical_and(x_coordinate_visit >= x_grid[xx],
+                                               x_coordinate_visit < (x_grid[xx + 1]))
+
+        visits_occupancy[xx] = np.sum(check_x_occupancy)
+
+    visits_occupancy[visits_occupancy < min_visits] = np.nan
+
+    return visits_occupancy
 
 
 def get_visits_occupancy( x_coordinates, y_coordinates, new_visits_times, x_grid, y_grid, min_visits=1):
@@ -76,6 +196,17 @@ def get_position_time_spent( position_binned, sampling_rate):
 
     return time_spent_inside_bins
 
+
+def get_occupancy_1D(x_coordinates, x_grid, sampling_rate):
+    # calculate position occupancy
+    position_occupancy = np.zeros(x_grid.shape[0] - 1)
+    for xx in range(0, x_grid.shape[0] - 1):
+        check_x_occupancy = np.logical_and(x_coordinates >= x_grid[xx], x_coordinates < (x_grid[xx + 1]))
+        position_occupancy[xx] = np.sum(check_x_occupancy)/sampling_rate
+
+    position_occupancy[position_occupancy == 0] = np.nan
+    return position_occupancy
+
 def get_occupancy(x_coordinates, y_coordinates, x_grid, y_grid, sampling_rate):
     # calculate position occupancy
     position_occupancy = np.zeros((y_grid.shape[0] - 1, x_grid.shape[0] - 1))
@@ -90,56 +221,152 @@ def get_occupancy(x_coordinates, y_coordinates, x_grid, y_grid, sampling_rate):
     position_occupancy[position_occupancy == 0] = np.nan
     return position_occupancy
 
-def get_position_grid(x_coordinates, y_coordinates, x_bin_size, y_bin_size, environment_edges=None):
+def get_position_grid_1D(x_coordinates, x_bin_size=1, environment_edges=None):
     # x_bin_size and y_bin_size in cm
     # environment_edges = [[x1, x2], [y1, y2]]
 
-    if environment_edges == None:
+
+    if environment_edges is None:
         x_min = np.nanmin(x_coordinates)
-        x_max = np.nanmax(x_coordinates)
-        y_min = np.nanmin(y_coordinates)
-        y_max = np.nanmax(y_coordinates)
+        x_max = np.nanmax(x_coordinates)    
+        environment_edges = [[x_min, x_max]]
+    
+    x_grid = np.linspace(environment_edges[0][0], environment_edges[0][1], int((environment_edges[0][1] - environment_edges[0][0]) / x_bin_size) + 1)
+    x_center_bins = x_grid[:-1] + x_bin_size / 2
+    x_center_bins_repeated = np.repeat(x_center_bins, x_center_bins.shape[0])
 
-        environment_edges = [[x_min, x_max], [y_min, y_max]]
 
-    x_grid = np.linspace(environment_edges[0][0], environment_edges[0][1], int((environment_edges[0][1] - environment_edges[0][0])/x_bin_size)+1)
-    y_grid = np.linspace(environment_edges[1][0], environment_edges[1][1], int((environment_edges[1][1] - environment_edges[1][0])/y_bin_size)+1)
+    return x_grid, x_center_bins, x_center_bins_repeated
 
-    x_center_bins = x_grid[0:-1] + x_bin_size / 2
-    y_center_bins = y_grid[0:-1] + y_bin_size / 2
 
-    x_center_bins_repeated = np.repeat(x_center_bins, y_center_bins.shape[0])
-    y_center_bins_repeated = np.tile(y_center_bins, x_center_bins.shape[0])
+def get_position_grid(x_coordinates, y_coordinates=None, x_bin_size=1, y_bin_size=None, environment_edges=None):
+    # x_bin_size and y_bin_size in cm
+    # environment_edges = [[x1, x2], [y1, y2]]
+
+    if y_coordinates is None:
+        # 1D tracking
+    
+        if environment_edges is None:
+            x_min = np.nanmin(x_coordinates)
+            x_max = np.nanmax(x_coordinates)    
+            environment_edges = [[x_min, x_max]]
+        
+        x_grid = np.linspace(environment_edges[0][0], environment_edges[0][1], int((environment_edges[0][1] - environment_edges[0][0]) / x_bin_size) + 1)
+        x_center_bins = x_grid[:-1] + x_bin_size / 2
+        x_center_bins_repeated = np.repeat(x_center_bins, x_center_bins.shape[0])
+
+        y_grid = np.nan
+        y_center_bins = np.nan
+        y_center_bins_repeated = np.nan
+
+    else:
+        # 2D tracking
+        if environment_edges is None:
+            x_min = np.nanmin(x_coordinates)
+            x_max = np.nanmax(x_coordinates)
+            y_min = np.nanmin(y_coordinates)
+            y_max = np.nanmax(y_coordinates)
+    
+            environment_edges = [[x_min, x_max], [y_min, y_max]]
+
+            
+        x_grid = np.linspace(environment_edges[0][0], environment_edges[0][1], int((environment_edges[0][1] - environment_edges[0][0]) / x_bin_size) + 1)
+        y_grid = np.linspace(environment_edges[1][0], environment_edges[1][1], int((environment_edges[1][1] - environment_edges[1][0]) / y_bin_size) + 1)
+    
+        x_center_bins = x_grid[:-1] + x_bin_size / 2
+        y_center_bins = y_grid[:-1] + y_bin_size / 2
+    
+        x_center_bins_repeated = np.repeat(x_center_bins, y_center_bins.shape[0])
+        y_center_bins_repeated = np.tile(y_center_bins, x_center_bins.shape[0])
+    
+        # TODO: check if this way is better for spatial prediction
+        # x_center_bins_repeated, y_center_bins_repeated = np.meshgrid(x_center_bins, y_center_bins)
+        # x_center_bins_repeated = x_center_bins_repeated.flatten()
+        # y_center_bins_repeated = y_center_bins_repeated.flatten()
 
     return x_grid, y_grid, x_center_bins, y_center_bins, x_center_bins_repeated, y_center_bins_repeated
 
-def get_binned_2Dposition(x_coordinates, y_coordinates, x_grid, y_grid):
+
+def get_binned_position_1D(x_coordinates, x_grid = None):
     # calculate position occupancy
+
     position_binned = np.zeros(x_coordinates.shape) * np.nan
     count = 0
     for xx in range(0, x_grid.shape[0] - 1):
-        for yy in range(0, y_grid.shape[0] - 1):
+        if xx == x_grid.shape[0] - 2:
+            check_x_occupancy = np.logical_and(x_coordinates >= x_grid[xx], x_coordinates <= (x_grid[xx + 1]))
+        else:
+            check_x_occupancy = np.logical_and(x_coordinates >= x_grid[xx], x_coordinates < (x_grid[xx + 1]))
+
+        position_binned[check_x_occupancy] = count
+        count += 1
+
+
+    return position_binned
+
+def get_binned_position(x_coordinates, y_coordinates = None, x_grid = None, y_grid = None):
+    # calculate position occupancy
+
+    if y_coordinates is None:
+        position_binned = np.zeros(x_coordinates.shape) * np.nan
+        count = 0
+        for xx in range(0, x_grid.shape[0] - 1):
             if xx == x_grid.shape[0] - 2:
                 check_x_occupancy = np.logical_and(x_coordinates >= x_grid[xx], x_coordinates <= (x_grid[xx + 1]))
             else:
                 check_x_occupancy = np.logical_and(x_coordinates >= x_grid[xx], x_coordinates < (x_grid[xx + 1]))
 
-            if yy == y_grid.shape[0] - 2:
-                check_y_occupancy = np.logical_and(y_coordinates >= y_grid[yy], y_coordinates <= (y_grid[yy + 1]))
-            else:
-                check_y_occupancy = np.logical_and(y_coordinates >= y_grid[yy], y_coordinates < (y_grid[yy + 1]))
-
-            position_binned[np.logical_and(check_x_occupancy, check_y_occupancy)] = count
+            position_binned[check_x_occupancy] = count
             count += 1
+
+
+    else:
+            
+        position_binned = np.zeros(x_coordinates.shape) * np.nan
+        count = 0
+        for xx in range(0, x_grid.shape[0] - 1):
+            for yy in range(0, y_grid.shape[0] - 1):
+                if xx == x_grid.shape[0] - 2:
+                    check_x_occupancy = np.logical_and(x_coordinates >= x_grid[xx], x_coordinates <= (x_grid[xx + 1]))
+                else:
+                    check_x_occupancy = np.logical_and(x_coordinates >= x_grid[xx], x_coordinates < (x_grid[xx + 1]))
+
+                if yy == y_grid.shape[0] - 2:
+                    check_y_occupancy = np.logical_and(y_coordinates >= y_grid[yy], y_coordinates <= (y_grid[yy + 1]))
+                else:
+                    check_y_occupancy = np.logical_and(y_coordinates >= y_grid[yy], y_coordinates < (y_grid[yy + 1]))
+
+                position_binned[np.logical_and(check_x_occupancy, check_y_occupancy)] = count
+                count += 1
 
     return position_binned
 
-def get_speed(x_coordinates, y_coordinates, timevector,window_len=10):
-    # TODO: improve this
-    speed = np.sqrt(np.diff(x_coordinates) ** 2 + np.diff(y_coordinates) ** 2)
-    speed = smooth(speed / np.diff(timevector), window_len = window_len)
+def get_speed_1D(x_coordinates, time_vector,sigma_points=1):
+    
+    distances = np.abs(np.diff(x_coordinates))
+ 
+    time_vector_diff = np.diff(time_vector)
+
+    speed = np.divide(distances, time_vector_diff)
     speed = np.hstack([speed, 0])
-    return speed
+    speed_smoothed = gaussian_smooth_1d(speed, sigma_points)
+
+    return speed,speed_smoothed
+
+def get_speed(x_coordinates, y_coordinates, time_vector,sigma_points=1):
+    
+    if y_coordinates is None:
+        distances = np.abs(np.diff(x_coordinates))
+    else:
+        distances = np.sqrt(np.diff(x_coordinates)**2 + np.diff(y_coordinates)**2)
+ 
+    time_vector_diff = np.diff(time_vector)
+
+    speed = np.divide(distances, time_vector_diff)
+    speed = np.hstack([speed, 0])
+    speed_smoothed = gaussian_smooth_1d(speed, sigma_points)
+
+    return speed,speed_smoothed
 
 
 def correct_lost_tracking(x_coordinates, y_coordinates, track_timevector, sampling_rate, min_epoch_length=1):
@@ -244,14 +471,11 @@ def dfs(input_array, input_array2, count, row, col, i, j):
         dfs(input_array, input_array2, count, row, col, i, j + 1)
 
 
-def field_coordinates_using_shifted(place_field_smoothed, place_field_smoothed_shifted, visits_map, percentile_threshold=95,min_num_of_pixels=4):
+def field_coordinates_using_shifted(place_field, place_field_shifted, visits_map, percentile_threshold=95,min_num_of_pixels=4):
 
-    place_field_smoothed_shifted = place_field_smoothed_shifted.copy()
-    place_field_smoothed = place_field_smoothed.copy()
+    place_field_threshold = np.percentile(place_field_shifted, percentile_threshold, 0)
 
-    place_field_threshold = np.percentile(place_field_smoothed_shifted, percentile_threshold, 0)
-
-    field_above_threshold_binary = place_field_smoothed.copy()
+    field_above_threshold_binary = place_field.copy()
     field_above_threshold_binary[field_above_threshold_binary <= place_field_threshold] = 0
     field_above_threshold_binary[field_above_threshold_binary > place_field_threshold] = 1
 
@@ -260,22 +484,21 @@ def field_coordinates_using_shifted(place_field_smoothed, place_field_smoothed_s
         place_field_identity = identify_islands(np.copy(field_above_threshold_binary))
         num_of_islands_pre = np.unique(place_field_identity)[1:].shape[0]
 
-        island_counter = 0
+        num_of_islands = 0
         for ii in range(1, num_of_islands_pre + 1):
             if np.where(place_field_identity == ii)[0].shape[0] > min_num_of_pixels:
-                island_counter += 1
+                num_of_islands += 1
             else:
                 place_field_identity[np.where(place_field_identity == ii)] = 0
 
-        num_of_islands = island_counter
+        islands_id = np.unique(place_field_identity[~np.isnan(place_field_identity)])[1:]
 
-        islands_id = np.unique(place_field_identity)[1:]
         islands_y_max = []
         islands_x_max = []
         pixels_above = []
         for ii in islands_id:
-            max_val = np.nanmax(place_field_smoothed[(place_field_identity == ii)])
-            I_y_max, I_x_max = np.where(place_field_smoothed == max_val)
+            max_val = np.nanmax(place_field[(place_field_identity == ii)])
+            I_y_max, I_x_max = np.where(place_field == max_val)
             islands_y_max.append(I_y_max[0])
             islands_x_max.append(I_x_max[0])
 
@@ -286,7 +509,7 @@ def field_coordinates_using_shifted(place_field_smoothed, place_field_smoothed_s
         pixels_above = np.array(pixels_above)
 
         total_visited_pixels = np.nansum(visits_map != 0)
-        pixels_total = place_field_smoothed.shape[0] * place_field_smoothed.shape[1]
+        pixels_total = place_field.shape[0] * place_field.shape[1]
 
         pixels_place_cell_relative = pixels_above / total_visited_pixels
         pixels_place_cell_absolute = pixels_above / pixels_total
