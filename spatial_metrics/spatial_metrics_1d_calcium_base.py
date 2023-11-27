@@ -57,21 +57,20 @@ class PlaceCell:
         if np.all(np.isnan(calcium_imag)):
             warnings.warn("Signal contains only NaN's")
             inputdict = np.nan
-            filename = self.filename_constructor(self.saving_string, self.animal_id, self.dataset, self.day,
-                                                 self.neuron, self.trial)
+            filename = self.filename_constructor(self.saving_string, self.animal_id, self.dataset, self.day,self.neuron, self.trial)
         else:
             
-            if np.any(np.isnan(calcium_imag)):
-                I_keep = ~np.isnan(calcium_imag)
-                calcium_imag = calcium_imag[I_keep]
-                time_vector = time_vector[I_keep]
-                x_coordinates = x_coordinates[I_keep]
+     
+            I_keep_valid = self.validate_input_data(calcium_imag, time_vector, x_coordinates)
+
+            calcium_imag = calcium_imag[I_keep_valid]
+            time_vector = time_vector[I_keep_valid]
+            x_coordinates = x_coordinates[I_keep_valid]
 
     
             _,speed = hf.get_speed_1D(x_coordinates, time_vector,sigma_points=self.speed_smoothing_points)
-            x_grid, x_center_bins, x_center_bins_repeated = \
-                hf.get_position_grid_1D(x_coordinates, self.x_bin_size,
-                                    environment_edges=self.environment_edges)
+
+            x_grid, x_center_bins, x_center_bins_repeated = hf.get_position_grid_1D(x_coordinates, self.x_bin_size,environment_edges=self.environment_edges)
 
             position_binned = hf.get_binned_position_1D(x_coordinates, x_grid)
 
@@ -79,8 +78,7 @@ class PlaceCell:
             
             time_spent_inside_bins = hf.get_position_time_spent(position_binned, self.sampling_rate)
 
-            I_keep = self.get_valid_timepoints(calcium_imag, speed, visits_bins, time_spent_inside_bins,
-                                               self.min_speed_threshold, self.min_visits, self.min_time_spent)
+            I_keep = self.get_valid_timepoints(speed, visits_bins, time_spent_inside_bins,self.min_speed_threshold, self.min_visits, self.min_time_spent)
 
             calcium_imag_valid = calcium_imag[I_keep].copy()
             x_coordinates_valid = x_coordinates[I_keep].copy()
@@ -89,6 +87,7 @@ class PlaceCell:
             position_binned_valid = position_binned[I_keep].copy()
 
             position_occupancy = hf.get_occupancy_1D(x_coordinates_valid, x_grid,self.sampling_rate)
+            
             visits_occupancy = hf.get_visits_occupancy_1D(x_coordinates, new_visits_times, x_grid,self.min_visits)
 
             place_field, place_field_smoothed = self.get_place_field_1D(calcium_imag_valid, x_coordinates_valid,x_grid,self.smoothing_size)
@@ -216,7 +215,24 @@ class PlaceCell:
         return sparsity
 
 
-    def get_valid_timepoints(self, calcium_imag, speed, visits_bins, time_spent_inside_bins, min_speed_threshold,
+    
+    def validate_input_data(self,calcium_imag, time_vector, x_coordinates):
+
+        # valid calcium points
+        I_valid_calcium = ~np.isnan(calcium_imag)
+
+        # valid x coordinates
+        I_valid_x_coord = ~np.isnan(x_coordinates)
+
+        # valid time vector
+        I_valid_time_vector = ~np.isnan(time_vector)
+
+        I_keep_valid = I_valid_calcium * I_valid_x_coord * I_valid_time_vector
+
+        return I_keep_valid
+
+
+    def get_valid_timepoints(self, speed, visits_bins, time_spent_inside_bins, min_speed_threshold,
                              min_visits, min_time_spent):
 
         # min speed
@@ -228,10 +244,8 @@ class PlaceCell:
         # min time spent
         I_time_spent_thres = time_spent_inside_bins >= min_time_spent
 
-        # valid calcium points
-        I_valid_calcium = ~np.isnan(calcium_imag)
+        I_keep = I_speed_thres * I_visits_times_thres * I_time_spent_thres
 
-        I_keep = I_speed_thres * I_visits_times_thres * I_time_spent_thres * I_valid_calcium
         return I_keep
 
     def get_place_field_1D(self, calcium_imag, x_coordinates, x_grid, smoothing_size):

@@ -60,28 +60,26 @@ class PlaceCell:
             filename = self.filename_constructor(self.saving_string, self.animal_id, self.dataset, self.day,
                                                  self.neuron, self.trial)
         else:
-            
-            if np.any(np.isnan(calcium_imag)):
-                I_keep = ~np.isnan(calcium_imag)
-                calcium_imag = calcium_imag[I_keep]
-                time_vector = time_vector[I_keep]
-                x_coordinates = x_coordinates[I_keep]
-                if y_coordinates is not None:
-                    y_coordinates = y_coordinates[I_keep]
+        
+        
+            I_keep_valid = self.validate_input_data(calcium_imag, time_vector, x_coordinates, y_coordinates)
 
-    
+            calcium_imag = calcium_imag[I_keep_valid]
+            time_vector = time_vector[I_keep_valid]
+            x_coordinates = x_coordinates[I_keep_valid]
+            y_coordinates = y_coordinates[I_keep_valid]
+
             _,speed = hf.get_speed(x_coordinates, y_coordinates, time_vector,sigma_points=self.speed_smoothing_points)
 
             x_grid, y_grid, x_center_bins, y_center_bins, x_center_bins_repeated, y_center_bins_repeated = hf.get_position_grid(x_coordinates, y_coordinates, self.x_bin_size,self.y_bin_size, environment_edges=self.environment_edges)
 
             position_binned = hf.get_binned_position(x_coordinates, y_coordinates, x_grid, y_grid)
 
-            visits_bins, new_visits_times = hf.get_visits(x_coordinates, y_coordinates, position_binned,
-                                                            x_center_bins, y_center_bins)
+            visits_bins, new_visits_times = hf.get_visits(x_coordinates, y_coordinates, position_binned,x_center_bins, y_center_bins)
+
             time_spent_inside_bins = hf.get_position_time_spent(position_binned, self.sampling_rate)
 
-            I_keep = self.get_valid_timepoints(calcium_imag, speed, visits_bins, time_spent_inside_bins,
-                                               self.min_speed_threshold, self.min_visits, self.min_time_spent)
+            I_keep = self.get_valid_timepoints(speed, visits_bins, time_spent_inside_bins,self.min_speed_threshold, self.min_visits, self.min_time_spent)
 
             calcium_imag_valid = calcium_imag[I_keep].copy()
             x_coordinates_valid = x_coordinates[I_keep].copy()
@@ -90,10 +88,9 @@ class PlaceCell:
             visits_bins_valid = visits_bins[I_keep].copy()
             position_binned_valid = position_binned[I_keep].copy()
 
-            position_occupancy = hf.get_occupancy(x_coordinates_valid, y_coordinates_valid, x_grid, y_grid,
-                                                    self.sampling_rate)
-            visits_occupancy = hf.get_visits_occupancy(x_coordinates, y_coordinates, new_visits_times, x_grid, y_grid,
-                                                         self.min_visits)
+            position_occupancy = hf.get_occupancy(x_coordinates_valid, y_coordinates_valid, x_grid, y_grid,self.sampling_rate)
+
+            visits_occupancy = hf.get_visits_occupancy(x_coordinates, y_coordinates, new_visits_times, x_grid, y_grid,self.min_visits)
 
             place_field, place_field_smoothed = self.get_place_field(calcium_imag_valid, x_coordinates_valid,
                                                                      y_coordinates_valid, x_grid, y_grid,
@@ -103,12 +100,11 @@ class PlaceCell:
             nbins_pos = (x_grid.shape[0] - 1) * (y_grid.shape[0] - 1)
             entropy1 = self.get_entropy(position_binned_valid, nbins_pos)
             entropy2 = self.get_entropy(calcium_imag_valid_binned, self.nbins_cal)
-            joint_entropy = self.get_joint_entropy(position_binned_valid, calcium_imag_valid_binned, nbins_pos,
-                                                   self.nbins_cal)
-
+            joint_entropy = self.get_joint_entropy(position_binned_valid, calcium_imag_valid_binned, nbins_pos,self.nbins_cal)
             mutual_info_original = self.get_mutual_information(entropy1, entropy2, joint_entropy)
-            mutual_info_kullback_leibler_original = self.get_kullback_leibler_normalized(calcium_imag_valid,
-                                                                                         position_binned_valid)
+
+            mutual_info_kullback_leibler_original = self.get_kullback_leibler_normalized(calcium_imag_valid,position_binned_valid)
+
             mutual_info_NN_original = self.get_mutual_information_NN(calcium_imag_valid, position_binned_valid)
             
             mutual_info_regression_original = self.get_mutual_information_regression(calcium_imag_valid, position_binned_valid)
@@ -118,7 +114,7 @@ class PlaceCell:
             mutual_info_distribution, mutual_info_distribution_bezzi = self.get_mutual_information_2d(
                 calcium_imag_valid_binned,position_binned_valid, y_grid, x_grid, self.nbins_cal, nbins_pos,self.smoothing_size)
 
-            results = self.parallelize_surrogate(calcium_imag, I_keep, position_binned_valid, self.sampling_rate,
+            results = self.parallelize_surrogate(calcium_imag_valid, position_binned_valid, self.sampling_rate,
                                                  self.shift_time, self.nbins_cal, nbins_pos, x_coordinates_valid,
                                                  y_coordinates_valid, x_grid, y_grid, self.smoothing_size,
                                                  self.num_cores, self.num_surrogates)
@@ -275,8 +271,27 @@ class PlaceCell:
         return sparsity
 
 
-    def get_valid_timepoints(self, calcium_imag, speed, visits_bins, time_spent_inside_bins, min_speed_threshold,
-                             min_visits, min_time_spent):
+    
+    def validate_input_data(self,calcium_imag, time_vector, x_coordinates, y_coordinates):
+
+        # valid calcium points
+        I_valid_calcium = ~np.isnan(calcium_imag)
+
+        # valid x coordinates
+        I_valid_x_coord = ~np.isnan(x_coordinates)
+
+        # valid y coordinates
+        I_valid_y_coord = ~np.isnan(y_coordinates)
+
+        # valid time vector
+        I_valid_time_vector = ~np.isnan(time_vector)
+
+        I_keep_valid = I_valid_calcium * I_valid_x_coord * I_valid_y_coord * I_valid_time_vector
+
+        return I_keep_valid
+
+
+    def get_valid_timepoints(self, speed, visits_bins, time_spent_inside_bins, min_speed_threshold, min_visits, min_time_spent):
 
         # min speed
         I_speed_thres = speed >= min_speed_threshold
@@ -287,10 +302,9 @@ class PlaceCell:
         # min time spent
         I_time_spent_thres = time_spent_inside_bins >= min_time_spent
 
-        # valid calcium points
-        I_valid_calcium = ~np.isnan(calcium_imag)
 
-        I_keep = I_speed_thres * I_visits_times_thres * I_time_spent_thres * I_valid_calcium
+        I_keep = I_speed_thres * I_visits_times_thres * I_time_spent_thres
+
         return I_keep
 
     def get_place_field(self, calcium_imag, x_coordinates, y_coordinates, x_grid, y_grid, smoothing_size):
@@ -395,11 +409,11 @@ class PlaceCell:
 
         return mutual_info_zscored, mutual_info_centered
 
-    def parallelize_surrogate(self, calcium_imag, I_keep, position_binned_valid, sampling_rate, shift_time,
+    def parallelize_surrogate(self, calcium_imag_valid, position_binned_valid, sampling_rate, shift_time,
                               nbins_cal, nbins_pos, x_coordinates_valid, y_coordinates_valid, x_grid, y_grid,
                               smoothing_size, num_cores, num_surrogates):
         results = Parallel(n_jobs=num_cores)(
-            delayed(self.get_mutual_info_surrogate)(calcium_imag, I_keep, position_binned_valid, sampling_rate,
+            delayed(self.get_mutual_info_surrogate)(calcium_imag_valid, position_binned_valid, sampling_rate,
                                                     shift_time, nbins_cal, nbins_pos, x_coordinates_valid,
                                                     y_coordinates_valid, x_grid, y_grid, smoothing_size)
             for _ in range(num_surrogates))
@@ -435,18 +449,16 @@ class PlaceCell:
         return input_vector_shifted
 
 
-    def get_mutual_info_surrogate(self, calcium_imag, I_keep, position_binned_valid, sampling_rate, shift_time,
+    def get_mutual_info_surrogate(self, calcium_imag_valid, position_binned_valid, sampling_rate, shift_time,
                                   nbins_cal, nbins_pos, x_coordinates_valid, y_coordinates_valid, x_grid, y_grid,
                                   smoothing_size):
 
-        calcium_imag_shifted = self.get_surrogate(calcium_imag, sampling_rate, shift_time)
-        calcium_imag_shifted_valid = calcium_imag_shifted[I_keep].copy()
+        calcium_imag_shifted_valid = self.get_surrogate(calcium_imag_valid, sampling_rate, shift_time)
 
         calcium_imag_shifted_binned = self.get_binned_signal(calcium_imag_shifted_valid, nbins_cal)
         entropy1 = self.get_entropy(position_binned_valid, nbins_pos)
         entropy2 = self.get_entropy(calcium_imag_shifted_binned, nbins_cal)
-        joint_entropy = self.get_joint_entropy(position_binned_valid, calcium_imag_shifted_binned, nbins_pos,
-                                               nbins_cal)
+        joint_entropy = self.get_joint_entropy(position_binned_valid, calcium_imag_shifted_binned, nbins_pos,nbins_cal)
         mutual_info_shifted = self.get_mutual_information(entropy1, entropy2, joint_entropy)
 
         mutual_info_shifted_NN = self.get_mutual_information_NN(calcium_imag_shifted_valid, position_binned_valid)

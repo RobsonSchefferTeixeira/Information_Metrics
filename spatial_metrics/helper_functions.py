@@ -341,6 +341,19 @@ def get_binned_position(x_coordinates, y_coordinates = None, x_grid = None, y_gr
 
     return position_binned
 
+def get_velocity_1D(x_coordinates, time_vector,sigma_points=1):
+    
+    distances = np.diff(x_coordinates)
+
+    time_vector_diff = np.diff(time_vector)
+
+    velocity = np.divide(distances, time_vector_diff)
+    velocity = np.hstack([velocity, 0])
+    velocity_smoothed = gaussian_smooth_1d(velocity, sigma_points)
+
+    return velocity,velocity_smoothed
+
+
 def get_speed_1D(x_coordinates, time_vector,sigma_points=1):
     
     distances = np.abs(np.diff(x_coordinates))
