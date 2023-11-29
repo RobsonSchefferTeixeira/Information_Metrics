@@ -8,6 +8,17 @@ import math
 
 
 def identify_islands_1D(input_array):
+    
+    """
+    Identifies islands (continuous sequences of 1s) in a 1D input array.
+
+    Parameters:
+    - input_array (ndarray): Input array containing 1s and 0s.
+
+    Returns:
+    - input_array2 (ndarray): Modified array with islands labeled.
+    """
+        
     length = len(input_array)
     count = 0
     input_array2 = np.copy(input_array)
@@ -21,6 +32,21 @@ def identify_islands_1D(input_array):
 
 
 def dfs_1D(input_array, input_array2, count, length, i):
+
+    """
+    Depth-First Search (DFS) algorithm to identify islands in a 1D array.
+
+    Parameters:
+    - input_array (ndarray): Input array containing 1s and 0s.
+    - input_array2 (ndarray): Modified array with islands labeled.
+    - count (int): Counter for island labeling.
+    - length (int): Length of the input array.
+    - i (int): Current index being evaluated in the DFS algorithm.
+
+    Returns:
+    - None
+    """
+     
     if input_array[i] == 0:
         return
     input_array[i] = 0
@@ -34,6 +60,25 @@ def dfs_1D(input_array, input_array2, count, length, i):
 
 
 def field_coordinates_using_shifted_1D(place_field, place_field_shifted, visits_map, percentile_threshold=95,min_num_of_pixels=4):
+
+    """
+    Identifies and characterizes place fields using shifted 1D data.
+
+    Parameters:
+    - place_field (ndarray): Original place field data.
+    - place_field_shifted (ndarray): Shifted place field data.
+    - visits_map (ndarray): Map of visited locations.
+    - percentile_threshold (int): Percentile threshold for identifying place fields.
+    - min_num_of_pixels (int): Minimum number of pixels to consider as a place field.
+
+    Returns:
+    - num_of_islands (int): Number of identified place field islands.
+    - islands_x_max (ndarray): X coordinates of identified islands.
+    - pixels_place_cell_absolute (ndarray): Relative pixels of place cells in absolute terms.
+    - pixels_place_cell_relative (ndarray): Relative pixels of place cells in relation to visited locations.
+    - place_field_identity (ndarray): Identified place field islands labeled.
+    """
+
 
     place_field_threshold = np.percentile(place_field_shifted, percentile_threshold, 0)
 
@@ -451,6 +496,20 @@ def caller_saving(inputdict, filename, saving_path):
 
 
 def identify_islands(input_array):
+    """
+    Identifies islands in a binary input array.
+
+    Parameters
+    ----------
+    input_array : numpy.ndarray
+        Binary input array containing islands marked as 1.
+
+    Returns
+    -------
+    input_array2 : numpy.ndarray
+        Array with islands labeled sequentially.
+    """
+
     row = input_array.shape[0]
     col = input_array.shape[1]
     count = 0
@@ -466,8 +525,30 @@ def identify_islands(input_array):
 
 
 def dfs(input_array, input_array2, count, row, col, i, j):
+    """
+    Performs Depth-First Search (DFS) to label connected regions in the input array.
+
+    Parameters
+    ----------
+    input_array : numpy.ndarray
+        Binary input array containing islands marked as 1.
+    input_array2 : numpy.ndarray
+        Copy of the input array.
+    count : int
+        Count of identified islands.
+    row : int
+        Number of rows in the array.
+    col : int
+        Number of columns in the array.
+    i : int
+        Current row index.
+    j : int
+        Current column index.
+    """
+
     if input_array[i, j] == 0:
         return
+    
     input_array[i, j] = 0
     input_array2[i, j] = count
 
@@ -485,6 +566,44 @@ def dfs(input_array, input_array2, count, row, col, i, j):
 
 
 def field_coordinates_using_shifted(place_field, place_field_shifted, visits_map, percentile_threshold=95,min_num_of_pixels=4):
+
+    """
+    Identifies and characterizes regions in a spatial field based on shifted field criteria.
+
+    Parameters
+    ----------
+    place_field : numpy.ndarray
+        Original spatial field data.
+    place_field_shifted : numpy.ndarray
+        Shifted spatial field data used for threshold calculation.
+    visits_map : numpy.ndarray
+        Map of visits to locations in the field.
+    percentile_threshold : int, optional
+        Percentile threshold for identifying regions. Default is 95.
+    min_num_of_pixels : int, optional
+        Minimum number of pixels to constitute a region. Default is 4.
+
+    Returns
+    -------
+    num_of_islands : int
+        Number of identified regions.
+    islands_x_max : numpy.ndarray
+        X-coordinates of maximum values in each identified region.
+    islands_y_max : numpy.ndarray
+        Y-coordinates of maximum values in each identified region.
+    pixels_place_cell_absolute : numpy.ndarray
+        Absolute pixel count for each identified region.
+    pixels_place_cell_relative : numpy.ndarray
+        Relative pixel count for each identified region.
+    place_field_identity : numpy.ndarray
+        Identification map for the regions.
+
+    Notes
+    -----
+    This function identifies distinct spatial regions in the input field based on shifted field criteria.
+    It calculates a percentile threshold from the shifted field, applies it to the original field, identifies
+    regions, and characterizes these regions based on their properties.
+    """
 
     place_field_threshold = np.percentile(place_field_shifted, percentile_threshold, 0)
 
@@ -541,14 +660,25 @@ def field_coordinates_using_shifted(place_field, place_field_shifted, visits_map
 
 def correct_island_identifiers(island_ids):
     """
-    Correct island identifiers by renumbering them sequentially starting from 0.
+    Corrects island identifiers by renumbering them sequentially starting from 0.
 
-    Parameters:
-        island_ids (numpy.ndarray): Array of island identifiers.
+    Parameters
+    ----------
+    island_ids : numpy.ndarray
+        Array of island identifiers.
 
-    Returns:
-        corrected_ids (numpy.ndarray): Corrected island identifiers.
+    Returns
+    -------
+    corrected_ids : numpy.ndarray
+        Corrected island identifiers.
+
+    Notes
+    -----
+    If all island identifiers are NaN, no correction is performed, and the original array is returned.
+    Otherwise, unique island identifiers are found, and a new sequential numbering starting from 0
+    is applied to the identifiers, correcting them accordingly.
     """
+        
     # Check if all island identifiers are NaN; no correction needed.
     if np.all(np.isnan(island_ids)):
         return island_ids
@@ -570,6 +700,43 @@ def correct_island_identifiers(island_ids):
 
 def field_coordinates_using_threshold(place_field, visits_map,smoothing_size=1, field_threshold=2,min_num_of_pixels=4):
     
+    """
+    Identify and characterize spatial regions in a field based on threshold criteria.
+
+    Parameters
+    ----------
+    place_field : numpy.ndarray
+        Input spatial field data.
+    visits_map : numpy.ndarray
+        Map of visits to locations in the field.
+    smoothing_size : int, optional
+        Size of the smoothing window. Default is 1.
+    field_threshold : float, optional
+        Threshold value for identifying regions. Default is 2.
+    min_num_of_pixels : int, optional
+        Minimum number of pixels to constitute a region. Default is 4.
+
+    Returns
+    -------
+    num_of_islands : int
+        Number of identified regions.
+    islands_x_max : numpy.ndarray
+        X-coordinates of maximum values in each identified region.
+    islands_y_max : numpy.ndarray
+        Y-coordinates of maximum values in each identified region.
+    pixels_place_cell_absolute : numpy.ndarray
+        Absolute pixel count for each identified region.
+    pixels_place_cell_relative : numpy.ndarray
+        Relative pixel count for each identified region.
+    place_field_identity : numpy.ndarray
+        Identification map for the regions.
+
+    Notes
+    -----
+    This function applies Gaussian smoothing, thresholding, and island identification techniques
+    to extract information about distinct spatial regions in the input field and their properties.
+    """
+      
     place_field_to_smooth = np.copy(place_field)
     I_nan = np.isnan(place_field)
     
@@ -662,80 +829,104 @@ def preprocess_signal(input_signal, sampling_rate, signal_type, z_threshold=2):
     return output_signal
 
 
-# implementing eegfilt
-def eegfilt(LFP, fs, lowcut, highcut, order=3):
-    from scipy import signal
-    import numpy as np
+def eegfilt(signal, fs, lowcut, highcut, order = 3):
+    """
+    Apply a bandpass or lowpass/highpass filter to the input signal.
+    
+    Parameters:
+    - signal: np.ndarray
+        Input signal
+    - fs: float
+        Sampling frequency of the signal
+    - lowcut: float
+        Low cutoff frequency of the filter (set to 0 for highpass)
+    - highcut: float
+        High cutoff frequency of the filter (set to 0 for lowpass)
+    - order: int, optional
+        Filter order (default is 3)
+    
+    Returns:
+    - filtered: np.ndarray
+        Filtered signal
+    """
+    
+    # Create a non-NaN mask
+    non_nan_mask = ~np.isnan(signal)
+    signal_non_nan = signal[non_nan_mask]
+    filtered = np.nan*np.zeros(signal.shape[0])
 
     nyq = 0.5 * fs
     low = lowcut / nyq
     high = highcut / nyq
 
     if low == 0:
-        b, a = signal.butter(order, high, btype='low')
-        filtered = signal.filtfilt(b, a, LFP)
+        b, a = sig.butter(order, high, btype='low')
+        filtered_masked = sig.filtfilt(b, a, signal_non_nan)
     elif high == 0:
-        b, a = signal.butter(order, low, btype='high')
-        filtered = signal.filtfilt(b, a, LFP)
+        b, a = sig.butter(order, low, btype='high')
+        filtered_masked = sig.filtfilt(b, a, signal_non_nan)
     else:
-        b, a = signal.butter(order, [low, high], btype='band')
-        filtered = signal.filtfilt(b, a, LFP)
+        b, a = sig.butter(order, [low, high], btype='band')
+        filtered_masked = sig.filtfilt(b, a, signal_non_nan)
+
+    filtered[non_nan_mask] = filtered_masked
+
 
     return filtered
 
 
+
 def smooth(x, window_len=11, window='hanning'):
-    """smooth the data using a window with requested size.
+    """
+    Smooth the data using a window with the requested size.
     
-    This method is based on the convolution of a scaled window with the signal.
-    The signal is prepared by introducing reflected copies of the signal 
-    (with the window size) in both ends so that transient parts are minimized
-    in the begining and end part of the output signal.
+    This method involves the convolution of a scaled window with the input signal.
+    The input signal is prepared by introducing reflected copies at both ends,
+    reducing transient effects at the beginning and end of the output signal.
     
-    input:
-        x: the input signal 
-        window_len: the dimension of the smoothing window; should be an odd integer
-        window: the type of window from 'flat', 'hanning', 'hamming', 'bartlett', 'blackman'
-            flat window will produce a moving average smoothing.
+    Parameters:
+    - x: numpy.ndarray
+        The input signal
 
-    output:
-        the smoothed signal
+    - window_len: int
+        The size of the smoothing window; should be an odd integer
+
+    - window: str
+        The type of window used for smoothing; options: 'flat', 'hanning', 'hamming',
+        'bartlett', 'blackman'. A flat window produces a moving average smoothing.
+    
+    Returns:
+    - smoothed_signal: numpy.ndarray
+        Tthe smoothed signal
+    
+    Example:
+    t = np.linspace(-2, 2, 0.1)
+    x = np.sin(t) + np.random.randn(len(t)) * 0.1
+    y = smooth(x)
         
-    example:
-
-    t=linspace(-2,2,0.1)
-    x=sin(t)+randn(len(t))*0.1
-    y=smooth(x)
-    
-    see also: 
-    
-    numpy.hanning, numpy.hamming, numpy.bartlett, numpy.blackman, numpy.convolve
-    scipy.signal.lfilter
- 
-    TODO: the window parameter could be the window itself if an array instead of a string
-    NOTE: length(output) != length(input), to correct this: return y[(window_len/2-1):-(window_len/2)] instead of just y.
+    Note:
+    - The length of output is not equal to the input length. To correct this, use:
+      return y[(window_len//2-1):-(window_len//2)] instead of just y.
     """
 
     if x.ndim != 1:
-        raise ValueError("smooth only accepts 1 dimension arrays.")
-
+        raise ValueError("smooth only accepts 1-dimensional arrays.")
     if x.size < window_len:
-        raise ValueError("Input vector needs to be bigger than window size.")
-
+        raise ValueError("Input vector needs to be larger than window size.")
     if window_len < 3:
         return x
-
-    if not window in ['flat', 'hanning', 'hamming', 'bartlett', 'blackman']:
-        raise ValueError("Window is on of 'flat', 'hanning', 'hamming', 'bartlett', 'blackman'")
+    if window not in ['flat', 'hanning', 'hamming', 'bartlett', 'blackman']:
+        raise ValueError("Window should be one of 'flat', 'hanning', 'hamming', 'bartlett', 'blackman'")
 
     s = np.r_[x[window_len - 1:0:-1], x, x[-2:-window_len - 1:-1]]
-    # print(len(s))
-    if window == 'flat':  # moving average
+
+    if window == 'flat':  # Moving average
         w = np.ones(window_len, 'd')
     else:
-        w = eval('np.' + window + '(window_len)')
+        w = getattr(np, window)(window_len)  # Using getattr to retrieve window function by name
 
     y = np.convolve(w / w.sum(), s, mode='valid')
+
     return y[int(window_len / 2 - 1):-int(window_len / 2)]
 
 
