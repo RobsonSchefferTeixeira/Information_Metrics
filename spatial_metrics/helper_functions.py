@@ -59,7 +59,7 @@ def dfs_1D(input_array, input_array2, count, length, i):
         dfs_1D(input_array, input_array2, count, length, i + 1)
 
 
-def field_coordinates_using_shifted_1D(place_field, place_field_shifted, visits_map, percentile_threshold=95,min_num_of_pixels=4):
+def field_coordinates_using_shifted_1D(place_field, place_field_shifted, visits_map, percentile_threshold=95,min_num_of_bins=4):
 
     """
     Identifies and characterizes place fields using shifted 1D data.
@@ -69,7 +69,7 @@ def field_coordinates_using_shifted_1D(place_field, place_field_shifted, visits_
     - place_field_shifted (ndarray): Shifted place field data.
     - visits_map (ndarray): Map of visited locations.
     - percentile_threshold (int): Percentile threshold for identifying place fields.
-    - min_num_of_pixels (int): Minimum number of pixels to consider as a place field.
+    - min_num_of_bins (int): Minimum number of pixels to consider as a place field.
 
     Returns:
     - num_of_islands (int): Number of identified place field islands.
@@ -93,7 +93,7 @@ def field_coordinates_using_shifted_1D(place_field, place_field_shifted, visits_
 
         num_of_islands = 0
         for ii in range(1, num_of_islands_pre + 1):
-            if np.where(place_field_identity == ii)[0].shape[0] > min_num_of_pixels:
+            if np.where(place_field_identity == ii)[0].shape[0] > min_num_of_bins:
                 num_of_islands += 1
             else:
                 place_field_identity[np.where(place_field_identity == ii)] = 0
@@ -332,22 +332,6 @@ def get_position_grid(x_coordinates, y_coordinates=None, x_bin_size=1, y_bin_siz
     return x_grid, y_grid, x_center_bins, y_center_bins, x_center_bins_repeated, y_center_bins_repeated
 
 
-def get_binned_position_1D(x_coordinates, x_grid = None):
-    # calculate position occupancy
-
-    position_binned = np.zeros(x_coordinates.shape) * np.nan
-    count = 0
-    for xx in range(0, x_grid.shape[0] - 1):
-        if xx == x_grid.shape[0] - 2:
-            check_x_occupancy = np.logical_and(x_coordinates >= x_grid[xx], x_coordinates <= (x_grid[xx + 1]))
-        else:
-            check_x_occupancy = np.logical_and(x_coordinates >= x_grid[xx], x_coordinates < (x_grid[xx + 1]))
-
-        position_binned[check_x_occupancy] = count
-        count += 1
-
-
-    return position_binned
 
 def get_binned_position(x_coordinates, y_coordinates = None, x_grid = None, y_grid = None):
     # calculate position occupancy
@@ -386,30 +370,6 @@ def get_binned_position(x_coordinates, y_coordinates = None, x_grid = None, y_gr
 
     return position_binned
 
-def get_velocity_1D(x_coordinates, time_vector,sigma_points=1):
-    
-    distances = np.diff(x_coordinates)
-
-    time_vector_diff = np.diff(time_vector)
-
-    velocity = np.divide(distances, time_vector_diff)
-    velocity = np.hstack([velocity, 0])
-    velocity_smoothed = gaussian_smooth_1d(velocity, sigma_points)
-
-    return velocity,velocity_smoothed
-
-
-def get_speed_1D(x_coordinates, time_vector,sigma_points=1):
-    
-    distances = np.abs(np.diff(x_coordinates))
- 
-    time_vector_diff = np.diff(time_vector)
-
-    speed = np.divide(distances, time_vector_diff)
-    speed = np.hstack([speed, 0])
-    speed_smoothed = gaussian_smooth_1d(speed, sigma_points)
-
-    return speed,speed_smoothed
 
 def get_speed(x_coordinates, y_coordinates, time_vector,sigma_points=1):
     
@@ -565,7 +525,7 @@ def dfs(input_array, input_array2, count, row, col, i, j):
         dfs(input_array, input_array2, count, row, col, i, j + 1)
 
 
-def field_coordinates_using_shifted(place_field, place_field_shifted, visits_map, percentile_threshold=95,min_num_of_pixels=4):
+def field_coordinates_using_shifted(place_field, place_field_shifted, visits_map, percentile_threshold=95,min_num_of_bins=4):
 
     """
     Identifies and characterizes regions in a spatial field based on shifted field criteria.
@@ -580,7 +540,7 @@ def field_coordinates_using_shifted(place_field, place_field_shifted, visits_map
         Map of visits to locations in the field.
     percentile_threshold : int, optional
         Percentile threshold for identifying regions. Default is 95.
-    min_num_of_pixels : int, optional
+    min_num_of_bins : int, optional
         Minimum number of pixels to constitute a region. Default is 4.
 
     Returns
@@ -618,7 +578,7 @@ def field_coordinates_using_shifted(place_field, place_field_shifted, visits_map
 
         num_of_islands = 0
         for ii in range(1, num_of_islands_pre + 1):
-            if np.where(place_field_identity == ii)[0].shape[0] > min_num_of_pixels:
+            if np.where(place_field_identity == ii)[0].shape[0] > min_num_of_bins:
                 num_of_islands += 1
             else:
                 place_field_identity[np.where(place_field_identity == ii)] = 0
@@ -698,7 +658,7 @@ def correct_island_identifiers(island_ids):
     return corrected_ids
 
 
-def field_coordinates_using_threshold(place_field, visits_map,smoothing_size=1, field_threshold=2,min_num_of_pixels=4):
+def field_coordinates_using_threshold(place_field, visits_map,smoothing_size=1, field_threshold=2,min_num_of_bins=4):
     
     """
     Identify and characterize spatial regions in a field based on threshold criteria.
@@ -713,7 +673,7 @@ def field_coordinates_using_threshold(place_field, visits_map,smoothing_size=1, 
         Size of the smoothing window. Default is 1.
     field_threshold : float, optional
         Threshold value for identifying regions. Default is 2.
-    min_num_of_pixels : int, optional
+    min_num_of_bins : int, optional
         Minimum number of pixels to constitute a region. Default is 4.
 
     Returns
@@ -759,7 +719,7 @@ def field_coordinates_using_threshold(place_field, visits_map,smoothing_size=1, 
 
         island_counter = 0
         for ii in range(1, num_of_islands_pre + 1):
-            if np.where(place_field_identity == ii)[0].shape[0] > min_num_of_pixels:
+            if np.where(place_field_identity == ii)[0].shape[0] > min_num_of_bins:
                 island_counter += 1
             else:
                 place_field_identity[np.where(place_field_identity == ii)] = 0
@@ -950,9 +910,13 @@ def gaussian_smooth_1d(input_data, sigma_points):
     gaussian_kernel_1d = generate_1d_gaussian_kernel(sigma_points)
 
     # Convolve the input data with the Gaussian kernel.
-    smoothed_data = sig.convolve(input_data, gaussian_kernel_1d, mode='same')
-    
-    return smoothed_data
+    if input_data.ndim == 1:
+        input_data = np.expand_dims(input_data,0)
+    # smoothed_data = sig.convolve(input_data, gaussian_kernel_1d, mode='same')
+    smoothed_data = np.apply_along_axis(lambda x: sig.convolve(x, gaussian_kernel_1d, mode='same'), axis=1, arr=input_data)
+
+    return np.squeeze(smoothed_data)
+
 
 def generate_1d_gaussian_kernel(sigma):
     """
@@ -966,10 +930,7 @@ def generate_1d_gaussian_kernel(sigma):
     """
     x_values = np.arange(-3.0 * sigma, 3.0 * sigma + 1.0)
     constant = 1 / (np.sqrt(2 * math.pi) * sigma)
-    gaussian_kernel = np.zeros(x_values.shape[0])
-    
-    for x_count, x_val in enumerate(x_values):
-        gaussian_kernel[x_count] = constant * np.exp(-((x_val**2) / (2 * (sigma**2))))
+    gaussian_kernel = constant * np.exp(-((x_values**2) / (2 * (sigma**2))))
 
     return gaussian_kernel
 

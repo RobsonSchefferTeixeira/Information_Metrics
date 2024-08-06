@@ -27,11 +27,11 @@ class PlaceCell:
         kwargs.setdefault('saving', False)
         kwargs.setdefault('saving_string', 'SpatialMetrics')
         kwargs.setdefault('percentile_threshold', 95)
-        kwargs.setdefault('min_num_of_pixels', 4)
+        kwargs.setdefault('min_num_of_bins', 4)
 
         valid_kwargs = ['animal_id','day','neuron','dataset','trial','sampling_rate',
                         'min_time_spent','min_visits','min_speed_threshold','smoothing_size',
-                        'x_bin_size','y_bin_size','shift_time','num_cores','percentile_threshold','min_num_of_pixels',
+                        'x_bin_size','y_bin_size','shift_time','num_cores','percentile_threshold','min_num_of_bins',
                         'num_surrogates','saving_path','saving','saving_string','environment_edges']
 
         for k, v in kwargs.items():
@@ -49,13 +49,13 @@ class PlaceCell:
             
         else:
 
-            speed = hf.get_speed(x_coordinates, y_coordinates, time_vector)
+            speed,speed_smoothed = hf.get_speed(x_coordinates, y_coordinates, time_vector)
 
             x_grid, y_grid, x_center_bins, y_center_bins, x_center_bins_repeated, y_center_bins_repeated = hf.get_position_grid(
                 x_coordinates, y_coordinates, self.x_bin_size, self.y_bin_size,
                 environment_edges=self.environment_edges)
 
-            position_binned = hf.get_binned_2Dposition(x_coordinates, y_coordinates, x_grid, y_grid)
+            position_binned = hf.get_binned_position(x_coordinates, y_coordinates, x_grid, y_grid)
 
             visits_bins, new_visits_times = hf.get_visits(x_coordinates, y_coordinates, position_binned, x_center_bins, y_center_bins)
 
@@ -114,7 +114,7 @@ class PlaceCell:
             num_of_islands, islands_x_max, islands_y_max, pixels_place_cell_absolute, pixels_place_cell_relative,place_field_identity = \
                 hf.field_coordinates_using_shifted(place_field_smoothed, place_field_smoothed_shifted,
                                                     visits_occupancy, percentile_threshold=self.percentile_threshold,
-                                                    min_num_of_pixels=self.min_num_of_pixels)
+                                                    min_num_of_bins=self.min_num_of_bins)
 
             sparsity = hf.get_sparsity(place_field, position_occupancy)
 

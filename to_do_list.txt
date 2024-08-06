@@ -1,0 +1,9 @@
+TO DO
+    - recheck place field definition (use std instead of percentiles)
+    - comment code
+    - recheck place field for spikes
+
+DOING
+
+
+DONE
