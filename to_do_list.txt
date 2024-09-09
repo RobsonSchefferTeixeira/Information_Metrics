@@ -1,7 +1,5 @@
 TO DO
-    - recheck place field definition (use std instead of percentiles)
-    - comment code
-    - recheck place field for spikes
+	- use field center as the field center of mass instead of maximum value
 
 DOING
 
