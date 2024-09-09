@@ -5,6 +5,73 @@ from scipy import interpolate
 import numpy as np
 from scipy import signal as sig
 import math
+import warnings
+
+def get_surrogate(input_vector, sampling_rate, shift_time):
+    """
+    Generate a surrogate signal by applying a time shift to the input vector.
+
+    This function creates a surrogate signal by shifting the input vector in time 
+    while maintaining the same signal characteristics.
+
+    Parameters:
+        input_vector (numpy.ndarray): The input signal to generate a surrogate for.
+        sampling_rate (float): The sampling rate of the input signal (samples per second).
+        shift_time (float): The desired time shift for the surrogate signal (seconds).
+
+    Returns:
+        input_vector_shifted (numpy.ndarray): The surrogate signal obtained by applying the time shift.
+    """
+    if len(input_vector) < np.abs(sampling_rate * shift_time):
+        # Adjust the shift time if it exceeds the length of the input signal.
+        shift_time = np.floor(len(input_vector) / sampling_rate)
+
+    # Generate a random time shift in samples within the specified range.
+    shift_samples = np.random.randint(-shift_time * sampling_rate, sampling_rate * shift_time + 1)
+
+    # Apply the time shift to create the surrogate signal.
+    input_vector_shifted = np.concatenate([input_vector[shift_samples:], input_vector[0:shift_samples]])
+    # np.roll could be used instead
+
+    return input_vector_shifted
+
+def get_sparsity(place_field, position_occupancy):
+    """
+    Calculate the sparsity of a place field with respect to position occupancy.
+
+    Parameters:
+    - place_field (numpy.ndarray): A place field map representing spatial preferences.
+    - position_occupancy (numpy.ndarray): Positional occupancy map, typically representing time spent in each spatial bin.
+
+    Returns:
+    - sparsity (float): The sparsity measure indicating how selective the place field is with respect to position occupancy.
+
+    """
+    
+    position_occupancy_norm = np.nansum(position_occupancy / np.nansum(position_occupancy))
+    sparsity = np.nanmean(position_occupancy_norm * place_field) ** 2 / np.nanmean(
+        position_occupancy_norm * place_field ** 2)
+
+    return sparsity
+
+def get_2D_place_field(signal, x_coordinates, y_coordinates, x_grid, y_grid, smoothing_size):
+    warnings.filterwarnings("ignore", category=RuntimeWarning)
+    # calculate mean calcium per pixel
+    place_field = np.nan * np.zeros((y_grid.shape[0] - 1, x_grid.shape[0] - 1))
+    for xx in range(0, x_grid.shape[0] - 1):
+        for yy in range(0, y_grid.shape[0] - 1):
+            check_x_occupancy = np.logical_and(x_coordinates >= x_grid[xx], x_coordinates < (x_grid[xx + 1]))
+            check_y_occupancy = np.logical_and(y_coordinates >= y_grid[yy], y_coordinates < (y_grid[yy + 1]))
+
+            place_field[yy, xx] = np.nanmean(signal[np.logical_and(check_x_occupancy, check_y_occupancy)])
+
+    place_field_to_smooth = np.copy(place_field)
+    place_field_to_smooth[np.isnan(place_field_to_smooth)] = 0
+    place_field_smoothed = gaussian_smooth_2d(place_field_to_smooth, smoothing_size)
+
+    return place_field, place_field_smoothed
+
+
 
 
 def identify_islands_1D(input_array):
@@ -130,12 +197,7 @@ def field_coordinates_using_shifted_1D(place_field, place_field_shifted, visits_
 
 
 
-def get_sparsity(place_field, position_occupancy):
-    position_occupancy_norm = np.nansum(position_occupancy / np.nansum(position_occupancy))
-    sparsity = np.nanmean(position_occupancy_norm * place_field) ** 2 / np.nanmean(
-        position_occupancy_norm * place_field ** 2)
 
-    return sparsity
 
 def get_visits_1D( x_coordinates,position_binned, x_center_bins):
     I_x_coord = []
@@ -287,6 +349,7 @@ def get_position_grid_1D(x_coordinates, x_bin_size=1, environment_edges=None):
 def get_position_grid(x_coordinates, y_coordinates=None, x_bin_size=1, y_bin_size=None, environment_edges=None):
     # x_bin_size and y_bin_size in cm
     # environment_edges = [[x1, x2], [y1, y2]]
+    warnings.filterwarnings("ignore", category=RuntimeWarning)
 
     if y_coordinates is None:
         # 1D tracking
@@ -525,7 +588,7 @@ def dfs(input_array, input_array2, count, row, col, i, j):
         dfs(input_array, input_array2, count, row, col, i, j + 1)
 
 
-def field_coordinates_using_shifted(place_field, place_field_shifted, visits_map, percentile_threshold=95,min_num_of_bins=4):
+def field_coordinates_using_shifted(place_field, place_field_shifted, visits_map, percentile_threshold=95,min_num_of_bins=4,detection_smoothing_size=2):
 
     """
     Identifies and characterizes regions in a spatial field based on shifted field criteria.
@@ -548,9 +611,9 @@ def field_coordinates_using_shifted(place_field, place_field_shifted, visits_map
     num_of_islands : int
         Number of identified regions.
     islands_x_max : numpy.ndarray
-        X-coordinates of maximum values in each identified region.
+        X-indexes of maximum values in each identified region.
     islands_y_max : numpy.ndarray
-        Y-coordinates of maximum values in each identified region.
+        Y-indexes of maximum values in each identified region.
     pixels_place_cell_absolute : numpy.ndarray
         Absolute pixel count for each identified region.
     pixels_place_cell_relative : numpy.ndarray
@@ -564,6 +627,9 @@ def field_coordinates_using_shifted(place_field, place_field_shifted, visits_map
     It calculates a percentile threshold from the shifted field, applies it to the original field, identifies
     regions, and characterizes these regions based on their properties.
     """
+    
+    place_field_smoothed = gaussian_smooth_2d(place_field, detection_smoothing_size)
+
 
     place_field_threshold = np.percentile(place_field_shifted, percentile_threshold, 0)
 
@@ -703,7 +769,7 @@ def field_coordinates_using_threshold(place_field, visits_map,smoothing_size=1, 
     place_field_to_smooth[np.isnan(place_field_to_smooth)] = 0
     place_field_smoothed = gaussian_smooth_2d(place_field_to_smooth, smoothing_size)
 
-    I_threshold = field_threshold * np.nanstd(place_field_smoothed)
+    I_threshold = np.nanmean(place_field_smoothed) + field_threshold * np.nanstd(place_field_smoothed)
 
     field_above_threshold_binary = np.copy(place_field_smoothed)
     field_above_threshold_binary[field_above_threshold_binary < I_threshold] = 0

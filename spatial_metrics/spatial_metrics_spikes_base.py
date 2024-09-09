@@ -28,11 +28,16 @@ class PlaceCell:
         kwargs.setdefault('saving_string', 'SpatialMetrics')
         kwargs.setdefault('percentile_threshold', 95)
         kwargs.setdefault('min_num_of_bins', 4)
+        kwargs.setdefault('detection_threshold', 2)
+        kwargs.setdefault('detection_smoothing_size', 2)
+        kwargs.setdefault('field_detection_method','std_from_field')
+
 
         valid_kwargs = ['animal_id','day','neuron','dataset','trial','sampling_rate',
                         'min_time_spent','min_visits','min_speed_threshold','smoothing_size',
                         'x_bin_size','y_bin_size','shift_time','num_cores','percentile_threshold','min_num_of_bins',
-                        'num_surrogates','saving_path','saving','saving_string','environment_edges']
+                        'num_surrogates','saving_path','saving','saving_string','environment_edges',
+                        'detection_threshold','detection_smoothing_size','field_detection_method']
 
         for k, v in kwargs.items():
             if k not in valid_kwargs:
@@ -111,10 +116,31 @@ class PlaceCell:
             I_sec_zscored,I_sec_centered = self.get_mutual_information_zscored(I_sec_original,I_sec_shifted)
             I_spk_zscored,I_spk_centered = self.get_mutual_information_zscored(I_spk_original,I_spk_shifted)
 
-            num_of_islands, islands_x_max, islands_y_max, pixels_place_cell_absolute, pixels_place_cell_relative,place_field_identity = \
-                hf.field_coordinates_using_shifted(place_field_smoothed, place_field_smoothed_shifted,
-                                                    visits_occupancy, percentile_threshold=self.percentile_threshold,
-                                                    min_num_of_bins=self.min_num_of_bins)
+            
+            
+            
+            if self.field_detection_method == 'random_fields':
+                # num_of_islands, islands_x_max, islands_y_max,pixels_place_cell_absolute,pixels_place_cell_relative,place_field_identity = \
+                # hf.field_coordinates_using_shifted(place_field,place_field_shifted,visits_occupancy,
+                #                                    percentile_threshold=self.percentile_threshold,
+                #                                   min_num_of_bins = self.min_num_of_bins)
+                
+                num_of_islands, islands_x_max, islands_y_max,pixels_place_cell_absolute,pixels_place_cell_relative,place_field_identity = \
+                hf.field_coordinates_using_shifted(place_field_smoothed,place_field_smoothed_shifted,visits_occupancy,
+                                                    percentile_threshold=self.percentile_threshold,
+                                                    min_num_of_bins = self.min_num_of_bins)
+                
+
+            elif self.field_detection_method == 'std_from_field':
+                num_of_islands, islands_x_max, islands_y_max,pixels_place_cell_absolute,pixels_place_cell_relative,place_field_identity = \
+                hf.field_coordinates_using_threshold(place_field, visits_occupancy,smoothing_size = self.detection_smoothing_size,    
+                                                   field_threshold=self.detection_threshold,
+                                                   min_num_of_bins=self.min_num_of_bins)
+            else:
+                 warnings.warn("No field detection method set", UserWarning)
+                 num_of_islands, islands_x_max, islands_y_max, pixels_place_cell_absolute, pixels_place_cell_relative, place_field_identity = [[] for _ in range(6)]
+
+        
 
             sparsity = hf.get_sparsity(place_field, position_occupancy)
 

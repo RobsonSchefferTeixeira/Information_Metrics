@@ -33,14 +33,18 @@ class PlaceCell:
         kwargs.setdefault('saving_string', 'SpatialMetrics')
         kwargs.setdefault('nbins_cal', 10)
         kwargs.setdefault('percentile_threshold', 95)
-        kwargs.setdefault('min_num_of_pixels', 4)
+        kwargs.setdefault('min_num_of_bins', 4)
         kwargs.setdefault('speed_smoothing_points', 1)
-        
+        kwargs.setdefault('detection_threshold', 2)
+        kwargs.setdefault('detection_smoothing_size', 2)
+        kwargs.setdefault('field_detection_method','std_from_field')
+
 
         valid_kwargs = ['animal_id', 'day', 'neuron', 'dataset', 'trial', 'sampling_rate',
                         'min_time_spent', 'min_visits', 'min_speed_threshold', 'smoothing_size',
-                        'x_bin_size', 'y_bin_size', 'shift_time', 'num_cores', 'percentile_threshold','min_num_of_pixels',
-                        'num_surrogates', 'saving_path', 'saving', 'saving_string', 'environment_edges', 'nbins_cal','speed_smoothing_points']
+                        'x_bin_size', 'y_bin_size', 'shift_time', 'num_cores', 'percentile_threshold','min_num_of_bins',
+                        'num_surrogates', 'saving_path', 'saving', 'saving_string', 'environment_edges', 'nbins_cal','speed_smoothing_points',
+                        'detection_threshold','detection_smoothing_size','field_detection_method']
 
         for k, v in kwargs.items():
             if k not in valid_kwargs:
@@ -92,7 +96,7 @@ class PlaceCell:
 
             visits_occupancy = hf.get_visits_occupancy(x_coordinates, y_coordinates, new_visits_times, x_grid, y_grid,self.min_visits)
 
-            place_field, place_field_smoothed = self.get_place_field(calcium_imag_valid, x_coordinates_valid,
+            place_field, place_field_smoothed = hf.get_2D_place_field(calcium_imag_valid, x_coordinates_valid,
                                                                      y_coordinates_valid, x_grid, y_grid,
                                                                      self.smoothing_size)
 
@@ -165,11 +169,28 @@ class PlaceCell:
             mutual_info_regression_zscored, mutual_info_regression_centered = self.get_mutual_information_zscored(
                 mutual_info_regression_original, mutual_info_regression_shifted)
 
-
-            num_of_islands, islands_x_max, islands_y_max,pixels_place_cell_absolute,pixels_place_cell_relative,place_field_identity = \
+            if self.field_detection_method == 'random_fields':
+                # num_of_islands, islands_x_max, islands_y_max,pixels_place_cell_absolute,pixels_place_cell_relative,place_field_identity = \
+                # hf.field_coordinates_using_shifted(place_field,place_field_shifted,visits_occupancy,
+                #                                    percentile_threshold=self.percentile_threshold,
+                #                                   min_num_of_bins = self.min_num_of_bins)
+                
+                num_of_islands, islands_x_max, islands_y_max,pixels_place_cell_absolute,pixels_place_cell_relative,place_field_identity = \
                 hf.field_coordinates_using_shifted(place_field_smoothed,place_field_smoothed_shifted,visits_occupancy,
                                                     percentile_threshold=self.percentile_threshold,
-                                                    min_num_of_pixels = self.min_num_of_pixels)
+                                                    min_num_of_bins = self.min_num_of_bins)
+                
+
+            elif self.field_detection_method == 'std_from_field':
+                num_of_islands, islands_x_max, islands_y_max,pixels_place_cell_absolute,pixels_place_cell_relative,place_field_identity = \
+                hf.field_coordinates_using_threshold(place_field, visits_occupancy,smoothing_size = self.detection_smoothing_size,    
+                                                   field_threshold=self.detection_threshold,
+                                                   min_num_of_bins=self.min_num_of_bins)
+            else:
+                 warnings.warn("No field detection method set", UserWarning)
+                 num_of_islands, islands_x_max, islands_y_max, pixels_place_cell_absolute, pixels_place_cell_relative, place_field_identity = [[] for _ in range(6)]
+
+            
 
             I_peaks = dp.detect_peaks(calcium_imag_valid, mpd=0.5 * self.sampling_rate,
                                       mph=1. * np.nanstd(calcium_imag_valid))
@@ -251,24 +272,6 @@ class PlaceCell:
         return inputdict
 
 
-    def get_sparsity(self, place_field, position_occupancy):
-        """
-        Calculate the sparsity of a place field with respect to position occupancy.
-
-        Parameters:
-        - place_field (numpy.ndarray): A place field map representing spatial preferences.
-        - position_occupancy (numpy.ndarray): Positional occupancy map, typically representing time spent in each spatial bin.
-
-        Returns:
-        - sparsity (float): The sparsity measure indicating how selective the place field is with respect to position occupancy.
-
-        """
-        
-        position_occupancy_norm = np.nansum(position_occupancy / np.nansum(position_occupancy))
-        sparsity = np.nanmean(position_occupancy_norm * place_field) ** 2 / np.nanmean(
-            position_occupancy_norm * place_field ** 2)
-
-        return sparsity
 
 
     

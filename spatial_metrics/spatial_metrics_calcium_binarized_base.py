@@ -7,6 +7,7 @@ import sys
 
 
 class PlaceCellBinarized:
+    
     def __init__(self, **kwargs):
 
         kwargs.setdefault('animal_id', None)
@@ -14,12 +15,12 @@ class PlaceCellBinarized:
         kwargs.setdefault('neuron', None)
         kwargs.setdefault('trial', None)
         kwargs.setdefault('dataset', None)
-        kwargs.setdefault('mean_video_srate', 30.)
+        kwargs.setdefault('sampling_rate', 30.)
         kwargs.setdefault('min_time_spent', 0.1)
         kwargs.setdefault('min_visits', 1)
         kwargs.setdefault('min_speed_threshold', 2.5)
         kwargs.setdefault('x_bin_size', 1)
-        kwargs.setdefault('y_bin_size', 1)
+        kwargs.setdefault('y_bin_size', None)
         kwargs.setdefault('environment_edges', None)
         kwargs.setdefault('smoothing_size', 2)
         kwargs.setdefault('shift_time', 10)
@@ -28,13 +29,20 @@ class PlaceCellBinarized:
         kwargs.setdefault('saving_path', os.getcwd())
         kwargs.setdefault('saving', False)
         kwargs.setdefault('saving_string', 'SpatialMetrics')
+        kwargs.setdefault('nbins_cal', 10)
         kwargs.setdefault('percentile_threshold', 95)
-        kwargs.setdefault('min_num_of_pixels', 4)
+        kwargs.setdefault('min_num_of_bins', 4)
+        kwargs.setdefault('speed_smoothing_points', 1)
+        kwargs.setdefault('detection_threshold', 2)
+        kwargs.setdefault('detection_smoothing_size', 2)
+        kwargs.setdefault('field_detection_method','std_from_field')
 
-        valid_kwargs = ['animal_id', 'day', 'neuron', 'dataset', 'trial', 'mean_video_srate',
+
+        valid_kwargs = ['animal_id', 'day', 'neuron', 'dataset', 'trial', 'sampling_rate',
                         'min_time_spent', 'min_visits', 'min_speed_threshold', 'smoothing_size',
-                        'x_bin_size', 'y_bin_size', 'shift_time', 'num_cores', 'percentile_threshold','min_num_of_pixels',
-                        'num_surrogates', 'saving_path', 'saving', 'saving_string', 'environment_edges']
+                        'x_bin_size', 'y_bin_size', 'shift_time', 'num_cores', 'percentile_threshold','min_num_of_bins',
+                        'num_surrogates', 'saving_path', 'saving', 'saving_string', 'environment_edges', 'nbins_cal','speed_smoothing_points',
+                        'detection_threshold','detection_smoothing_size','field_detection_method']
 
         for k, v in kwargs.items():
             if k not in valid_kwargs:
@@ -43,80 +51,106 @@ class PlaceCellBinarized:
 
         self.__dict__['input_parameters'] = kwargs
 
-    def main(self, calcium_imag, track_timevector, x_coordinates, y_coordinates):
 
+
+    def main(self, calcium_imag, time_vector, x_coordinates, y_coordinates=None):
+
+        warnings.filterwarnings("ignore", category=RuntimeWarning)
+        
+        
         if np.all(np.isnan(calcium_imag)):
             warnings.warn("Signal contains only NaN's")
             inputdict = np.nan
-
+            filename = self.filename_constructor(self.saving_string, self.animal_id, self.dataset, self.day,
+                                                 self.neuron, self.trial)
         else:
             
-            if np.any(np.isnan(calcium_imag)):
-                I_keep = ~np.isnan(calcium_imag)
-                calcium_imag = calcium_imag[I_keep]
-                track_timevector = track_timevector[I_keep]
-                x_coordinates = x_coordinates[I_keep]
-                y_coordinates = y_coordinates[I_keep]
-                
-            speed = hf.get_speed(x_coordinates, y_coordinates, track_timevector)
 
-            x_grid, y_grid, x_center_bins, y_center_bins, x_center_bins_repeated, y_center_bins_repeated = hf.get_position_grid(
-                x_coordinates, y_coordinates, self.x_bin_size, self.y_bin_size,
-                environment_edges=self.environment_edges)
+            I_keep_valid = self.validate_input_data(calcium_imag, time_vector, x_coordinates, y_coordinates)
 
-            position_binned = hf.get_binned_2Dposition(x_coordinates, y_coordinates, x_grid, y_grid)
+            calcium_imag = calcium_imag[I_keep_valid]
+            time_vector = time_vector[I_keep_valid]
+            x_coordinates = x_coordinates[I_keep_valid]
+            y_coordinates = y_coordinates[I_keep_valid]
 
-            visits_bins, new_visits_times = hf.get_visits(x_coordinates, y_coordinates, position_binned,
-                                                          x_center_bins, y_center_bins)
+            _,speed = hf.get_speed(x_coordinates, y_coordinates, time_vector,sigma_points=self.speed_smoothing_points)
 
-            time_spent_inside_bins = hf.get_position_time_spent(position_binned, self.mean_video_srate)
+            x_grid, y_grid, x_center_bins, y_center_bins, x_center_bins_repeated, y_center_bins_repeated = hf.get_position_grid(x_coordinates, y_coordinates, self.x_bin_size,self.y_bin_size, environment_edges=self.environment_edges)
 
-            I_keep = self.get_valid_timepoints(calcium_imag, speed, visits_bins, time_spent_inside_bins,
-                                               self.min_speed_threshold, self.min_visits, self.min_time_spent)
+            position_binned = hf.get_binned_position(x_coordinates, y_coordinates, x_grid, y_grid)
 
+            visits_bins, new_visits_times = hf.get_visits(x_coordinates, y_coordinates, position_binned,x_center_bins, y_center_bins)
+
+            time_spent_inside_bins = hf.get_position_time_spent(position_binned, self.sampling_rate)
+
+            I_keep = self.get_valid_timepoints(speed, visits_bins, time_spent_inside_bins,self.min_speed_threshold, self.min_visits, self.min_time_spent)
+        
             calcium_imag_valid = calcium_imag[I_keep].copy()
             x_coordinates_valid = x_coordinates[I_keep].copy()
             y_coordinates_valid = y_coordinates[I_keep].copy()
-            track_timevector_valid = track_timevector[I_keep].copy()
+            time_vector_valid = time_vector[I_keep].copy()
             visits_bins_valid = visits_bins[I_keep].copy()
             position_binned_valid = position_binned[I_keep].copy()
 
-            position_occupancy = hf.get_occupancy(x_coordinates_valid, y_coordinates_valid, x_grid, y_grid,
-                                                  self.mean_video_srate)
-            
-            visits_occupancy = hf.get_visits_occupancy(x_coordinates, y_coordinates, new_visits_times, x_grid, y_grid,
-                                                       self.min_visits)
+            position_occupancy = hf.get_occupancy(x_coordinates_valid, y_coordinates_valid, x_grid, y_grid,self.sampling_rate)
 
-            place_field, place_field_smoothed = self.get_place_field(calcium_imag_valid, x_coordinates_valid,
-                                                                     y_coordinates_valid, x_grid, y_grid,
-                                                                     self.smoothing_size)
+            visits_occupancy = hf.get_visits_occupancy(x_coordinates, y_coordinates, new_visits_times, x_grid, y_grid,self.min_visits)
+
+            place_field, place_field_smoothed = hf.get_2D_place_field(calcium_imag_valid, x_coordinates_valid,
+                                                                    y_coordinates_valid, x_grid, y_grid,
+                                                                    self.smoothing_size)
+
+
 
             mutual_info_original = self.get_mutual_information(calcium_imag_valid, position_binned_valid)
 
-            results = self.parallelize_surrogate(calcium_imag,I_keep, position_binned_valid, self.mean_video_srate,
-                                                 self.shift_time, x_coordinates_valid, y_coordinates_valid,x_grid,y_grid,
-                                                 self.smoothing_size,self.num_cores,self.num_surrogates)
+            results = self.parallelize_surrogate(calcium_imag,I_keep, position_binned_valid, self.sampling_rate,
+                                                self.shift_time, x_coordinates_valid, y_coordinates_valid,x_grid,y_grid,
+                                                self.smoothing_size,self.num_cores,self.num_surrogates)
 
-            place_field_shuffled = []
-            place_field_smoothed_shuffled = []
-            mutual_info_shuffled = []
+
+            
+            
+            place_field_shifted = []
+            place_field_smoothed_shifted = []
+            mutual_info_shifted = []
 
             for perm in range(self.num_surrogates):
-                mutual_info_shuffled.append(results[perm][0])
-                place_field_shuffled.append(results[perm][1])
-                place_field_smoothed_shuffled.append(results[perm][2])
+                mutual_info_shifted.append(results[perm][0])
+                place_field_shifted.append(results[perm][1])
+                place_field_smoothed_shifted.append(results[perm][2])
 
-            mutual_info_shuffled = np.array(mutual_info_shuffled)
-            place_field_shuffled = np.array(place_field_shuffled)
-            place_field_smoothed_shuffled = np.array(place_field_smoothed_shuffled)
+            mutual_info_shifted = np.array(mutual_info_shifted)
+            place_field_shifted = np.array(place_field_shifted)
+            place_field_smoothed_shifted = np.array(place_field_smoothed_shifted)
 
             mutual_info_zscored, mutual_info_centered = self.get_mutual_information_zscored(mutual_info_original,
-                                                                                            mutual_info_shuffled)
+                                                                                            mutual_info_shifted)
+            
 
-            num_of_islands, islands_x_max, islands_y_max,pixels_place_cell_absolute,pixels_place_cell_relative,place_field_identity = \
-                hf.field_coordinates_using_shuffled(place_field_smoothed,place_field_smoothed_shuffled,visits_occupancy,
+            if self.field_detection_method == 'random_fields':
+                # num_of_islands, islands_x_max, islands_y_max,pixels_place_cell_absolute,pixels_place_cell_relative,place_field_identity = \
+                # hf.field_coordinates_using_shifted(place_field,place_field_shifted,visits_occupancy,
+                #                                    percentile_threshold=self.percentile_threshold,
+                #                                   min_num_of_bins = self.min_num_of_bins)
+                
+                num_of_islands, islands_x_max, islands_y_max,pixels_place_cell_absolute,pixels_place_cell_relative,place_field_identity = \
+                hf.field_coordinates_using_shifted(place_field_smoothed,place_field_smoothed_shifted,visits_occupancy,
                                                     percentile_threshold=self.percentile_threshold,
-                                                    min_num_of_pixels = self.min_num_of_pixels)
+                                                    min_num_of_bins = self.min_num_of_bins)
+                
+
+            elif self.field_detection_method == 'std_from_field':
+                num_of_islands, islands_x_max, islands_y_max,pixels_place_cell_absolute,pixels_place_cell_relative,place_field_identity = \
+                hf.field_coordinates_using_threshold(place_field, visits_occupancy,smoothing_size = self.detection_smoothing_size,    
+                                                field_threshold=self.detection_threshold,
+                                                min_num_of_bins=self.min_num_of_bins)
+            else:
+                warnings.warn("No field detection method set", UserWarning)
+                num_of_islands, islands_x_max, islands_y_max, pixels_place_cell_absolute, pixels_place_cell_relative, place_field_identity = [[] for _ in range(6)]
+
+            
+
 
             sparsity = hf.get_sparsity(place_field, position_occupancy)
 
@@ -127,11 +161,14 @@ class PlaceCellBinarized:
             y_peaks_location = y_coordinates_valid[I_peaks]
 
             inputdict = dict()
+
+            inputdict = dict()
             inputdict['place_field'] = place_field
             inputdict['place_field_smoothed'] = place_field_smoothed
-            inputdict['place_field_shuffled'] = place_field_shuffled
-            inputdict['place_field_smoothed_shuffled'] = place_field_smoothed_shuffled
 
+            inputdict['place_field_shifted'] = place_field_shifted
+            inputdict['place_field_smoothed_shifted'] = place_field_smoothed_shifted
+            
             inputdict['occupancy_map'] = position_occupancy
             inputdict['visits_map'] = visits_occupancy
             inputdict['x_grid'] = x_grid
@@ -141,7 +178,6 @@ class PlaceCellBinarized:
             inputdict['numb_events'] = I_peaks.shape[0]
             inputdict['x_peaks_location'] = x_peaks_location
             inputdict['y_peaks_location'] = y_peaks_location
-            inputdict['events_amplitude'] = peaks_amplitude
 
             inputdict['place_field_identity'] = place_field_identity
             inputdict['num_of_islands'] = num_of_islands
@@ -153,14 +189,14 @@ class PlaceCellBinarized:
             inputdict['place_cell_extension_relative'] = pixels_place_cell_relative
 
             inputdict['mutual_info_original'] = mutual_info_original
-            inputdict['mutual_info_shuffled'] = mutual_info_shuffled
+            inputdict['mutual_info_shifted'] = mutual_info_shifted
             inputdict['mutual_info_zscored'] = mutual_info_zscored
             inputdict['mutual_info_centered'] = mutual_info_centered
 
             inputdict['input_parameters'] = self.__dict__['input_parameters']
 
-            filename = hf.filename_constructor(self.saving_string, self.animal_id, self.dataset, self.day,
-                                                 self.neuron, self.trial)
+            filename = hf.filename_constructor(self.saving_string, self.animal_id, self.dataset, self.day, 
+                                        self.neuron,self.trial)
 
         if self.saving == True:
             hf.caller_saving(inputdict, filename, self.saving_path)
@@ -172,22 +208,29 @@ class PlaceCellBinarized:
         return inputdict
 
 
-    def get_calcium_occupancy(self, calcium_imag, x_coordinates, y_coordinates, x_grid, y_grid):
 
-        # calculate mean calcium per pixel
-        calcium_mean_occupancy = np.nan * np.zeros((y_grid.shape[0] - 1, x_grid.shape[0] - 1))
-        for xx in range(0, x_grid.shape[0] - 1):
-            for yy in range(0, y_grid.shape[0] - 1):
-                check_x_occupancy = np.logical_and(x_coordinates >= x_grid[xx], x_coordinates < (x_grid[xx + 1]))
-                check_y_occupancy = np.logical_and(y_coordinates >= y_grid[yy], y_coordinates < (y_grid[yy + 1]))
 
-                calcium_mean_occupancy[yy, xx] = np.nanmean(
-                    calcium_imag[np.logical_and(check_x_occupancy, check_y_occupancy)])
 
-        return calcium_mean_occupancy
+    def validate_input_data(self,calcium_imag, time_vector, x_coordinates, y_coordinates):
 
-    def get_valid_timepoints(self, calcium_imag, speed, visits_bins, time_spent_inside_bins, min_speed_threshold,
-                             min_visits, min_time_spent):
+        # valid calcium points
+        I_valid_calcium = ~np.isnan(calcium_imag)
+
+        # valid x coordinates
+        I_valid_x_coord = ~np.isnan(x_coordinates)
+
+        # valid y coordinates
+        I_valid_y_coord = ~np.isnan(y_coordinates)
+
+        # valid time vector
+        I_valid_time_vector = ~np.isnan(time_vector)
+
+        I_keep_valid = I_valid_calcium * I_valid_x_coord * I_valid_y_coord * I_valid_time_vector
+
+        return I_keep_valid
+
+
+    def get_valid_timepoints(self, speed, visits_bins, time_spent_inside_bins, min_speed_threshold, min_visits, min_time_spent):
 
         # min speed
         I_speed_thres = speed >= min_speed_threshold
@@ -198,29 +241,12 @@ class PlaceCellBinarized:
         # min time spent
         I_time_spent_thres = time_spent_inside_bins >= min_time_spent
 
-        # valid calcium points
-        I_valid_calcium = ~np.isnan(calcium_imag)
 
-        I_keep = I_speed_thres * I_visits_times_thres * I_time_spent_thres * I_valid_calcium
+        I_keep = I_speed_thres * I_visits_times_thres * I_time_spent_thres
+
         return I_keep
+    
 
-
-    def get_place_field(self, calcium_imag, x_coordinates, y_coordinates, x_grid, y_grid, smoothing_size):
-
-        # calculate mean calcium per pixel
-        place_field = np.nan * np.zeros((y_grid.shape[0] - 1, x_grid.shape[0] - 1))
-        for xx in range(0, x_grid.shape[0] - 1):
-            for yy in range(0, y_grid.shape[0] - 1):
-                check_x_occupancy = np.logical_and(x_coordinates >= x_grid[xx], x_coordinates < (x_grid[xx + 1]))
-                check_y_occupancy = np.logical_and(y_coordinates >= y_grid[yy], y_coordinates < (y_grid[yy + 1]))
-
-                place_field[yy, xx] = np.nanmean(calcium_imag[np.logical_and(check_x_occupancy, check_y_occupancy)])
-
-        place_field_to_smooth = np.copy(place_field)
-        place_field_to_smooth[np.isnan(place_field_to_smooth)] = 0
-        place_field_smoothed = hf.gaussian_smooth_2d(place_field_to_smooth, smoothing_size)
-
-        return place_field, place_field_smoothed
 
 
     def get_mutual_information_zscored(self, mutual_info_original, mutual_info_shuffled):
@@ -230,39 +256,34 @@ class PlaceCellBinarized:
 
         return mutual_info_zscored, mutual_info_centered
 
-    def parallelize_surrogate(self, calcium_imag, I_keep, position_binned_valid, mean_video_srate, shift_time,
+    def parallelize_surrogate(self, calcium_imag, I_keep, position_binned_valid, sampling_rate, shift_time,
                               x_coordinates_valid, y_coordinates_valid, x_grid, y_grid, smoothing_size,
                               num_cores, num_surrogates):
         results = Parallel(n_jobs=num_cores)(delayed(self.get_mutual_info_surrogate)
                                                           (calcium_imag, I_keep, position_binned_valid,
-                                                           mean_video_srate,
+                                                           sampling_rate,
                                                            shift_time, x_coordinates_valid, y_coordinates_valid,
                                                            x_grid, y_grid, smoothing_size)
                                                           for _ in range(num_surrogates))
 
         return results
 
-    def get_surrogate(self, input_vector, mean_video_srate, shift_time):
-        # eps = np.finfo(float).eps
-        I_break = np.random.choice(np.arange(-shift_time * mean_video_srate, mean_video_srate * shift_time), 1)[
-            0].astype(int)
-        input_vector_shuffled = np.concatenate([input_vector[I_break:], input_vector[0:I_break]])
 
-        return input_vector_shuffled
 
-    def get_mutual_info_surrogate(self, calcium_imag, I_keep, position_binned_valid, mean_video_srate, shift_time,
+    def get_mutual_info_surrogate(self, calcium_imag, I_keep, position_binned_valid, sampling_rate, shift_time,
                                   x_coordinates_valid, y_coordinates_valid, x_grid, y_grid, smoothing_size):
 
-        calcium_imag_shuffled = self.get_surrogate(calcium_imag, mean_video_srate, shift_time)
+        calcium_imag_shuffled = hf.get_surrogate(calcium_imag, sampling_rate, shift_time)
         calcium_imag_shuffled_valid = calcium_imag_shuffled[I_keep].copy()
 
-        # calcium_imag_shuffled = self.get_surrogate(calcium_imag,mean_video_srate,shift_time)
         mutual_info_shuffled = self.get_mutual_information(calcium_imag_shuffled_valid, position_binned_valid)
-        place_field_shuffled, place_field_smoothed_shuffled = self.get_place_field(calcium_imag_shuffled_valid,
+        place_field_shuffled, place_field_smoothed_shuffled = hf.get_2D_place_field(calcium_imag_shuffled_valid,
                                                                                    x_coordinates_valid,
                                                                                    y_coordinates_valid, x_grid, y_grid,
                                                                                    smoothing_size)
         return mutual_info_shuffled, place_field_shuffled, place_field_smoothed_shuffled
+
+
 
     def get_mutual_information(self, calcium_imag, position_binned):
 
