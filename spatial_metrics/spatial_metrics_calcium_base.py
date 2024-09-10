@@ -176,14 +176,14 @@ class PlaceCell:
                 #                                   min_num_of_bins = self.min_num_of_bins)
                 
                 num_of_islands, islands_x_max, islands_y_max,pixels_place_cell_absolute,pixels_place_cell_relative,place_field_identity = \
-                hf.field_coordinates_using_shifted(place_field_smoothed,place_field_smoothed_shifted,visits_occupancy,
+                hf.field_coordinates_using_shifted(place_field_smoothed,place_field_smoothed_shifted,visits_occupancy,x_center_bins, y_center_bins,
                                                     percentile_threshold=self.percentile_threshold,
                                                     min_num_of_bins = self.min_num_of_bins)
                 
 
             elif self.field_detection_method == 'std_from_field':
                 num_of_islands, islands_x_max, islands_y_max,pixels_place_cell_absolute,pixels_place_cell_relative,place_field_identity = \
-                hf.field_coordinates_using_threshold(place_field, visits_occupancy,smoothing_size = self.detection_smoothing_size,    
+                hf.field_coordinates_using_threshold(place_field, visits_occupancy,x_center_bins, y_center_bins,smoothing_size = self.detection_smoothing_size,    
                                                    field_threshold=self.detection_threshold,
                                                    min_num_of_bins=self.min_num_of_bins)
             else:

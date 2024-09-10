@@ -588,10 +588,11 @@ def dfs(input_array, input_array2, count, row, col, i, j):
         dfs(input_array, input_array2, count, row, col, i, j + 1)
 
 
-def field_coordinates_using_shifted(place_field, place_field_shifted, visits_map, percentile_threshold=95,min_num_of_bins=4,detection_smoothing_size=2):
 
+def field_coordinates_using_shifted(place_field, place_field_shifted, visits_map, x_center_bins,y_center_bins,percentile_threshold=95, min_num_of_bins=4, detection_smoothing_size=2):
     """
-    Identifies and characterizes regions in a spatial field based on shifted field criteria.
+    Identifies and characterizes regions in a spatial field based on shifted field criteria,
+    with the center of mass used as the location for each place field.
 
     Parameters
     ----------
@@ -610,30 +611,25 @@ def field_coordinates_using_shifted(place_field, place_field_shifted, visits_map
     -------
     num_of_islands : int
         Number of identified regions.
-    islands_x_max : numpy.ndarray
-        X-indexes of maximum values in each identified region.
-    islands_y_max : numpy.ndarray
-        Y-indexes of maximum values in each identified region.
+    islands_x_com : numpy.ndarray
+        X-coordinates of the center of mass in each identified region.
+    islands_y_com : numpy.ndarray
+        Y-coordinates of the center of mass in each identified region.
     pixels_place_cell_absolute : numpy.ndarray
         Absolute pixel count for each identified region.
     pixels_place_cell_relative : numpy.ndarray
         Relative pixel count for each identified region.
     place_field_identity : numpy.ndarray
         Identification map for the regions.
-
-    Notes
-    -----
-    This function identifies distinct spatial regions in the input field based on shifted field criteria.
-    It calculates a percentile threshold from the shifted field, applies it to the original field, identifies
-    regions, and characterizes these regions based on their properties.
     """
-    
+
     place_field_smoothed = gaussian_smooth_2d(place_field, detection_smoothing_size)
 
-
+    # Calculate the threshold using the shifted place field data
     place_field_threshold = np.percentile(place_field_shifted, percentile_threshold, 0)
 
-    field_above_threshold_binary = place_field.copy()
+    # Create a binary map of areas above the threshold
+    field_above_threshold_binary = np.copy(place_field)
     field_above_threshold_binary[field_above_threshold_binary <= place_field_threshold] = 0
     field_above_threshold_binary[field_above_threshold_binary > place_field_threshold] = 1
 
@@ -651,19 +647,22 @@ def field_coordinates_using_shifted(place_field, place_field_shifted, visits_map
 
         islands_id = np.unique(place_field_identity[~np.isnan(place_field_identity)])[1:]
 
-        islands_y_max = []
-        islands_x_max = []
+        islands_y_com = []
+        islands_x_com = []
         pixels_above = []
+        
         for ii in islands_id:
-            max_val = np.nanmax(place_field[(place_field_identity == ii)])
-            I_y_max, I_x_max = np.where(place_field == max_val)
-            islands_y_max.append(I_y_max[0])
-            islands_x_max.append(I_x_max[0])
+            island_mask = (place_field_identity == ii)
 
-            pixels_above.append(np.nansum(place_field_identity == ii))
+            x_com, y_com = center_of_mass(island_mask, place_field_smoothed,x_center_bins,y_center_bins)
 
-        islands_x_max = np.array(islands_x_max)
-        islands_y_max = np.array(islands_y_max)
+            islands_y_com.append(y_com)
+            islands_x_com.append(x_com)
+
+            pixels_above.append(np.nansum(island_mask))
+
+        islands_x_com = np.array(islands_x_com)
+        islands_y_com = np.array(islands_y_com)
         pixels_above = np.array(pixels_above)
 
         total_visited_pixels = np.nansum(visits_map != 0)
@@ -674,14 +673,13 @@ def field_coordinates_using_shifted(place_field, place_field_shifted, visits_map
 
     else:
         num_of_islands = 0
-        islands_y_max = np.nan
-        islands_x_max = np.nan
+        islands_y_com = np.nan
+        islands_x_com = np.nan
         pixels_place_cell_relative = np.nan
         pixels_place_cell_absolute = np.nan
         place_field_identity = np.nan
 
-    
-    return num_of_islands, islands_x_max, islands_y_max,pixels_place_cell_absolute,pixels_place_cell_relative,correct_island_identifiers(place_field_identity)
+    return num_of_islands, islands_x_com, islands_y_com, pixels_place_cell_absolute, pixels_place_cell_relative, correct_island_identifiers(place_field_identity)
 
 
 def correct_island_identifiers(island_ids):
@@ -724,10 +722,54 @@ def correct_island_identifiers(island_ids):
     return corrected_ids
 
 
-def field_coordinates_using_threshold(place_field, visits_map,smoothing_size=1, field_threshold=2,min_num_of_bins=4):
-    
+def center_of_mass(island_mask, place_field_smoothed, x_center_bins, y_center_bins):
     """
-    Identify and characterize spatial regions in a field based on threshold criteria.
+    Calculate the center of mass for a given region (island) in the place field,
+    taking into account the center bins for x and y coordinates.
+
+    Parameters
+    ----------
+    island_mask : numpy.ndarray
+        A binary mask indicating the pixels belonging to the region (island).
+    place_field_smoothed : numpy.ndarray
+        The smoothed place field data.
+    x_center_bins : numpy.ndarray
+        The x-coordinate bin centers corresponding to the place field grid.
+    y_center_bins : numpy.ndarray
+        The y-coordinate bin centers corresponding to the place field grid.
+
+    Returns
+    -------
+    x_com : float
+        X-coordinate of the center of mass.
+    y_com : float
+        Y-coordinate of the center of mass.
+    """
+    # Get the pixel values of the place field corresponding to the island
+    island_values = place_field_smoothed[island_mask]
+
+    # Get the coordinates of the pixels in the island
+    y_coords, x_coords = np.where(island_mask)
+
+    # Calculate the total weight (sum of island values)
+    total_weight = np.nansum(island_values)
+
+    # Compute the weighted center of mass using the provided center bins
+    if total_weight > 0:
+        x_com = np.nansum(x_center_bins[x_coords] * island_values) / total_weight
+        y_com = np.nansum(y_center_bins[y_coords] * island_values) / total_weight
+    else:
+        # If no weight, use the mean of the coordinates
+        x_com = np.nanmean(x_center_bins[x_coords])
+        y_com = np.nanmean(y_center_bins[y_coords])
+
+    return x_com, y_com
+
+
+def field_coordinates_using_threshold(place_field, visits_map, x_center_bins,y_center_bins,smoothing_size=1, field_threshold=2, min_num_of_bins=4):
+    """
+    Identify and characterize spatial regions in a field based on threshold criteria,
+    with the center of mass as the place field location.
 
     Parameters
     ----------
@@ -746,21 +788,16 @@ def field_coordinates_using_threshold(place_field, visits_map,smoothing_size=1, 
     -------
     num_of_islands : int
         Number of identified regions.
-    islands_x_max : numpy.ndarray
-        X-coordinates of maximum values in each identified region.
-    islands_y_max : numpy.ndarray
-        Y-coordinates of maximum values in each identified region.
+    islands_x_com : numpy.ndarray
+        X-coordinates of the center of mass in each identified region.
+    islands_y_com : numpy.ndarray
+        Y-coordinates of the center of mass in each identified region.
     pixels_place_cell_absolute : numpy.ndarray
         Absolute pixel count for each identified region.
     pixels_place_cell_relative : numpy.ndarray
         Relative pixel count for each identified region.
     place_field_identity : numpy.ndarray
         Identification map for the regions.
-
-    Notes
-    -----
-    This function applies Gaussian smoothing, thresholding, and island identification techniques
-    to extract information about distinct spatial regions in the input field and their properties.
     """
       
     place_field_to_smooth = np.copy(place_field)
@@ -775,8 +812,6 @@ def field_coordinates_using_threshold(place_field, visits_map,smoothing_size=1, 
     field_above_threshold_binary[field_above_threshold_binary < I_threshold] = 0
     field_above_threshold_binary[field_above_threshold_binary >= I_threshold] = 1
     field_above_threshold_binary[I_nan] = 0
-    
-    
     
     if np.any(field_above_threshold_binary > 0):
         sys.setrecursionlimit(10000000)
@@ -793,19 +828,24 @@ def field_coordinates_using_threshold(place_field, visits_map,smoothing_size=1, 
         num_of_islands = island_counter
 
         islands_id = np.unique(place_field_identity)[1:]
-        islands_y_max = []
-        islands_x_max = []
+        islands_y_com = []
+        islands_x_com = []
         pixels_above = []
+        
         for ii in islands_id:
-            max_val = np.nanmax(place_field_smoothed[(place_field_identity == ii)])
-            I_y_max, I_x_max = np.where(place_field_smoothed == max_val)
-            islands_y_max.append(I_y_max[0])
-            islands_x_max.append(I_x_max[0])
+            # Create a mask for the current island
+            island_mask = (place_field_identity == ii)
+            
+            # Calculate the center of mass for this island
+            x_com, y_com = center_of_mass(island_mask, place_field_smoothed,x_center_bins,y_center_bins)
+            
+            islands_y_com.append(y_com)
+            islands_x_com.append(x_com)
 
-            pixels_above.append(np.nansum(place_field_identity == ii))
+            pixels_above.append(np.nansum(island_mask))
 
-        islands_x_max = np.array(islands_x_max)
-        islands_y_max = np.array(islands_y_max)
+        islands_x_com = np.array(islands_x_com)
+        islands_y_com = np.array(islands_y_com)
         pixels_above = np.array(pixels_above)
 
         total_visited_pixels = np.nansum(visits_map != 0)
@@ -816,14 +856,15 @@ def field_coordinates_using_threshold(place_field, visits_map,smoothing_size=1, 
 
     else:
         num_of_islands = 0
-        islands_y_max = np.nan
-        islands_x_max = np.nan
+        islands_y_com = np.nan
+        islands_x_com = np.nan
         pixels_place_cell_relative = np.nan
         pixels_place_cell_absolute = np.nan
         place_field_identity = np.nan
         
 
-    return num_of_islands, islands_x_max, islands_y_max,pixels_place_cell_absolute,pixels_place_cell_relative,correct_island_identifiers(place_field_identity)
+    return num_of_islands, islands_x_com, islands_y_com, pixels_place_cell_absolute, pixels_place_cell_relative, correct_island_identifiers(place_field_identity)
+
 
 
 def preprocess_signal(input_signal, sampling_rate, signal_type, z_threshold=2):
@@ -844,9 +885,12 @@ def preprocess_signal(input_signal, sampling_rate, signal_type, z_threshold=2):
 
     elif signal_type == 'Binarized':
 
-        norm_signal = filtered_signal / np.std(filtered_signal)
+        filtered_signal = eegfilt(input_signal, sampling_rate, 0,2)
+        diff_signal = np.hstack([0,np.diff(filtered_signal)])
+        norm_signal = filtered_signal / np.nanstd(filtered_signal)
+        binarized_idx = (norm_signal > z_threshold) & (diff_signal > 0)
         binarized_signal = np.zeros(diff_signal.shape[0])
-        binarized_signal[(norm_signal > z_threshold) & (diff_signal > 0)] = 1
+        binarized_signal[binarized_idx] = 1
         output_signal = binarized_signal
 
     else:

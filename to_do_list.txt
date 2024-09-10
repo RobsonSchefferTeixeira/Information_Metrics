@@ -1,5 +1,5 @@
 TO DO
-	- use field center as the field center of mass instead of maximum value
+	- include real data to test
 
 DOING
 

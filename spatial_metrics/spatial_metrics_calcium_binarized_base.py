@@ -5,6 +5,12 @@ from joblib import Parallel, delayed
 import warnings
 import sys
 
+'''
+Method used in
+https://www.sciencedirect.com/science/article/pii/S0960982218312624#sec4
+and
+https://www.frontiersin.org/articles/10.3389/fncir.2020.00019/abstract
+'''
 
 class PlaceCellBinarized:
     
@@ -29,7 +35,6 @@ class PlaceCellBinarized:
         kwargs.setdefault('saving_path', os.getcwd())
         kwargs.setdefault('saving', False)
         kwargs.setdefault('saving_string', 'SpatialMetrics')
-        kwargs.setdefault('nbins_cal', 10)
         kwargs.setdefault('percentile_threshold', 95)
         kwargs.setdefault('min_num_of_bins', 4)
         kwargs.setdefault('speed_smoothing_points', 1)
@@ -41,7 +46,7 @@ class PlaceCellBinarized:
         valid_kwargs = ['animal_id', 'day', 'neuron', 'dataset', 'trial', 'sampling_rate',
                         'min_time_spent', 'min_visits', 'min_speed_threshold', 'smoothing_size',
                         'x_bin_size', 'y_bin_size', 'shift_time', 'num_cores', 'percentile_threshold','min_num_of_bins',
-                        'num_surrogates', 'saving_path', 'saving', 'saving_string', 'environment_edges', 'nbins_cal','speed_smoothing_points',
+                        'num_surrogates', 'saving_path', 'saving', 'saving_string', 'environment_edges','speed_smoothing_points',
                         'detection_threshold','detection_smoothing_size','field_detection_method']
 
         for k, v in kwargs.items():
@@ -135,14 +140,14 @@ class PlaceCellBinarized:
                 #                                   min_num_of_bins = self.min_num_of_bins)
                 
                 num_of_islands, islands_x_max, islands_y_max,pixels_place_cell_absolute,pixels_place_cell_relative,place_field_identity = \
-                hf.field_coordinates_using_shifted(place_field_smoothed,place_field_smoothed_shifted,visits_occupancy,
+                hf.field_coordinates_using_shifted(place_field_smoothed,place_field_smoothed_shifted,visits_occupancy,x_center_bins, y_center_bins,
                                                     percentile_threshold=self.percentile_threshold,
                                                     min_num_of_bins = self.min_num_of_bins)
                 
 
             elif self.field_detection_method == 'std_from_field':
                 num_of_islands, islands_x_max, islands_y_max,pixels_place_cell_absolute,pixels_place_cell_relative,place_field_identity = \
-                hf.field_coordinates_using_threshold(place_field, visits_occupancy,smoothing_size = self.detection_smoothing_size,    
+                hf.field_coordinates_using_threshold(place_field, visits_occupancy,x_center_bins, y_center_bins,smoothing_size = self.detection_smoothing_size,    
                                                 field_threshold=self.detection_threshold,
                                                 min_num_of_bins=self.min_num_of_bins)
             else:
@@ -314,7 +319,7 @@ class PlaceCellBinarized:
 
                 joint_prob_active = activity_in_bin_idx.shape[0] / calcium_imag.shape[0]
                 joint_prob_inactive = inactivity_in_bin_idx.shape[0] / calcium_imag.shape[0]
-                prob_in_bin = np.sum(position_idx) / calcium_imag.shape[0]
+                prob_in_bin = np.sum(position_idx) / position_binned.shape[0]
 
                 if joint_prob_active > 0:
                     mutual_info = mutual_info + joint_prob_active * np.log2(
