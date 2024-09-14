@@ -1197,7 +1197,7 @@ def calculate_p_value(observed_statistic, surrogate_statistics):
     greater_proportion = np.nansum(surrogate_statistics >= observed_statistic)/surrogate_statistics.shape[0]
     
     # Calculate the proportion less than or equal to the negative of observed statistic
-    less_proportion = np.nansum(surrogate_statistics <= -observed_statistic)/surrogate_statistics.shape[0]
+    less_proportion = np.nansum(surrogate_statistics <= observed_statistic)/surrogate_statistics.shape[0]
     
     # Combine the two proportions to obtain the two-tailed p-value
     p_value = 2 * np.nanmin([greater_proportion, less_proportion])
