@@ -1192,19 +1192,43 @@ def search_sorted_indices(known_array, test_array):
     return indices
 
 
-def calculate_p_value(observed_statistic, surrogate_statistics):
-    # Calculate the proportion greater than or equal to observed statistic
-    greater_proportion = np.nansum(surrogate_statistics >= observed_statistic)/surrogate_statistics.shape[0]
-    
-    # Calculate the proportion less than or equal to the negative of observed statistic
-    less_proportion = np.nansum(surrogate_statistics <= observed_statistic)/surrogate_statistics.shape[0]
-    
-    # Combine the two proportions to obtain the two-tailed p-value
-    p_value = 2 * np.nanmin([greater_proportion, less_proportion])
 
-    # if pvl is zero, then report it as p-val less than 1/surrogate_statistics.shape[0], since this is our resolution
-    if p_value == 0:
+def calculate_p_value(observed_statistic, shuffled_distribution, alternative='two-sided'):
+    from collections import namedtuple
+    Statistic = namedtuple('Statistic', ['p_value', 'distribution_size', 'extreme_counts'])
+    
+    distribution_size = shuffled_distribution.shape[0]
+    
+    if alternative == 'two-sided':
+        # Calculate the proportion for two-sided test
+        extreme_counts_greater = np.nansum(shuffled_distribution >= observed_statistic)
+        greater_proportion = extreme_counts_greater / distribution_size
         
-        p_value = 1/surrogate_statistics.shape[0]
+        extreme_counts_less = np.nansum(shuffled_distribution <= observed_statistic)
+        less_proportion = extreme_counts_less / distribution_size
         
-    return p_value
+        # Two-tailed p-value is twice the minimum of both tails
+        p_value = 2 * np.nanmin([greater_proportion, less_proportion])
+        extreme_counts = np.nanmin([extreme_counts_greater, extreme_counts_less])
+    
+    elif alternative == 'greater':
+        # One-sided (greater) test
+        extreme_counts = np.nansum(shuffled_distribution >= observed_statistic)
+        p_value = extreme_counts / distribution_size
+    
+    elif alternative == 'less':
+        # One-sided (less) test
+        extreme_counts = np.nansum(shuffled_distribution <= observed_statistic)
+        p_value = extreme_counts / distribution_size
+    else:
+        
+        raise(ValueError(f"Invalid value for 'alternative': {alternative}. Expected 'two-sided', 'greater', or 'less'."))
+
+    # If p-value is zero, set to minimum resolution
+    if extreme_counts == 0:
+        p_value = 1 / distribution_size
+
+    statistic = Statistic(p_value=p_value, distribution_size=distribution_size, extreme_counts=extreme_counts)
+    
+    return statistic
+
