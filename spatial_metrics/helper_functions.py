@@ -7,33 +7,17 @@ from scipy import signal as sig
 import math
 import warnings
 
-def get_surrogate(input_vector, sampling_rate, shift_time):
-    """
-    Generate a surrogate signal by applying a time shift to the input vector.
+def correct_coordinates(x_coordinates, y_coordinates, environment_edges):
+    # Assign NaN to out-of-bound x and y coordinates
+    x_coordinates[(x_coordinates < environment_edges[0][0]) | (x_coordinates > environment_edges[0][1])] = np.nan
+    y_coordinates[(y_coordinates < environment_edges[1][0]) | (y_coordinates > environment_edges[1][1])] = np.nan
 
-    This function creates a surrogate signal by shifting the input vector in time 
-    while maintaining the same signal characteristics.
+    # If an index in y_coordinates is NaN, set the corresponding x_coordinates to NaN, and vice versa
+    nan_mask = np.isnan(x_coordinates) | np.isnan(y_coordinates)
+    x_coordinates[nan_mask] = np.nan
+    y_coordinates[nan_mask] = np.nan
 
-    Parameters:
-        input_vector (numpy.ndarray): The input signal to generate a surrogate for.
-        sampling_rate (float): The sampling rate of the input signal (samples per second).
-        shift_time (float): The desired time shift for the surrogate signal (seconds).
-
-    Returns:
-        input_vector_shifted (numpy.ndarray): The surrogate signal obtained by applying the time shift.
-    """
-    if len(input_vector) < np.abs(sampling_rate * shift_time):
-        # Adjust the shift time if it exceeds the length of the input signal.
-        shift_time = np.floor(len(input_vector) / sampling_rate)
-
-    # Generate a random time shift in samples within the specified range.
-    shift_samples = np.random.randint(-shift_time * sampling_rate, sampling_rate * shift_time + 1)
-
-    # Apply the time shift to create the surrogate signal.
-    input_vector_shifted = np.concatenate([input_vector[shift_samples:], input_vector[0:shift_samples]])
-    # np.roll could be used instead
-
-    return input_vector_shifted
+    return x_coordinates, y_coordinates
 
 def get_sparsity(place_field, position_occupancy):
     """
@@ -228,13 +212,13 @@ def get_visits( x_coordinates, y_coordinates, position_binned, x_center_bins, y_
     I_x_coord = []
     I_y_coord = []
 
-    for xx in range(0, x_coordinates.shape[0]):
-        if np.isnan(x_coordinates[xx]):
+    for x_cord,y_cord in zip(x_coordinates,y_coordinates):
+        if np.isnan(x_cord) | np.isnan(y_cord):
             I_x_coord.append(np.nan)
             I_y_coord.append(np.nan)
         else:
-            I_x_coord.append(np.nanargmin(np.abs(x_coordinates[xx] - x_center_bins)))
-            I_y_coord.append(np.nanargmin(np.abs(y_coordinates[xx] - y_center_bins)))
+            I_x_coord.append(np.nanargmin(np.abs(x_cord - x_center_bins)))
+            I_y_coord.append(np.nanargmin(np.abs(y_cord - y_center_bins)))
 
     I_x_coord = np.array(I_x_coord)
     I_y_coord = np.array(I_y_coord)
@@ -254,7 +238,7 @@ def get_visits( x_coordinates, y_coordinates, position_binned, x_center_bins, y_
 
     return visits_bins, new_visits_times * 1
 
-def get_visits_occupancy_1D( x_coordinates, new_visits_times, x_grid, min_visits=1):
+def get_visits_occupancy_1D( x_coordinates, new_visits_times, x_grid):
     I_visit = np.where(new_visits_times > 0)[0]
 
     x_coordinate_visit = x_coordinates[I_visit]
@@ -266,12 +250,12 @@ def get_visits_occupancy_1D( x_coordinates, new_visits_times, x_grid, min_visits
 
         visits_occupancy[xx] = np.sum(check_x_occupancy)
 
-    visits_occupancy[visits_occupancy < min_visits] = np.nan
+    # visits_occupancy[visits_occupancy < min_visits] = np.nan
 
     return visits_occupancy
 
 
-def get_visits_occupancy( x_coordinates, y_coordinates, new_visits_times, x_grid, y_grid, min_visits=1):
+def get_visits_occupancy(x_coordinates, y_coordinates, new_visits_times, x_grid, y_grid):
     I_visit = np.where(new_visits_times > 0)[0]
 
     x_coordinate_visit = x_coordinates[I_visit]
@@ -287,7 +271,7 @@ def get_visits_occupancy( x_coordinates, y_coordinates, new_visits_times, x_grid
 
             visits_occupancy[yy, xx] = np.sum(np.logical_and(check_x_occupancy, check_y_occupancy))
 
-    visits_occupancy[visits_occupancy < min_visits] = np.nan
+    # visits_occupancy[visits_occupancy < min_visits] = np.nan
 
     return visits_occupancy
 
@@ -311,8 +295,23 @@ def get_occupancy_1D(x_coordinates, x_grid, sampling_rate):
         check_x_occupancy = np.logical_and(x_coordinates >= x_grid[xx], x_coordinates < (x_grid[xx + 1]))
         position_occupancy[xx] = np.sum(check_x_occupancy)/sampling_rate
 
-    position_occupancy[position_occupancy == 0] = np.nan
+    # position_occupancy[position_occupancy == 0] = np.nan
     return position_occupancy
+
+def get_speed_occupancy(x_coordinates, y_coordinates,time_vector, x_grid, y_grid):
+    # calculate position occupancy
+
+    speed,_ = get_speed(x_coordinates, y_coordinates, time_vector,sigma_points=1)
+
+    speed_occupancy = np.zeros((y_grid.shape[0] - 1, x_grid.shape[0] - 1))
+    for xx in range(0, x_grid.shape[0] - 1):
+        for yy in range(0, y_grid.shape[0] - 1):
+            check_x_occupancy = np.logical_and(x_coordinates >= x_grid[xx], x_coordinates < (x_grid[xx + 1]))
+            check_y_occupancy = np.logical_and(y_coordinates >= y_grid[yy], y_coordinates < (y_grid[yy + 1]))
+
+            speed_occupancy[yy, xx] = np.nanmean(speed[np.logical_and(check_x_occupancy, check_y_occupancy)])
+
+    return speed_occupancy
 
 def get_occupancy(x_coordinates, y_coordinates, x_grid, y_grid, sampling_rate):
     # calculate position occupancy
@@ -325,7 +324,7 @@ def get_occupancy(x_coordinates, y_coordinates, x_grid, y_grid, sampling_rate):
             position_occupancy[yy, xx] = np.sum(
                 np.logical_and(check_x_occupancy, check_y_occupancy)) / sampling_rate
 
-    position_occupancy[position_occupancy == 0] = np.nan
+    # position_occupancy[position_occupancy == 0] = np.nan
     return position_occupancy
 
 def get_position_grid_1D(x_coordinates, x_bin_size=1, environment_edges=None):
@@ -448,7 +447,6 @@ def get_speed(x_coordinates, y_coordinates, time_vector,sigma_points=1):
     speed_smoothed = gaussian_smooth_1d(speed, sigma_points)
 
     return speed,speed_smoothed
-
 
 def correct_lost_tracking(x_coordinates, y_coordinates, track_timevector, sampling_rate, min_epoch_length=1):
     x_coordinates_interpolated = x_coordinates.copy()
@@ -1232,3 +1230,11 @@ def calculate_p_value(observed_statistic, shuffled_distribution, alternative='tw
     
     return statistic
 
+
+def searchsorted2(self,known_array, test_array):
+    index_sorted = np.argsort(known_array)
+    known_array_sorted = known_array[index_sorted]
+    known_array_middles = known_array_sorted[1:] - np.diff(known_array_sorted.astype('f'))/2
+    idx1 = np.searchsorted(known_array_middles, test_array)
+    indices = index_sorted[idx1]
+    return indices
