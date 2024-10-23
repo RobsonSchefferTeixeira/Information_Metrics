@@ -81,7 +81,7 @@ def get_signal_surrogate(input_vector, sampling_rate, shift_time):
     input_vector_shifted = np.concatenate([input_vector[shift_samples:], input_vector[0:shift_samples]])
     # np.roll could be used instead
     return input_vector_shifted
-
+    
 
 def get_surrogate_old(self,spike_times_idx,time_vector,sampling_rate,shift_time):
     eps = np.finfo(np.float64).eps

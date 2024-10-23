@@ -298,10 +298,8 @@ def get_occupancy_1D(x_coordinates, x_grid, sampling_rate):
     # position_occupancy[position_occupancy == 0] = np.nan
     return position_occupancy
 
-def get_speed_occupancy(x_coordinates, y_coordinates,time_vector, x_grid, y_grid):
+def get_speed_occupancy(speed,x_coordinates, y_coordinates, x_grid, y_grid):
     # calculate position occupancy
-
-    speed,_ = get_speed(x_coordinates, y_coordinates, time_vector,sigma_points=1)
 
     speed_occupancy = np.zeros((y_grid.shape[0] - 1, x_grid.shape[0] - 1))
     for xx in range(0, x_grid.shape[0] - 1):

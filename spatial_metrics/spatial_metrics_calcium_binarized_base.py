@@ -4,6 +4,7 @@ from . import helper_functions as hf
 from joblib import Parallel, delayed
 import warnings
 import sys
+from spatial_metrics import surrogate_functions as surrogate
 
 '''
 Method used in
@@ -70,36 +71,40 @@ class PlaceCellBinarized:
                                                  self.neuron, self.trial)
         else:
             
+            x_coordinates, y_coordinates = hf.correct_coordinates(x_coordinates, y_coordinates,environment_edges=self.environment_edges)
 
-            I_keep_valid = self.validate_input_data(calcium_imag, time_vector, x_coordinates, y_coordinates)
+            self.validate_input_data(calcium_imag, x_coordinates, y_coordinates,time_vector)
 
-            calcium_imag = calcium_imag[I_keep_valid]
-            time_vector = time_vector[I_keep_valid]
-            x_coordinates = x_coordinates[I_keep_valid]
-            y_coordinates = y_coordinates[I_keep_valid]
+            speed,speed_smoothed = hf.get_speed(x_coordinates, y_coordinates, time_vector)
 
-            _,speed = hf.get_speed(x_coordinates, y_coordinates, time_vector,sigma_points=self.speed_smoothing_points)
-
-            x_grid, y_grid, x_center_bins, y_center_bins, x_center_bins_repeated, y_center_bins_repeated = hf.get_position_grid(x_coordinates, y_coordinates, self.x_bin_size,self.y_bin_size, environment_edges=self.environment_edges)
+            x_grid, y_grid, x_center_bins, y_center_bins, x_center_bins_repeated, y_center_bins_repeated = hf.get_position_grid(
+                x_coordinates, y_coordinates, self.x_bin_size, self.y_bin_size,
+                environment_edges=self.environment_edges)
 
             position_binned = hf.get_binned_position(x_coordinates, y_coordinates, x_grid, y_grid)
 
-            visits_bins, new_visits_times = hf.get_visits(x_coordinates, y_coordinates, position_binned,x_center_bins, y_center_bins)
+            visits_bins, new_visits_times = hf.get_visits(x_coordinates, y_coordinates, position_binned, x_center_bins, y_center_bins)
 
             time_spent_inside_bins = hf.get_position_time_spent(position_binned, self.sampling_rate)
 
-            I_keep = self.get_valid_timepoints(speed, visits_bins, time_spent_inside_bins,self.min_speed_threshold, self.min_visits, self.min_time_spent)
+            keep_these_frames = self.get_valid_timepoints(speed, visits_bins, time_spent_inside_bins,
+                                               self.min_speed_threshold, self.min_visits, self.min_time_spent)
+
+            speed_valid = speed[keep_these_frames].copy()
+            calcium_imag_valid = calcium_imag[keep_these_frames].copy()
+            x_coordinates_valid = x_coordinates[keep_these_frames].copy()
+            y_coordinates_valid = y_coordinates[keep_these_frames].copy()
+            visits_bins_valid = visits_bins[keep_these_frames].copy()
+            position_binned_valid = position_binned[keep_these_frames].copy()
+            new_visits_times_valid = new_visits_times[keep_these_frames].copy()
+            time_vector_valid = np.linspace(0,keep_these_frames.shape[0]/self.sampling_rate,keep_these_frames.shape[0])
         
-            calcium_imag_valid = calcium_imag[I_keep].copy()
-            x_coordinates_valid = x_coordinates[I_keep].copy()
-            y_coordinates_valid = y_coordinates[I_keep].copy()
-            time_vector_valid = time_vector[I_keep].copy()
-            visits_bins_valid = visits_bins[I_keep].copy()
-            position_binned_valid = position_binned[I_keep].copy()
+            position_occupancy = hf.get_occupancy(x_coordinates_valid, y_coordinates_valid, x_grid, y_grid, self.sampling_rate)
+            
+            speed_occupancy = hf.get_speed_occupancy(speed_valid,x_coordinates_valid, y_coordinates_valid,x_grid, y_grid)
+            
+            visits_occupancy = hf.get_visits_occupancy(x_coordinates_valid, y_coordinates_valid, new_visits_times_valid, x_grid, y_grid)
 
-            position_occupancy = hf.get_occupancy(x_coordinates_valid, y_coordinates_valid, x_grid, y_grid,self.sampling_rate)
-
-            visits_occupancy = hf.get_visits_occupancy(x_coordinates, y_coordinates, new_visits_times, x_grid, y_grid,self.min_visits)
 
             place_field, place_field_smoothed = hf.get_2D_place_field(calcium_imag_valid, x_coordinates_valid,
                                                                     y_coordinates_valid, x_grid, y_grid,
@@ -109,12 +114,10 @@ class PlaceCellBinarized:
 
             mutual_info_original = self.get_mutual_information(calcium_imag_valid, position_binned_valid)
 
-            results = self.parallelize_surrogate(calcium_imag,I_keep, position_binned_valid, self.sampling_rate,
-                                                self.shift_time, x_coordinates_valid, y_coordinates_valid,x_grid,y_grid,
-                                                self.smoothing_size,self.num_cores,self.num_surrogates)
-
-
-            
+            results = self.parallelize_surrogate(calcium_imag_valid, position_binned_valid, self.sampling_rate,
+                                        self.shift_time, x_coordinates_valid,
+                                        y_coordinates_valid, x_grid, y_grid, self.smoothing_size,
+                                        self.num_cores, self.num_surrogates)
             
             place_field_shifted = []
             place_field_smoothed_shifted = []
@@ -174,8 +177,10 @@ class PlaceCellBinarized:
             inputdict['place_field_shifted'] = place_field_shifted
             inputdict['place_field_smoothed_shifted'] = place_field_smoothed_shifted
             
-            inputdict['occupancy_map'] = position_occupancy
+            inputdict['timespent_map'] = position_occupancy
             inputdict['visits_map'] = visits_occupancy
+            inputdict['speed_map'] = speed_occupancy
+
             inputdict['x_grid'] = x_grid
             inputdict['y_grid'] = y_grid
             inputdict['x_center_bins'] = x_center_bins
@@ -214,9 +219,7 @@ class PlaceCellBinarized:
 
 
 
-
-
-    def validate_input_data(self,calcium_imag, time_vector, x_coordinates, y_coordinates):
+    def validate_input_data(self,calcium_imag, x_coordinates, y_coordinates,time_vector):
 
         # valid calcium points
         I_valid_calcium = ~np.isnan(calcium_imag)
@@ -232,7 +235,10 @@ class PlaceCellBinarized:
 
         I_keep_valid = I_valid_calcium * I_valid_x_coord * I_valid_y_coord * I_valid_time_vector
 
-        return I_keep_valid
+        calcium_imag = calcium_imag[I_keep_valid]
+        time_vector = time_vector[I_keep_valid]
+        x_coordinates = x_coordinates[I_keep_valid]
+        y_coordinates = y_coordinates[I_keep_valid]
 
 
     def get_valid_timepoints(self, speed, visits_bins, time_spent_inside_bins, min_speed_threshold, min_visits, min_time_spent):
@@ -261,11 +267,11 @@ class PlaceCellBinarized:
 
         return mutual_info_zscored, mutual_info_centered
 
-    def parallelize_surrogate(self, calcium_imag, I_keep, position_binned_valid, sampling_rate, shift_time,
-                              x_coordinates_valid, y_coordinates_valid, x_grid, y_grid, smoothing_size,
-                              num_cores, num_surrogates):
+    def parallelize_surrogate(self, calcium_imag_valid, position_binned_valid, sampling_rate, shift_time,
+                              x_coordinates_valid, y_coordinates_valid, x_grid, y_grid,
+                              smoothing_size, num_cores, num_surrogates):
         results = Parallel(n_jobs=num_cores)(delayed(self.get_mutual_info_surrogate)
-                                                          (calcium_imag, I_keep, position_binned_valid,
+                                                          (calcium_imag_valid, position_binned_valid,
                                                            sampling_rate,
                                                            shift_time, x_coordinates_valid, y_coordinates_valid,
                                                            x_grid, y_grid, smoothing_size)
@@ -275,11 +281,10 @@ class PlaceCellBinarized:
 
 
 
-    def get_mutual_info_surrogate(self, calcium_imag, I_keep, position_binned_valid, sampling_rate, shift_time,
+    def get_mutual_info_surrogate(self, calcium_imag_valid, position_binned_valid, sampling_rate, shift_time,
                                   x_coordinates_valid, y_coordinates_valid, x_grid, y_grid, smoothing_size):
 
-        calcium_imag_shuffled = hf.get_surrogate(calcium_imag, sampling_rate, shift_time)
-        calcium_imag_shuffled_valid = calcium_imag_shuffled[I_keep].copy()
+        calcium_imag_shuffled_valid = surrogate.get_signal_surrogate(calcium_imag_valid, sampling_rate, shift_time)
 
         mutual_info_shuffled = self.get_mutual_information(calcium_imag_shuffled_valid, position_binned_valid)
         place_field_shuffled, place_field_smoothed_shuffled = hf.get_2D_place_field(calcium_imag_shuffled_valid,

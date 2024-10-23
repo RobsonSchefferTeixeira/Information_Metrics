@@ -78,6 +78,7 @@ class PlaceCell:
             position_binned_valid = position_binned[keep_these_frames].copy()
             new_visits_times_valid = new_visits_times[keep_these_frames].copy()
             time_vector_valid = np.linspace(0,keep_these_frames.shape[0]/self.sampling_rate,keep_these_frames.shape[0])
+            speed_valid = speed[keep_these_frames].copy()
 
             keep_these_spikes = np.array([spike for spike in spike_times_idx if spike in keep_these_frames])
             spike_times_idx_valid = keep_these_frames.searchsorted(keep_these_spikes)
@@ -87,7 +88,7 @@ class PlaceCell:
 
             position_occupancy = hf.get_occupancy(x_coordinates_valid, y_coordinates_valid, x_grid, y_grid, self.sampling_rate)
             
-            speed_occupancy = hf.get_speed_occupancy(x_coordinates_valid, y_coordinates_valid, time_vector_valid,x_grid, y_grid)
+            speed_occupancy = hf.get_speed_occupancy(speed_valid,x_coordinates_valid, y_coordinates_valid,x_grid, y_grid)
             
             visits_occupancy = hf.get_visits_occupancy(x_coordinates_valid, y_coordinates_valid, new_visits_times_valid, x_grid, y_grid)
 
@@ -150,9 +151,11 @@ class PlaceCell:
             inputdict['place_field_smoothed'] = place_field_smoothed
             inputdict['place_field_shifted'] = place_field_shifted
             inputdict['place_field_smoothed_shifted'] = place_field_smoothed_shifted
-            inputdict['occupancy_map'] = position_occupancy
+
+            inputdict['timespent_map'] = position_occupancy
             inputdict['visits_map'] = visits_occupancy
-            inputdict['speed_occupancy'] = speed_occupancy
+            inputdict['speed_map'] = speed_occupancy
+            
             inputdict['x_grid'] = x_grid
             inputdict['y_grid'] = y_grid
             inputdict['x_center_bins'] = x_center_bins
