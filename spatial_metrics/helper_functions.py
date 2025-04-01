@@ -1188,47 +1188,6 @@ def search_sorted_indices(known_array, test_array):
     return indices
 
 
-
-def calculate_p_value(observed_statistic, shuffled_distribution, alternative='two-sided'):
-    from collections import namedtuple
-    Statistic = namedtuple('Statistic', ['p_value', 'distribution_size', 'extreme_counts'])
-    
-    distribution_size = shuffled_distribution.shape[0]
-    
-    if alternative == 'two-sided':
-        # Calculate the proportion for two-sided test
-        extreme_counts_greater = np.nansum(shuffled_distribution >= observed_statistic)
-        greater_proportion = extreme_counts_greater / distribution_size
-        
-        extreme_counts_less = np.nansum(shuffled_distribution <= observed_statistic)
-        less_proportion = extreme_counts_less / distribution_size
-        
-        # Two-tailed p-value is twice the minimum of both tails
-        p_value = 2 * np.nanmin([greater_proportion, less_proportion])
-        extreme_counts = np.nanmin([extreme_counts_greater, extreme_counts_less])
-    
-    elif alternative == 'greater':
-        # One-sided (greater) test
-        extreme_counts = np.nansum(shuffled_distribution >= observed_statistic)
-        p_value = extreme_counts / distribution_size
-    
-    elif alternative == 'less':
-        # One-sided (less) test
-        extreme_counts = np.nansum(shuffled_distribution <= observed_statistic)
-        p_value = extreme_counts / distribution_size
-    else:
-        
-        raise(ValueError(f"Invalid value for 'alternative': {alternative}. Expected 'two-sided', 'greater', or 'less'."))
-
-    # If p-value is zero, set to minimum resolution
-    if extreme_counts == 0:
-        p_value = 1 / distribution_size
-
-    statistic = Statistic(p_value=p_value, distribution_size=distribution_size, extreme_counts=extreme_counts)
-    
-    return statistic
-
-
 def searchsorted2(self,known_array, test_array):
     index_sorted = np.argsort(known_array)
     known_array_sorted = known_array[index_sorted]
