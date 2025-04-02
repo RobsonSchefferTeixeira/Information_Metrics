@@ -881,10 +881,10 @@ def preprocess_signal(input_signal, sampling_rate, signal_type, z_threshold=2):
 
     elif signal_type == 'Binarized':
 
-        filtered_signal = eegfilt(input_signal, sampling_rate, 0,2)
-        diff_signal = np.hstack([0,np.diff(filtered_signal)])
-        norm_signal = filtered_signal / np.nanstd(filtered_signal)
-        binarized_idx = (norm_signal > z_threshold) & (diff_signal > 0)
+        # filtered_signal = eegfilt(input_signal, sampling_rate, 0,2)
+        diff_signal = np.hstack([0,np.diff(input_signal)])
+        norm_signal = input_signal / np.nanstd(input_signal)
+        binarized_idx = (norm_signal >= z_threshold) & (diff_signal > 0)
         binarized_signal = np.zeros(diff_signal.shape[0])
         binarized_signal[binarized_idx] = 1
         output_signal = binarized_signal
