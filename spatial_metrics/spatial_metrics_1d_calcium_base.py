@@ -32,14 +32,14 @@ class PlaceCell:
         kwargs.setdefault('saving_string', 'SpatialMetrics')
         kwargs.setdefault('nbins_cal', 10)
         kwargs.setdefault('percentile_threshold', 95)
-        kwargs.setdefault('min_num_of_pixels', 4)
+        kwargs.setdefault('min_num_of_bins', 4)
         kwargs.setdefault('speed_smoothing_points', 1)
 
         
 
         valid_kwargs = ['animal_id', 'day', 'neuron', 'dataset', 'trial', 'sampling_rate',
                         'min_time_spent', 'min_visits', 'min_speed_threshold', 'smoothing_size','speed_smoothing_points',
-                        'x_bin_size', 'shift_time', 'num_cores', 'percentile_threshold','min_num_of_pixels',
+                        'x_bin_size', 'shift_time', 'num_cores', 'percentile_threshold','min_num_of_bins',
                         'num_surrogates', 'saving_path', 'saving', 'saving_string', 'environment_edges', 'nbins_cal']
 
         for k, v in kwargs.items():
@@ -137,7 +137,7 @@ class PlaceCell:
             num_of_islands, islands_x_max,pixels_place_cell_absolute,pixels_place_cell_relative,place_field_identity = \
                 hf.field_coordinates_using_shifted_1D(place_field_smoothed,place_field_smoothed_shifted,visits_occupancy,
                                                     percentile_threshold=self.percentile_threshold,
-                                                    min_num_of_pixels = self.min_num_of_pixels)
+                                                    min_num_of_bins = self.min_num_of_bins)
             
 
 
