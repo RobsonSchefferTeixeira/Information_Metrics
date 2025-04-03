@@ -5,6 +5,7 @@ from joblib import Parallel, delayed
 import warnings
 import sys
 from spatial_metrics import surrogate_functions as surrogate
+from spatial_metrics.validators import ParameterValidator
 
 '''
 Method used in
@@ -54,6 +55,8 @@ class PlaceCellBinarized:
             if k not in valid_kwargs:
                 raise TypeError("Invalid keyword argument %s" % k)
             setattr(self, k, v)
+
+        ParameterValidator.validate_all(kwargs)
 
         self.__dict__['input_parameters'] = kwargs
 
