@@ -1,5 +1,5 @@
 import inspect
-
+import warnings
 class ParameterValidator:
 
     @staticmethod
@@ -61,16 +61,16 @@ class ParameterValidator:
     @staticmethod
     def validate_x_bin_size(value):
         if value is not None:
-            if not isinstance(value, (int)):
-                raise TypeError("x_bin_size must be of type int.")
+            if not isinstance(value, (int,float)):
+                raise TypeError("x_bin_size must be of type int or float.")
             if value <= 0:
                 raise ValueError("x_bin_size must be a positive number.")
 
     @staticmethod
     def validate_y_bin_size(value):
         if value is not None:
-            if not isinstance(value, (int)):
-                raise TypeError("y_bin_size must be of type int.")
+            if not isinstance(value, (int,float)):
+                raise TypeError("y_bin_size must be of type int or float.")
             if value <= 0:
                 raise ValueError("y_bin_size must be a positive number.")
             

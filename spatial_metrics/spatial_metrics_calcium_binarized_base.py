@@ -78,7 +78,7 @@ class PlaceCellBinarized:
 
             self.validate_input_data(calcium_imag, x_coordinates, y_coordinates,time_vector)
 
-            speed,speed_smoothed = hf.get_speed(x_coordinates, y_coordinates, time_vector)
+            speed,speed_smoothed = hf.get_speed(x_coordinates, y_coordinates, time_vector, self.speed_smoothing_points)
 
             x_grid, y_grid, x_center_bins, y_center_bins, x_center_bins_repeated, y_center_bins_repeated = hf.get_position_grid(
                 x_coordinates, y_coordinates, self.x_bin_size, self.y_bin_size,
@@ -109,7 +109,7 @@ class PlaceCellBinarized:
             visits_occupancy = hf.get_visits_occupancy(x_coordinates_valid, y_coordinates_valid, new_visits_times_valid, x_grid, y_grid)
 
 
-            place_field, place_field_smoothed = hf.get_2D_place_field(calcium_imag_valid, x_coordinates_valid,
+            activity_map, activity_map_smoothed = hf.get_2D_activity_map(calcium_imag_valid, x_coordinates_valid,
                                                                     y_coordinates_valid, x_grid, y_grid,
                                                                     self.smoothing_size)
 
@@ -122,48 +122,48 @@ class PlaceCellBinarized:
                                         y_coordinates_valid, x_grid, y_grid, self.smoothing_size,
                                         self.num_cores, self.num_surrogates)
             
-            place_field_shifted = []
-            place_field_smoothed_shifted = []
+            activity_map_shifted = []
+            activity_map_smoothed_shifted = []
             mutual_info_shifted = []
 
             for perm in range(self.num_surrogates):
                 mutual_info_shifted.append(results[perm][0])
-                place_field_shifted.append(results[perm][1])
-                place_field_smoothed_shifted.append(results[perm][2])
+                activity_map_shifted.append(results[perm][1])
+                activity_map_smoothed_shifted.append(results[perm][2])
 
             mutual_info_shifted = np.array(mutual_info_shifted)
-            place_field_shifted = np.array(place_field_shifted)
-            place_field_smoothed_shifted = np.array(place_field_smoothed_shifted)
+            activity_map_shifted = np.array(activity_map_shifted)
+            activity_map_smoothed_shifted = np.array(activity_map_smoothed_shifted)
 
             mutual_info_zscored, mutual_info_centered = self.get_mutual_information_zscored(mutual_info_original,
                                                                                             mutual_info_shifted)
             
 
             if self.field_detection_method == 'random_fields':
-                # num_of_islands, islands_x_max, islands_y_max,pixels_place_cell_absolute,pixels_place_cell_relative,place_field_identity = \
-                # hf.field_coordinates_using_shifted(place_field,place_field_shifted,visits_occupancy,
+                # num_of_islands, islands_x_max, islands_y_max,pixels_place_cell_absolute,pixels_place_cell_relative,activity_map_identity = \
+                # hf.field_coordinates_using_shifted(activity_map,activity_map_shifted,visits_occupancy,
                 #                                    percentile_threshold=self.percentile_threshold,
                 #                                   min_num_of_bins = self.min_num_of_bins)
                 
-                num_of_islands, islands_x_max, islands_y_max,pixels_place_cell_absolute,pixels_place_cell_relative,place_field_identity = \
-                hf.field_coordinates_using_shifted(place_field_smoothed,place_field_smoothed_shifted,visits_occupancy,x_center_bins, y_center_bins,
+                num_of_islands, islands_x_max, islands_y_max,pixels_place_cell_absolute,pixels_place_cell_relative,activity_map_identity = \
+                hf.field_coordinates_using_shifted(activity_map_smoothed,activity_map_smoothed_shifted,visits_occupancy,x_center_bins, y_center_bins,
                                                     percentile_threshold=self.percentile_threshold,
                                                     min_num_of_bins = self.min_num_of_bins)
                 
 
             elif self.field_detection_method == 'std_from_field':
-                num_of_islands, islands_x_max, islands_y_max,pixels_place_cell_absolute,pixels_place_cell_relative,place_field_identity = \
-                hf.field_coordinates_using_threshold(place_field, visits_occupancy,x_center_bins, y_center_bins,smoothing_size = self.detection_smoothing_size,    
+                num_of_islands, islands_x_max, islands_y_max,pixels_place_cell_absolute,pixels_place_cell_relative,activity_map_identity = \
+                hf.field_coordinates_using_threshold(activity_map, visits_occupancy,x_center_bins, y_center_bins,smoothing_size = self.detection_smoothing_size,    
                                                 field_threshold=self.detection_threshold,
                                                 min_num_of_bins=self.min_num_of_bins)
             else:
                 warnings.warn("No field detection method set", UserWarning)
-                num_of_islands, islands_x_max, islands_y_max, pixels_place_cell_absolute, pixels_place_cell_relative, place_field_identity = [[] for _ in range(6)]
+                num_of_islands, islands_x_max, islands_y_max, pixels_place_cell_absolute, pixels_place_cell_relative, activity_map_identity = [[] for _ in range(6)]
 
             
 
 
-            sparsity = hf.get_sparsity(place_field, position_occupancy)
+            sparsity = hf.get_sparsity(activity_map, position_occupancy)
 
 
             I_peaks = np.where(calcium_imag_valid == 1)[0]
@@ -174,11 +174,11 @@ class PlaceCellBinarized:
             inputdict = dict()
 
             inputdict = dict()
-            inputdict['place_field'] = place_field
-            inputdict['place_field_smoothed'] = place_field_smoothed
+            inputdict['activity_map'] = activity_map
+            inputdict['activity_map_smoothed'] = activity_map_smoothed
 
-            inputdict['place_field_shifted'] = place_field_shifted
-            inputdict['place_field_smoothed_shifted'] = place_field_smoothed_shifted
+            inputdict['activity_map_shifted'] = activity_map_shifted
+            inputdict['activity_map_smoothed_shifted'] = activity_map_smoothed_shifted
             
             inputdict['timespent_map'] = position_occupancy
             inputdict['visits_map'] = visits_occupancy
@@ -192,7 +192,7 @@ class PlaceCellBinarized:
             inputdict['x_peaks_location'] = x_peaks_location
             inputdict['y_peaks_location'] = y_peaks_location
 
-            inputdict['place_field_identity'] = place_field_identity
+            inputdict['activity_map_identity'] = activity_map_identity
             inputdict['num_of_islands'] = num_of_islands
             inputdict['islands_x_max'] = islands_x_max
             inputdict['islands_y_max'] = islands_y_max
@@ -290,11 +290,11 @@ class PlaceCellBinarized:
         calcium_imag_shuffled_valid = surrogate.get_signal_surrogate(calcium_imag_valid, sampling_rate, shift_time)
 
         mutual_info_shuffled = self.get_mutual_information(calcium_imag_shuffled_valid, position_binned_valid)
-        place_field_shuffled, place_field_smoothed_shuffled = hf.get_2D_place_field(calcium_imag_shuffled_valid,
+        activity_map_shuffled, activity_map_smoothed_shuffled = hf.get_2D_activity_map(calcium_imag_shuffled_valid,
                                                                                    x_coordinates_valid,
                                                                                    y_coordinates_valid, x_grid, y_grid,
                                                                                    smoothing_size)
-        return mutual_info_shuffled, place_field_shuffled, place_field_smoothed_shuffled
+        return mutual_info_shuffled, activity_map_shuffled, activity_map_smoothed_shuffled
 
 
 

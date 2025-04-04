@@ -93,9 +93,10 @@ def pvalue_hedges_g_permutation(group1, group2, n_permutations=1000, ci=95, pair
 
 
 def calculate_p_value(observed_statistic, shuffled_distribution, alternative='two-sided'):
+    # https://www.davidzeleny.net/anadat-r/doku.php/en:monte_carlo#:~:text=The%20P-value%20is%20calculated,added%20into%20the%20null%20distribution.
+
     from collections import namedtuple
     Statistic = namedtuple('Statistic', ['p_value', 'distribution_size', 'extreme_counts'])
-    
     distribution_size = shuffled_distribution.shape[0]
     
     if alternative == 'two-sided':

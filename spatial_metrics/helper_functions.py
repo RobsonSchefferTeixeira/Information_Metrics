@@ -19,12 +19,12 @@ def correct_coordinates(x_coordinates, y_coordinates, environment_edges):
 
     return x_coordinates, y_coordinates
 
-def get_sparsity(place_field, position_occupancy):
+def get_sparsity(activity_map, position_occupancy):
     """
     Calculate the sparsity of a place field with respect to position occupancy.
 
     Parameters:
-    - place_field (numpy.ndarray): A place field map representing spatial preferences.
+    - activity_map (numpy.ndarray): A place field map representing spatial preferences.
     - position_occupancy (numpy.ndarray): Positional occupancy map, typically representing time spent in each spatial bin.
 
     Returns:
@@ -33,27 +33,27 @@ def get_sparsity(place_field, position_occupancy):
     """
     
     position_occupancy_norm = np.nansum(position_occupancy / np.nansum(position_occupancy))
-    sparsity = np.nanmean(position_occupancy_norm * place_field) ** 2 / np.nanmean(
-        position_occupancy_norm * place_field ** 2)
+    sparsity = np.nanmean(position_occupancy_norm * activity_map) ** 2 / np.nanmean(
+        position_occupancy_norm * activity_map ** 2)
 
     return sparsity
 
-def get_2D_place_field(signal, x_coordinates, y_coordinates, x_grid, y_grid, smoothing_size):
+def get_2D_activity_map(signal, x_coordinates, y_coordinates, x_grid, y_grid, smoothing_size):
     warnings.filterwarnings("ignore", category=RuntimeWarning)
     # calculate mean calcium per pixel
-    place_field = np.nan * np.zeros((y_grid.shape[0] - 1, x_grid.shape[0] - 1))
+    activity_map = np.nan * np.zeros((y_grid.shape[0] - 1, x_grid.shape[0] - 1))
     for xx in range(0, x_grid.shape[0] - 1):
         for yy in range(0, y_grid.shape[0] - 1):
             check_x_occupancy = np.logical_and(x_coordinates >= x_grid[xx], x_coordinates < (x_grid[xx + 1]))
             check_y_occupancy = np.logical_and(y_coordinates >= y_grid[yy], y_coordinates < (y_grid[yy + 1]))
 
-            place_field[yy, xx] = np.nanmean(signal[np.logical_and(check_x_occupancy, check_y_occupancy)])
+            activity_map[yy, xx] = np.nanmean(signal[np.logical_and(check_x_occupancy, check_y_occupancy)])
 
-    place_field_to_smooth = np.copy(place_field)
-    place_field_to_smooth[np.isnan(place_field_to_smooth)] = 0
-    place_field_smoothed = gaussian_smooth_2d(place_field_to_smooth, smoothing_size)
+    activity_map_to_smooth = np.copy(activity_map)
+    activity_map_to_smooth[np.isnan(activity_map_to_smooth)] = 0
+    activity_map_smoothed = gaussian_smooth_2d(activity_map_to_smooth, smoothing_size)
 
-    return place_field, place_field_smoothed
+    return activity_map, activity_map_smoothed
 
 
 
@@ -110,14 +110,14 @@ def dfs_1D(input_array, input_array2, count, length, i):
         dfs_1D(input_array, input_array2, count, length, i + 1)
 
 
-def field_coordinates_using_shifted_1D(place_field, place_field_shifted, visits_map, percentile_threshold=95,min_num_of_bins=4):
+def field_coordinates_using_shifted_1D(activity_map, activity_map_shifted, visits_map, percentile_threshold=95,min_num_of_bins=4):
 
     """
     Identifies and characterizes place fields using shifted 1D data.
 
     Parameters:
-    - place_field (ndarray): Original place field data.
-    - place_field_shifted (ndarray): Shifted place field data.
+    - activity_map (ndarray): Original place field data.
+    - activity_map_shifted (ndarray): Shifted place field data.
     - visits_map (ndarray): Map of visited locations.
     - percentile_threshold (int): Percentile threshold for identifying place fields.
     - min_num_of_bins (int): Minimum number of pixels to consider as a place field.
@@ -127,44 +127,44 @@ def field_coordinates_using_shifted_1D(place_field, place_field_shifted, visits_
     - islands_x_max (ndarray): X coordinates of identified islands.
     - pixels_place_cell_absolute (ndarray): Relative pixels of place cells in absolute terms.
     - pixels_place_cell_relative (ndarray): Relative pixels of place cells in relation to visited locations.
-    - place_field_identity (ndarray): Identified place field islands labeled.
+    - activity_map_identity (ndarray): Identified place field islands labeled.
     """
 
 
-    place_field_threshold = np.percentile(place_field_shifted, percentile_threshold, 0)
+    activity_map_threshold = np.percentile(activity_map_shifted, percentile_threshold, 0)
 
-    field_above_threshold_binary = place_field.copy()
-    field_above_threshold_binary[field_above_threshold_binary <= place_field_threshold] = 0
-    field_above_threshold_binary[field_above_threshold_binary > place_field_threshold] = 1
+    field_above_threshold_binary = activity_map.copy()
+    field_above_threshold_binary[field_above_threshold_binary <= activity_map_threshold] = 0
+    field_above_threshold_binary[field_above_threshold_binary > activity_map_threshold] = 1
 
     if np.any(field_above_threshold_binary > 0):
         sys.setrecursionlimit(10000000)
-        place_field_identity = identify_islands_1D(np.copy(field_above_threshold_binary))
-        num_of_islands_pre = np.unique(place_field_identity)[1:].shape[0]
+        activity_map_identity = identify_islands_1D(np.copy(field_above_threshold_binary))
+        num_of_islands_pre = np.unique(activity_map_identity)[1:].shape[0]
 
         num_of_islands = 0
         for ii in range(1, num_of_islands_pre + 1):
-            if np.where(place_field_identity == ii)[0].shape[0] > min_num_of_bins:
+            if np.where(activity_map_identity == ii)[0].shape[0] > min_num_of_bins:
                 num_of_islands += 1
             else:
-                place_field_identity[np.where(place_field_identity == ii)] = 0
+                activity_map_identity[np.where(activity_map_identity == ii)] = 0
 
 
-        islands_id = np.unique(place_field_identity[~np.isnan(place_field_identity)])[1:]
+        islands_id = np.unique(activity_map_identity[~np.isnan(activity_map_identity)])[1:]
         islands_x_max = []
         pixels_above = []
         for ii in islands_id:
-            max_val = np.nanmax(place_field[(place_field_identity == ii)])
-            I_x_max = np.where(place_field == max_val)
+            max_val = np.nanmax(activity_map[(activity_map_identity == ii)])
+            I_x_max = np.where(activity_map == max_val)
             islands_x_max.append(I_x_max[0])
 
-            pixels_above.append(np.nansum(place_field_identity == ii))
+            pixels_above.append(np.nansum(activity_map_identity == ii))
 
         islands_x_max = np.squeeze(islands_x_max)
         pixels_above = np.array(pixels_above)
 
         total_visited_pixels = np.nansum(visits_map != 0)
-        pixels_total = place_field.shape[0]
+        pixels_total = activity_map.shape[0]
 
         pixels_place_cell_relative = pixels_above / total_visited_pixels
         pixels_place_cell_absolute = pixels_above / pixels_total
@@ -174,10 +174,10 @@ def field_coordinates_using_shifted_1D(place_field, place_field_shifted, visits_
         islands_x_max = np.nan
         pixels_place_cell_relative = np.nan
         pixels_place_cell_absolute = np.nan
-        place_field_identity = np.nan
+        activity_map_identity = np.nan
 
 
-    return num_of_islands, islands_x_max,pixels_place_cell_absolute,pixels_place_cell_relative,correct_island_identifiers(place_field_identity)
+    return num_of_islands, islands_x_max,pixels_place_cell_absolute,pixels_place_cell_relative,correct_island_identifiers(activity_map_identity)
 
 
 
@@ -585,16 +585,16 @@ def dfs(input_array, input_array2, count, row, col, i, j):
 
 
 
-def field_coordinates_using_shifted(place_field, place_field_shifted, visits_map, x_center_bins,y_center_bins,percentile_threshold=95, min_num_of_bins=4, detection_smoothing_size=2):
+def field_coordinates_using_shifted(activity_map, activity_map_shifted, visits_map, x_center_bins,y_center_bins,percentile_threshold=95, min_num_of_bins=4, detection_smoothing_size=2):
     """
     Identifies and characterizes regions in a spatial field based on shifted field criteria,
     with the center of mass used as the location for each place field.
 
     Parameters
     ----------
-    place_field : numpy.ndarray
+    activity_map : numpy.ndarray
         Original spatial field data.
-    place_field_shifted : numpy.ndarray
+    activity_map_shifted : numpy.ndarray
         Shifted spatial field data used for threshold calculation.
     visits_map : numpy.ndarray
         Map of visits to locations in the field.
@@ -615,42 +615,42 @@ def field_coordinates_using_shifted(place_field, place_field_shifted, visits_map
         Absolute pixel count for each identified region.
     pixels_place_cell_relative : numpy.ndarray
         Relative pixel count for each identified region.
-    place_field_identity : numpy.ndarray
+    activity_map_identity : numpy.ndarray
         Identification map for the regions.
     """
 
-    place_field_smoothed = gaussian_smooth_2d(place_field, detection_smoothing_size)
+    activity_map_smoothed = gaussian_smooth_2d(activity_map, detection_smoothing_size)
 
     # Calculate the threshold using the shifted place field data
-    place_field_threshold = np.percentile(place_field_shifted, percentile_threshold, 0)
+    activity_map_threshold = np.percentile(activity_map_shifted, percentile_threshold, 0)
 
     # Create a binary map of areas above the threshold
-    field_above_threshold_binary = np.copy(place_field)
-    field_above_threshold_binary[field_above_threshold_binary <= place_field_threshold] = 0
-    field_above_threshold_binary[field_above_threshold_binary > place_field_threshold] = 1
+    field_above_threshold_binary = np.copy(activity_map)
+    field_above_threshold_binary[field_above_threshold_binary <= activity_map_threshold] = 0
+    field_above_threshold_binary[field_above_threshold_binary > activity_map_threshold] = 1
 
     if np.any(field_above_threshold_binary > 0):
         sys.setrecursionlimit(10000000)
-        place_field_identity = identify_islands(np.copy(field_above_threshold_binary))
-        num_of_islands_pre = np.unique(place_field_identity)[1:].shape[0]
+        activity_map_identity = identify_islands(np.copy(field_above_threshold_binary))
+        num_of_islands_pre = np.unique(activity_map_identity)[1:].shape[0]
 
         num_of_islands = 0
         for ii in range(1, num_of_islands_pre + 1):
-            if np.where(place_field_identity == ii)[0].shape[0] > min_num_of_bins:
+            if np.where(activity_map_identity == ii)[0].shape[0] > min_num_of_bins:
                 num_of_islands += 1
             else:
-                place_field_identity[np.where(place_field_identity == ii)] = 0
+                activity_map_identity[np.where(activity_map_identity == ii)] = 0
 
-        islands_id = np.unique(place_field_identity[~np.isnan(place_field_identity)])[1:]
+        islands_id = np.unique(activity_map_identity[~np.isnan(activity_map_identity)])[1:]
 
         islands_y_com = []
         islands_x_com = []
         pixels_above = []
         
         for ii in islands_id:
-            island_mask = (place_field_identity == ii)
+            island_mask = (activity_map_identity == ii)
 
-            x_com, y_com = center_of_mass(island_mask, place_field_smoothed,x_center_bins,y_center_bins)
+            x_com, y_com = center_of_mass(island_mask, activity_map_smoothed,x_center_bins,y_center_bins)
 
             islands_y_com.append(y_com)
             islands_x_com.append(x_com)
@@ -662,7 +662,7 @@ def field_coordinates_using_shifted(place_field, place_field_shifted, visits_map
         pixels_above = np.array(pixels_above)
 
         total_visited_pixels = np.nansum(visits_map != 0)
-        pixels_total = place_field.shape[0] * place_field.shape[1]
+        pixels_total = activity_map.shape[0] * activity_map.shape[1]
 
         pixels_place_cell_relative = pixels_above / total_visited_pixels
         pixels_place_cell_absolute = pixels_above / pixels_total
@@ -673,9 +673,9 @@ def field_coordinates_using_shifted(place_field, place_field_shifted, visits_map
         islands_x_com = np.nan
         pixels_place_cell_relative = np.nan
         pixels_place_cell_absolute = np.nan
-        place_field_identity = np.nan
+        activity_map_identity = np.nan
 
-    return num_of_islands, islands_x_com, islands_y_com, pixels_place_cell_absolute, pixels_place_cell_relative, correct_island_identifiers(place_field_identity)
+    return num_of_islands, islands_x_com, islands_y_com, pixels_place_cell_absolute, pixels_place_cell_relative, correct_island_identifiers(activity_map_identity)
 
 
 def correct_island_identifiers(island_ids):
@@ -718,7 +718,7 @@ def correct_island_identifiers(island_ids):
     return corrected_ids
 
 
-def center_of_mass(island_mask, place_field_smoothed, x_center_bins, y_center_bins):
+def center_of_mass(island_mask, activity_map_smoothed, x_center_bins, y_center_bins):
     """
     Calculate the center of mass for a given region (island) in the place field,
     taking into account the center bins for x and y coordinates.
@@ -727,7 +727,7 @@ def center_of_mass(island_mask, place_field_smoothed, x_center_bins, y_center_bi
     ----------
     island_mask : numpy.ndarray
         A binary mask indicating the pixels belonging to the region (island).
-    place_field_smoothed : numpy.ndarray
+    activity_map_smoothed : numpy.ndarray
         The smoothed place field data.
     x_center_bins : numpy.ndarray
         The x-coordinate bin centers corresponding to the place field grid.
@@ -742,7 +742,7 @@ def center_of_mass(island_mask, place_field_smoothed, x_center_bins, y_center_bi
         Y-coordinate of the center of mass.
     """
     # Get the pixel values of the place field corresponding to the island
-    island_values = place_field_smoothed[island_mask]
+    island_values = activity_map_smoothed[island_mask]
 
     # Get the coordinates of the pixels in the island
     y_coords, x_coords = np.where(island_mask)
@@ -762,14 +762,14 @@ def center_of_mass(island_mask, place_field_smoothed, x_center_bins, y_center_bi
     return x_com, y_com
 
 
-def field_coordinates_using_threshold(place_field, visits_map, x_center_bins,y_center_bins,smoothing_size=1, field_threshold=2, min_num_of_bins=4):
+def field_coordinates_using_threshold(activity_map, visits_map, x_center_bins,y_center_bins,smoothing_size=1, field_threshold=2, min_num_of_bins=4):
     """
     Identify and characterize spatial regions in a field based on threshold criteria,
     with the center of mass as the place field location.
 
     Parameters
     ----------
-    place_field : numpy.ndarray
+    activity_map : numpy.ndarray
         Input spatial field data.
     visits_map : numpy.ndarray
         Map of visits to locations in the field.
@@ -792,48 +792,48 @@ def field_coordinates_using_threshold(place_field, visits_map, x_center_bins,y_c
         Absolute pixel count for each identified region.
     pixels_place_cell_relative : numpy.ndarray
         Relative pixel count for each identified region.
-    place_field_identity : numpy.ndarray
+    activity_map_identity : numpy.ndarray
         Identification map for the regions.
     """
       
-    place_field_to_smooth = np.copy(place_field)
-    I_nan = np.isnan(place_field)
+    activity_map_to_smooth = np.copy(activity_map)
+    I_nan = np.isnan(activity_map)
     
-    place_field_to_smooth[np.isnan(place_field_to_smooth)] = 0
-    place_field_smoothed = gaussian_smooth_2d(place_field_to_smooth, smoothing_size)
+    activity_map_to_smooth[np.isnan(activity_map_to_smooth)] = 0
+    activity_map_smoothed = gaussian_smooth_2d(activity_map_to_smooth, smoothing_size)
 
-    I_threshold = np.nanmean(place_field_smoothed) + field_threshold * np.nanstd(place_field_smoothed)
+    I_threshold = np.nanmean(activity_map_smoothed) + field_threshold * np.nanstd(activity_map_smoothed)
 
-    field_above_threshold_binary = np.copy(place_field_smoothed)
+    field_above_threshold_binary = np.copy(activity_map_smoothed)
     field_above_threshold_binary[field_above_threshold_binary < I_threshold] = 0
     field_above_threshold_binary[field_above_threshold_binary >= I_threshold] = 1
     field_above_threshold_binary[I_nan] = 0
     
     if np.any(field_above_threshold_binary > 0):
         sys.setrecursionlimit(10000000)
-        place_field_identity = identify_islands(np.copy(field_above_threshold_binary))
-        num_of_islands_pre = np.unique(place_field_identity)[1:].shape[0]
+        activity_map_identity = identify_islands(np.copy(field_above_threshold_binary))
+        num_of_islands_pre = np.unique(activity_map_identity)[1:].shape[0]
 
         island_counter = 0
         for ii in range(1, num_of_islands_pre + 1):
-            if np.where(place_field_identity == ii)[0].shape[0] > min_num_of_bins:
+            if np.where(activity_map_identity == ii)[0].shape[0] > min_num_of_bins:
                 island_counter += 1
             else:
-                place_field_identity[np.where(place_field_identity == ii)] = 0
+                activity_map_identity[np.where(activity_map_identity == ii)] = 0
 
         num_of_islands = island_counter
 
-        islands_id = np.unique(place_field_identity)[1:]
+        islands_id = np.unique(activity_map_identity)[1:]
         islands_y_com = []
         islands_x_com = []
         pixels_above = []
         
         for ii in islands_id:
             # Create a mask for the current island
-            island_mask = (place_field_identity == ii)
+            island_mask = (activity_map_identity == ii)
             
             # Calculate the center of mass for this island
-            x_com, y_com = center_of_mass(island_mask, place_field_smoothed,x_center_bins,y_center_bins)
+            x_com, y_com = center_of_mass(island_mask, activity_map_smoothed,x_center_bins,y_center_bins)
             
             islands_y_com.append(y_com)
             islands_x_com.append(x_com)
@@ -845,7 +845,7 @@ def field_coordinates_using_threshold(place_field, visits_map, x_center_bins,y_c
         pixels_above = np.array(pixels_above)
 
         total_visited_pixels = np.nansum(visits_map != 0)
-        pixels_total = place_field_smoothed.shape[0] * place_field_smoothed.shape[1]
+        pixels_total = activity_map_smoothed.shape[0] * activity_map_smoothed.shape[1]
 
         pixels_place_cell_relative = pixels_above / total_visited_pixels
         pixels_place_cell_absolute = pixels_above / pixels_total
@@ -856,10 +856,10 @@ def field_coordinates_using_threshold(place_field, visits_map, x_center_bins,y_c
         islands_x_com = np.nan
         pixels_place_cell_relative = np.nan
         pixels_place_cell_absolute = np.nan
-        place_field_identity = np.nan
+        activity_map_identity = np.nan
         
 
-    return num_of_islands, islands_x_com, islands_y_com, pixels_place_cell_absolute, pixels_place_cell_relative, correct_island_identifiers(place_field_identity)
+    return num_of_islands, islands_x_com, islands_y_com, pixels_place_cell_absolute, pixels_place_cell_relative, correct_island_identifiers(activity_map_identity)
 
 
 
@@ -1195,3 +1195,108 @@ def searchsorted2(self,known_array, test_array):
     idx1 = np.searchsorted(known_array_middles, test_array)
     indices = index_sorted[idx1]
     return indices
+
+
+
+def detect_peaks(x, mph=None, mpd=1, threshold=0, edge='rising',
+                 kpsh=False, valley=False, show=False, ax=None):
+    """
+    Detect peaks in data based on amplitude and other features.
+
+    Parameters
+    ----------
+    x : 1D array_like
+        Data to search for peaks.
+    mph : {None, number}, optional (default=None)
+        Minimum peak height. Peaks must exceed this value.
+    mpd : int, optional (default=1)
+        Minimum peak distance. Peaks must be separated by at least this many data points.
+    threshold : float, optional (default=0)
+        Minimum difference between a peak and its immediate neighbors.
+    edge : {'rising', 'falling', 'both', None}, optional (default='rising')
+        Type of edge to detect flat peaks: 'rising', 'falling', 'both', or None.
+    kpsh : bool, optional (default=False)
+        Keep peaks with the same height even if they are closer than `mpd`.
+    valley : bool, optional (default=False)
+        If True, detect valleys (local minima) instead of peaks.
+    show : bool, optional (default=False)
+        If True, plot the data and the detected peaks.
+    ax : matplotlib.axes.Axes, optional
+        Matplotlib axes on which to plot if `show` is True.
+
+    Returns
+    -------
+    ind : 1D array_like
+        Indices of the detected peaks in `x`.
+
+    Notes
+    -----
+    To detect valleys instead of peaks, the input signal is inverted.
+
+    Examples
+    --------
+    >>> import numpy as np
+    >>> x = np.random.randn(100)
+    >>> peaks = detect_peaks(x, show=True)
+    """
+    x = np.atleast_1d(x).astype('float64')
+    if x.size < 3:
+        return np.array([], dtype=int)
+    
+    if valley:
+        x = -x
+    
+    dx = np.diff(x)
+    indnan = np.where(np.isnan(x))[0]
+    if indnan.size:
+        x[indnan] = np.inf
+        dx[np.where(np.isnan(dx))[0]] = np.inf
+
+    # Detect edges
+    ine, ire, ife = np.array([[], [], []], dtype=int)
+    if not edge:
+        ine = np.where((np.hstack((dx, 0)) < 0) & (np.hstack((0, dx)) > 0))[0]
+    if edge in ['rising', 'both']:
+        ire = np.where((np.hstack((dx, 0)) <= 0) & (np.hstack((0, dx)) > 0))[0]
+    if edge in ['falling', 'both']:
+        ife = np.where((np.hstack((dx, 0)) < 0) & (np.hstack((0, dx)) >= 0))[0]
+
+    ind = np.unique(np.hstack((ine, ire, ife)))
+
+    # Exclude indices near NaNs
+    if ind.size and indnan.size:
+        invalid = np.unique(np.hstack((indnan, indnan - 1, indnan + 1)))
+        ind = ind[~np.in1d(ind, invalid)]
+
+    # Filter by minimum peak height
+    if ind.size and mph is not None:
+        ind = ind[x[ind] >= mph]
+
+    # Apply threshold
+    if ind.size and threshold > 0:
+        ind = ind[(x[ind] - np.maximum(x[ind - 1], x[ind + 1])) > threshold]
+
+    # Enforce minimum peak distance
+    if ind.size and mpd > 1:
+        ind = ind[np.argsort(x[ind])[::-1]]  # Sort by peak height
+        idel = np.zeros(ind.size, dtype=bool)
+        for i in range(ind.size):
+            if not idel[i]:
+                close = (ind >= ind[i] - mpd) & (ind <= ind[i] + mpd)
+                if not kpsh:
+                    close &= x[ind[i]] > x[ind]
+                idel |= close
+                idel[i] = False  # Keep current peak
+        ind = np.sort(ind[~idel])
+
+    # Optional plotting
+    if show:
+        if ax is None:
+            _, ax = plt.subplots()
+        ax.plot(x, label='Data')
+        ax.plot(ind, x[ind], 'ro', label='Peaks')
+        ax.legend()
+        ax.set_title("Detected Peaks")
+        plt.show()
+
+    return ind
