@@ -38,7 +38,7 @@ def get_sparsity(activity_map, position_occupancy):
 
     return sparsity
 
-def get_2D_activity_map(signal, x_coordinates, y_coordinates, x_grid, y_grid, smoothing_size):
+def get_2D_activity_map(signal, x_coordinates, y_coordinates, x_grid, y_grid, smoothing_sigma):
     warnings.filterwarnings("ignore", category=RuntimeWarning)
     # calculate mean calcium per pixel
     activity_map = np.nan * np.zeros((y_grid.shape[0] - 1, x_grid.shape[0] - 1))
@@ -51,7 +51,7 @@ def get_2D_activity_map(signal, x_coordinates, y_coordinates, x_grid, y_grid, sm
 
     activity_map_to_smooth = np.copy(activity_map)
     activity_map_to_smooth[np.isnan(activity_map_to_smooth)] = 0
-    activity_map_smoothed = gaussian_smooth_2d(activity_map_to_smooth, smoothing_size)
+    activity_map_smoothed = gaussian_smooth_2d(activity_map_to_smooth, smoothing_sigma)
 
     return activity_map, activity_map_smoothed
 
@@ -375,15 +375,21 @@ def get_position_grid(x_coordinates, y_coordinates=None, x_bin_size=1, y_bin_siz
             environment_edges = [[x_min, x_max], [y_min, y_max]]
 
             
-        x_grid = np.linspace(environment_edges[0][0], environment_edges[0][1], int((environment_edges[0][1] - environment_edges[0][0]) / x_bin_size) + 1)
-        y_grid = np.linspace(environment_edges[1][0], environment_edges[1][1], int((environment_edges[1][1] - environment_edges[1][0]) / y_bin_size) + 1)
-    
-        x_center_bins = x_grid[:-1] + x_bin_size / 2
-        y_center_bins = y_grid[:-1] + y_bin_size / 2
-    
+        x_range = environment_edges[0][1] - environment_edges[0][0]
+        y_range = environment_edges[1][1] - environment_edges[1][0]
+
+        num_x_bins = np.nanmax([int(np.floor(x_range / x_bin_size)), 2])
+        num_y_bins = np.nanmax([int(np.floor(y_range / y_bin_size)), 2])
+
+        x_grid = np.linspace(environment_edges[0][0], environment_edges[0][1], num_x_bins + 1)
+        y_grid = np.linspace(environment_edges[1][0], environment_edges[1][1], num_y_bins + 1)
+
+        x_center_bins = x_grid[:-1] + np.diff(x_grid) / 2
+        y_center_bins = y_grid[:-1] + np.diff(y_grid) / 2
+
         x_center_bins_repeated = np.repeat(x_center_bins, y_center_bins.shape[0])
         y_center_bins_repeated = np.tile(y_center_bins, x_center_bins.shape[0])
-    
+
         # TODO: check if this way is better for spatial prediction
         # x_center_bins_repeated, y_center_bins_repeated = np.meshgrid(x_center_bins, y_center_bins)
         # x_center_bins_repeated = x_center_bins_repeated.flatten()
@@ -431,20 +437,34 @@ def get_binned_position(x_coordinates, y_coordinates = None, x_grid = None, y_gr
     return position_binned
 
 
-def get_speed(x_coordinates, y_coordinates, time_vector,sigma_points=1):
+def get_speed(x_coords, y_coords, time_stamps, smoothing_sigma=1):
+    """
+    Calculate the instantaneous speed from position coordinates and time stamps,
+    and apply Gaussian smoothing to the speed.
+
+    Parameters:
+    x_coords (array-like): Array of x-coordinate positions.
+    y_coords (array-like): Array of y-coordinate positions.
+    time_stamps (array-like): Array of time stamps corresponding to the positions.
+    smoothing_sigma (float, optional): Standard deviation for Gaussian kernel used in smoothing. Default is 1.
+
+    Returns:
+    tuple:
+        raw_speed (numpy.ndarray): Array of calculated speeds before smoothing.
+        smoothed_speed (numpy.ndarray): Array of speeds after applying Gaussian smoothing.
+    """
+
+    delta_x = np.diff(x_coords)
+    delta_y = np.diff(y_coords)
+
+    distances = np.sqrt(delta_x**2 + delta_y**2)
+    time_intervals = np.diff(time_stamps)
+    speed = distances / time_intervals
+    speed = np.append(speed, 0)
+    smoothed_speed = gaussian_smooth_1d(speed, smoothing_sigma)
     
-    if y_coordinates is None:
-        distances = np.abs(np.diff(x_coordinates))
-    else:
-        distances = np.sqrt(np.diff(x_coordinates)**2 + np.diff(y_coordinates)**2)
- 
-    time_vector_diff = np.diff(time_vector)
+    return speed, smoothed_speed
 
-    speed = np.divide(distances, time_vector_diff)
-    speed = np.hstack([speed, 0])
-    speed_smoothed = gaussian_smooth_1d(speed, sigma_points)
-
-    return speed,speed_smoothed
 
 def correct_lost_tracking(x_coordinates, y_coordinates, track_timevector, sampling_rate, min_epoch_length=1):
     x_coordinates_interpolated = x_coordinates.copy()
@@ -585,7 +605,7 @@ def dfs(input_array, input_array2, count, row, col, i, j):
 
 
 
-def field_coordinates_using_shifted(activity_map, activity_map_shifted, visits_map, x_center_bins,y_center_bins,percentile_threshold=95, min_num_of_bins=4, detection_smoothing_size=2):
+def field_coordinates_using_shifted(activity_map, activity_map_shifted, visits_map, x_center_bins,y_center_bins,percentile_threshold=95, min_num_of_bins=4, detection_smoothing_sigma=2):
     """
     Identifies and characterizes regions in a spatial field based on shifted field criteria,
     with the center of mass used as the location for each place field.
@@ -619,7 +639,7 @@ def field_coordinates_using_shifted(activity_map, activity_map_shifted, visits_m
         Identification map for the regions.
     """
 
-    activity_map_smoothed = gaussian_smooth_2d(activity_map, detection_smoothing_size)
+    activity_map_smoothed = gaussian_smooth_2d(activity_map, detection_smoothing_sigma)
 
     # Calculate the threshold using the shifted place field data
     activity_map_threshold = np.percentile(activity_map_shifted, percentile_threshold, 0)
@@ -762,7 +782,7 @@ def center_of_mass(island_mask, activity_map_smoothed, x_center_bins, y_center_b
     return x_com, y_com
 
 
-def field_coordinates_using_threshold(activity_map, visits_map, x_center_bins,y_center_bins,smoothing_size=1, field_threshold=2, min_num_of_bins=4):
+def field_coordinates_using_threshold(activity_map, visits_map, x_center_bins,y_center_bins,detection_smoothing_sigma=1, field_threshold=2, min_num_of_bins=4):
     """
     Identify and characterize spatial regions in a field based on threshold criteria,
     with the center of mass as the place field location.
@@ -773,7 +793,7 @@ def field_coordinates_using_threshold(activity_map, visits_map, x_center_bins,y_
         Input spatial field data.
     visits_map : numpy.ndarray
         Map of visits to locations in the field.
-    smoothing_size : int, optional
+    detection_smoothing_sigma : int, optional
         Size of the smoothing window. Default is 1.
     field_threshold : float, optional
         Threshold value for identifying regions. Default is 2.
@@ -795,12 +815,12 @@ def field_coordinates_using_threshold(activity_map, visits_map, x_center_bins,y_
     activity_map_identity : numpy.ndarray
         Identification map for the regions.
     """
-      
+
     activity_map_to_smooth = np.copy(activity_map)
     I_nan = np.isnan(activity_map)
     
     activity_map_to_smooth[np.isnan(activity_map_to_smooth)] = 0
-    activity_map_smoothed = gaussian_smooth_2d(activity_map_to_smooth, smoothing_size)
+    activity_map_smoothed = gaussian_smooth_2d(activity_map_to_smooth, detection_smoothing_sigma)
 
     I_threshold = np.nanmean(activity_map_smoothed) + field_threshold * np.nanstd(activity_map_smoothed)
 
@@ -997,23 +1017,23 @@ def smooth(x, window_len=11, window='hanning'):
 
 
 
-def gaussian_smooth_1d(input_data, sigma_points):
+def gaussian_smooth_1d(input_data, sigma):
     """
     Perform 1D Gaussian smoothing on input data.
-    Notice that when using it for time series, sigma_points are set in poins, not time.
+    Notice that when using it for time series, sigma are set in points, not time.
     In order to set the correct amount of points that correspond to ms, for instance,
-    one should use it like this: sigma_points = (s/1000)*sampling_rate
+    one should use it like this: sigma = (s/1000)*sampling_rate
     where s in the standard deviation in ms.
 
     Parameters:
         input_data (numpy.ndarray): The 1D input data to be smoothed.
-        sigma_points (float): The standard deviation of the Gaussian kernel in data points.
+        sigma (float): The standard deviation of the Gaussian kernel in data points.
 
     Returns:
         smoothed_data (numpy.ndarray): The smoothed 1D data.
     """
     # Generate a 1D Gaussian kernel.
-    gaussian_kernel_1d = generate_1d_gaussian_kernel(sigma_points)
+    gaussian_kernel_1d = generate_1d_gaussian_kernel(sigma)
 
     # Convolve the input data with the Gaussian kernel.
     if input_data.ndim == 1:
@@ -1041,19 +1061,19 @@ def generate_1d_gaussian_kernel(sigma):
     return gaussian_kernel
 
 
-def gaussian_smooth_2d(input_matrix, sigma_points):
+def gaussian_smooth_2d(input_matrix, sigma):
     """
     Perform 2D Gaussian smoothing on input data.
 
     Parameters:
         input_matrix (numpy.ndarray): The 2D input matrix to be smoothed.
-        sigma_points (float): The standard deviation of the 2D Gaussian kernel in data points.
+        sigma (float): The standard deviation of the 2D Gaussian kernel in data points.
 
     Returns:
         smoothed_matrix (numpy.ndarray): The smoothed 2D data.
     """
     # Generate a 2D Gaussian kernel.
-    gaussian_kernel_2d = generate_2d_gaussian_kernel(sigma_points)
+    gaussian_kernel_2d = generate_2d_gaussian_kernel(sigma)
 
     # Convolve the input matrix with the 2D Gaussian kernel.
     smoothed_matrix = sig.convolve2d(input_matrix, gaussian_kernel_2d, mode='same')

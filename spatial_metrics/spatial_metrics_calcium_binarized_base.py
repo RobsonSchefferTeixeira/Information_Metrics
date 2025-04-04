@@ -6,6 +6,9 @@ import warnings
 import sys
 from spatial_metrics import surrogate_functions as surrogate
 from spatial_metrics.validators import ParameterValidator
+from tqdm.auto import tqdm
+from tqdm_joblib import tqdm_joblib
+
 
 '''
 Method used in
@@ -27,10 +30,11 @@ class PlaceCellBinarized:
         kwargs.setdefault('min_time_spent', 0.1)
         kwargs.setdefault('min_visits', 1)
         kwargs.setdefault('min_speed_threshold', 2.5)
+        kwargs.setdefault('speed_smoothing_sigma', 1)
         kwargs.setdefault('x_bin_size', 1)
         kwargs.setdefault('y_bin_size', None)
         kwargs.setdefault('environment_edges', None)
-        kwargs.setdefault('smoothing_size', 2)
+        kwargs.setdefault('map_smoothing_sigma', 2)
         kwargs.setdefault('shift_time', 10)
         kwargs.setdefault('num_cores', 1)
         kwargs.setdefault('num_surrogates', 200)
@@ -39,17 +43,16 @@ class PlaceCellBinarized:
         kwargs.setdefault('saving_string', 'SpatialMetrics')
         kwargs.setdefault('percentile_threshold', 95)
         kwargs.setdefault('min_num_of_bins', 4)
-        kwargs.setdefault('speed_smoothing_points', 1)
         kwargs.setdefault('detection_threshold', 2)
-        kwargs.setdefault('detection_smoothing_size', 2)
+        kwargs.setdefault('detection_smoothing_sigma', 2)
         kwargs.setdefault('field_detection_method','std_from_field')
 
 
         valid_kwargs = ['animal_id', 'day', 'neuron', 'dataset', 'trial', 'sampling_rate',
-                        'min_time_spent', 'min_visits', 'min_speed_threshold', 'smoothing_size',
+                        'min_time_spent', 'min_visits', 'min_speed_threshold','speed_smoothing_sigma','map_smoothing_sigma',
                         'x_bin_size', 'y_bin_size', 'shift_time', 'num_cores', 'percentile_threshold','min_num_of_bins',
-                        'num_surrogates', 'saving_path', 'saving', 'saving_string', 'environment_edges','speed_smoothing_points',
-                        'detection_threshold','detection_smoothing_size','field_detection_method']
+                        'num_surrogates', 'saving_path', 'saving', 'saving_string', 'environment_edges',
+                        'detection_threshold','detection_smoothing_sigma','field_detection_method']
 
         for k, v in kwargs.items():
             if k not in valid_kwargs:
@@ -78,7 +81,7 @@ class PlaceCellBinarized:
 
             self.validate_input_data(calcium_imag, x_coordinates, y_coordinates,time_vector)
 
-            speed,speed_smoothed = hf.get_speed(x_coordinates, y_coordinates, time_vector, self.speed_smoothing_points)
+            speed,speed_smoothed = hf.get_speed(x_coordinates, y_coordinates, time_vector, self.speed_smoothing_sigma)
 
             x_grid, y_grid, x_center_bins, y_center_bins, x_center_bins_repeated, y_center_bins_repeated = hf.get_position_grid(
                 x_coordinates, y_coordinates, self.x_bin_size, self.y_bin_size,
@@ -111,7 +114,7 @@ class PlaceCellBinarized:
 
             activity_map, activity_map_smoothed = hf.get_2D_activity_map(calcium_imag_valid, x_coordinates_valid,
                                                                     y_coordinates_valid, x_grid, y_grid,
-                                                                    self.smoothing_size)
+                                                                    self.map_smoothing_sigma)
 
 
 
@@ -119,7 +122,7 @@ class PlaceCellBinarized:
 
             results = self.parallelize_surrogate(calcium_imag_valid, position_binned_valid, self.sampling_rate,
                                         self.shift_time, x_coordinates_valid,
-                                        y_coordinates_valid, x_grid, y_grid, self.smoothing_size,
+                                        y_coordinates_valid, x_grid, y_grid, self.map_smoothing_sigma,
                                         self.num_cores, self.num_surrogates)
             
             activity_map_shifted = []
@@ -140,25 +143,25 @@ class PlaceCellBinarized:
             
 
             if self.field_detection_method == 'random_fields':
-                # num_of_islands, islands_x_max, islands_y_max,pixels_place_cell_absolute,pixels_place_cell_relative,activity_map_identity = \
+                # num_of_fields, fields_x_max, fields_y_max,pixels_place_cell_absolute,pixels_place_cell_relative,activity_map_identity = \
                 # hf.field_coordinates_using_shifted(activity_map,activity_map_shifted,visits_occupancy,
                 #                                    percentile_threshold=self.percentile_threshold,
                 #                                   min_num_of_bins = self.min_num_of_bins)
                 
-                num_of_islands, islands_x_max, islands_y_max,pixels_place_cell_absolute,pixels_place_cell_relative,activity_map_identity = \
+                num_of_fields, fields_x_max, fields_y_max,pixels_place_cell_absolute,pixels_place_cell_relative,activity_map_identity = \
                 hf.field_coordinates_using_shifted(activity_map_smoothed,activity_map_smoothed_shifted,visits_occupancy,x_center_bins, y_center_bins,
                                                     percentile_threshold=self.percentile_threshold,
                                                     min_num_of_bins = self.min_num_of_bins)
                 
 
             elif self.field_detection_method == 'std_from_field':
-                num_of_islands, islands_x_max, islands_y_max,pixels_place_cell_absolute,pixels_place_cell_relative,activity_map_identity = \
-                hf.field_coordinates_using_threshold(activity_map, visits_occupancy,x_center_bins, y_center_bins,smoothing_size = self.detection_smoothing_size,    
+                num_of_fields, fields_x_max, fields_y_max,pixels_place_cell_absolute,pixels_place_cell_relative,activity_map_identity = \
+                hf.field_coordinates_using_threshold(activity_map, visits_occupancy,x_center_bins, y_center_bins,detection_smoothing_sigma = self.detection_smoothing_sigma,    
                                                 field_threshold=self.detection_threshold,
                                                 min_num_of_bins=self.min_num_of_bins)
             else:
                 warnings.warn("No field detection method set", UserWarning)
-                num_of_islands, islands_x_max, islands_y_max, pixels_place_cell_absolute, pixels_place_cell_relative, activity_map_identity = [[] for _ in range(6)]
+                num_of_fields, fields_x_max, fields_y_max, pixels_place_cell_absolute, pixels_place_cell_relative, activity_map_identity = [[] for _ in range(6)]
 
             
 
@@ -193,9 +196,9 @@ class PlaceCellBinarized:
             inputdict['y_peaks_location'] = y_peaks_location
 
             inputdict['activity_map_identity'] = activity_map_identity
-            inputdict['num_of_islands'] = num_of_islands
-            inputdict['islands_x_max'] = islands_x_max
-            inputdict['islands_y_max'] = islands_y_max
+            inputdict['num_of_fields'] = num_of_fields
+            inputdict['fields_x_max'] = fields_x_max
+            inputdict['fields_y_max'] = fields_y_max
             inputdict['sparsity'] = sparsity
 
             inputdict['place_cell_extension_absolute'] = pixels_place_cell_absolute
@@ -270,22 +273,24 @@ class PlaceCellBinarized:
 
         return mutual_info_zscored, mutual_info_centered
 
-    def parallelize_surrogate(self, calcium_imag_valid, position_binned_valid, sampling_rate, shift_time,
-                              x_coordinates_valid, y_coordinates_valid, x_grid, y_grid,
-                              smoothing_size, num_cores, num_surrogates):
-        results = Parallel(n_jobs=num_cores)(delayed(self.get_mutual_info_surrogate)
-                                                          (calcium_imag_valid, position_binned_valid,
-                                                           sampling_rate,
-                                                           shift_time, x_coordinates_valid, y_coordinates_valid,
-                                                           x_grid, y_grid, smoothing_size)
-                                                          for _ in range(num_surrogates))
 
+    def parallelize_surrogate(self, calcium_imag_valid, position_binned_valid, sampling_rate, shift_time,
+                            x_coordinates_valid, y_coordinates_valid, x_grid, y_grid,
+                            map_smoothing_sigma, num_cores, num_surrogates):
+        with tqdm_joblib(tqdm(desc="Processing Surrogates", total=num_surrogates)) as progress_bar:
+            results = Parallel(n_jobs=num_cores)(
+                delayed(self.get_mutual_info_surrogate)(
+                    calcium_imag_valid, position_binned_valid, sampling_rate,
+                    shift_time, x_coordinates_valid, y_coordinates_valid,
+                    x_grid, y_grid, map_smoothing_sigma
+                ) for _ in range(num_surrogates)
+            )
         return results
 
 
 
     def get_mutual_info_surrogate(self, calcium_imag_valid, position_binned_valid, sampling_rate, shift_time,
-                                  x_coordinates_valid, y_coordinates_valid, x_grid, y_grid, smoothing_size):
+                                  x_coordinates_valid, y_coordinates_valid, x_grid, y_grid, map_smoothing_sigma):
 
         calcium_imag_shuffled_valid = surrogate.get_signal_surrogate(calcium_imag_valid, sampling_rate, shift_time)
 
@@ -293,7 +298,7 @@ class PlaceCellBinarized:
         activity_map_shuffled, activity_map_smoothed_shuffled = hf.get_2D_activity_map(calcium_imag_shuffled_valid,
                                                                                    x_coordinates_valid,
                                                                                    y_coordinates_valid, x_grid, y_grid,
-                                                                                   smoothing_size)
+                                                                                   map_smoothing_sigma)
         return mutual_info_shuffled, activity_map_shuffled, activity_map_smoothed_shuffled
 
 
