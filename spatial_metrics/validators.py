@@ -1,6 +1,16 @@
 import inspect
 import warnings
+
 class ParameterValidator:
+
+    @staticmethod
+    def validate_num_cores(value):
+        if value is not None:
+            if not isinstance(value, (int,float)):
+                raise TypeError("num_cores must be of type int or float.")
+            if value == 0:
+                raise ValueError("num_cores cannot be zero.")
+
 
     @staticmethod
     def validate_sampling_rate(value):
@@ -18,7 +28,6 @@ class ParameterValidator:
             if value <= 0:
                 raise ValueError("num_surrogates must be a positive number.")
             
-
     @staticmethod
     def validate_min_time_spent(value):
         if value is not None:
@@ -27,15 +36,11 @@ class ParameterValidator:
             if value < 0:
                 raise ValueError("min_time_spent must be a non-negative number.")
 
-
-
-
     @staticmethod
     def validate_field_detection_method(value):
         if value is not None:
             if not isinstance(value, str):
                 raise TypeError("field_detection_method must be of type str: std_from_field or random_fields.")
-
             if value not in ['std_from_field', 'random_fields']:
                 warnings.warn("No valid field detection method set. Use std_from_field or random_fields", UserWarning)
 
@@ -77,12 +82,12 @@ class ParameterValidator:
 
 
     @staticmethod
-    def validate_smoothing_size(value):
+    def validate_map_smoothing_sigma(value):
         if value is not None:
-            if not isinstance(value, (int)):
-                raise TypeError("smoothing_size must be of type int.")
+            if not isinstance(value, (int,float)):
+                raise TypeError("map_smoothing_sigma must be of type int or float.")
             if value <= 0:
-                raise ValueError("smoothing_size must be a positive number.")
+                raise ValueError("map_smoothing_sigma must be a positive number.")
             
 
     @staticmethod
@@ -119,12 +124,12 @@ class ParameterValidator:
 
 
     @staticmethod
-    def validate_speed_smoothing_points(value):
+    def validate_speed_smoothing_sigma(value):
         if value is not None:
             if not isinstance(value, (int)):
-                raise TypeError("speed_smoothing_points must be of type int.")                           
+                raise TypeError("speed_smoothing_sigma must be of type int or float.")                           
             if value <= 0:
-                raise ValueError("speed_smoothing_points must be a positive number.")
+                raise ValueError("speed_smoothing_sigma must be a positive number.")
 
     @staticmethod
     def validate_detection_threshold(value):
@@ -135,12 +140,12 @@ class ParameterValidator:
                 raise ValueError("detection_threshold must be a positive number.")
             
     @staticmethod
-    def validate_detection_smoothing_size(value):
+    def validate_detection_smoothing_sigma(value):
         if value is not None:
-            if not isinstance(value, (int)):
-                raise TypeError("detection_smoothing_size must be of type int.")
+            if not isinstance(value, (int,float)):
+                raise TypeError("detection_smoothing_sigma must be of type int or float.")
             if value <= 0:
-                raise ValueError("detection_smoothing_size must be a positive number.")
+                raise ValueError("detection_smoothing_sigma must be a positive number.")
 
     @staticmethod
     def validate_nbins_cal(value):
@@ -149,8 +154,6 @@ class ParameterValidator:
                 raise TypeError("nbins_cal must be of type int.")
             if value <= 1:
                 raise ValueError("nbins_cal must be a positive number higher than 1.")
-
-
 
 
     @staticmethod

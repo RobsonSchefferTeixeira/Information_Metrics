@@ -41,6 +41,8 @@ def get_sparsity(activity_map, position_occupancy):
 def get_2D_activity_map(signal, x_coordinates, y_coordinates, x_grid, y_grid, smoothing_sigma):
     warnings.filterwarnings("ignore", category=RuntimeWarning)
     # calculate mean calcium per pixel
+    # Notice that this is the calcium trace normalized by occupancy.
+
     activity_map = np.nan * np.zeros((y_grid.shape[0] - 1, x_grid.shape[0] - 1))
     for xx in range(0, x_grid.shape[0] - 1):
         for yy in range(0, y_grid.shape[0] - 1):
@@ -49,12 +51,18 @@ def get_2D_activity_map(signal, x_coordinates, y_coordinates, x_grid, y_grid, sm
 
             activity_map[yy, xx] = np.nanmean(signal[np.logical_and(check_x_occupancy, check_y_occupancy)])
 
+    # Taking the mean is equivalent to:
+    # activity_map[yy, xx] = np.nansum(input_signal[np.logical_and(check_x_occupancy, check_y_occupancy)])
+    # and then normalize by the number of points inside each bin:
+    # activity_map_normalized = activity_map/(position_occupancy*sampling_rate)
+    # one must multiply by sampling_rate because position_occupancy is the time spent inside each bin
+
+
     activity_map_to_smooth = np.copy(activity_map)
     activity_map_to_smooth[np.isnan(activity_map_to_smooth)] = 0
     activity_map_smoothed = gaussian_smooth_2d(activity_map_to_smooth, smoothing_sigma)
 
     return activity_map, activity_map_smoothed
-
 
 
 
@@ -312,7 +320,8 @@ def get_speed_occupancy(speed,x_coordinates, y_coordinates, x_grid, y_grid):
     return speed_occupancy
 
 def get_occupancy(x_coordinates, y_coordinates, x_grid, y_grid, sampling_rate):
-    # calculate position occupancy
+    # calculate position occupancy, defined as time spent inside each bin
+
     position_occupancy = np.zeros((y_grid.shape[0] - 1, x_grid.shape[0] - 1))
     for xx in range(0, x_grid.shape[0] - 1):
         for yy in range(0, y_grid.shape[0] - 1):
@@ -437,7 +446,7 @@ def get_binned_position(x_coordinates, y_coordinates = None, x_grid = None, y_gr
     return position_binned
 
 
-def get_speed(x_coords, y_coords, time_stamps, smoothing_sigma=1):
+def get_speed(x_coords, y_coords, time_vector, speed_smoothing_sigma=1):
     """
     Calculate the instantaneous speed from position coordinates and time stamps,
     and apply Gaussian smoothing to the speed.
@@ -453,12 +462,14 @@ def get_speed(x_coords, y_coords, time_stamps, smoothing_sigma=1):
         raw_speed (numpy.ndarray): Array of calculated speeds before smoothing.
         smoothed_speed (numpy.ndarray): Array of speeds after applying Gaussian smoothing.
     """
+    sampling_rate = 1 / np.nanmean(np.diff(time_vector))
+    smoothing_sigma = (speed_smoothing_sigma/1000)*sampling_rate
 
     delta_x = np.diff(x_coords)
     delta_y = np.diff(y_coords)
 
     distances = np.sqrt(delta_x**2 + delta_y**2)
-    time_intervals = np.diff(time_stamps)
+    time_intervals = np.diff(time_vector)
     speed = distances / time_intervals
     speed = np.append(speed, 0)
     smoothed_speed = gaussian_smooth_1d(speed, smoothing_sigma)
@@ -1016,49 +1027,66 @@ def smooth(x, window_len=11, window='hanning'):
     return y[int(window_len / 2 - 1):-int(window_len / 2)]
 
 
-
-def gaussian_smooth_1d(input_data, sigma):
-    """
-    Perform 1D Gaussian smoothing on input data.
-    Notice that when using it for time series, sigma are set in points, not time.
-    In order to set the correct amount of points that correspond to ms, for instance,
-    one should use it like this: sigma = (s/1000)*sampling_rate
-    where s in the standard deviation in ms.
-
-    Parameters:
-        input_data (numpy.ndarray): The 1D input data to be smoothed.
-        sigma (float): The standard deviation of the Gaussian kernel in data points.
-
-    Returns:
-        smoothed_data (numpy.ndarray): The smoothed 1D data.
-    """
-    # Generate a 1D Gaussian kernel.
-    gaussian_kernel_1d = generate_1d_gaussian_kernel(sigma)
-
-    # Convolve the input data with the Gaussian kernel.
-    if input_data.ndim == 1:
-        input_data = np.expand_dims(input_data,0)
-    # smoothed_data = sig.convolve(input_data, gaussian_kernel_1d, mode='same')
-    smoothed_data = np.apply_along_axis(lambda x: sig.convolve(x, gaussian_kernel_1d, mode='same'), axis=1, arr=input_data)
-
-    return np.squeeze(smoothed_data)
-
-
-def generate_1d_gaussian_kernel(sigma):
+def generate_1d_gaussian_kernel(sigma, radius=None, truncate=4.0):
     """
     Generate a 1D Gaussian kernel with a specified standard deviation.
 
     Parameters:
-        sigma (float): The standard deviation of the Gaussian kernel.
+        sigma (float): Standard deviation of the Gaussian kernel.
+        radius (int, optional): Radius of the kernel. If None, computed as round(truncate * sigma).
+        truncate (float, optional): Truncate the filter at this many standard deviations (default is 4.0).
 
     Returns:
-        gaussian_kernel (numpy.ndarray): The 1D Gaussian kernel.
+        numpy.ndarray: The 1D Gaussian kernel.
     """
-    x_values = np.arange(-3.0 * sigma, 3.0 * sigma + 1.0)
+    if radius is None:
+        radius = int(round(truncate * sigma))
+    x_values = np.arange(-radius, radius + 1)
     constant = 1 / (np.sqrt(2 * math.pi) * sigma)
     gaussian_kernel = constant * np.exp(-((x_values**2) / (2 * (sigma**2))))
 
-    return gaussian_kernel
+    return gaussian_kernel,x_values
+
+
+def gaussian_smooth_1d(input_data, sigma, radius = None, truncate = 4.0):
+    """
+    Perform 1D Gaussian smoothing on input data, ignoring NaNs and preserving their positions.
+
+    Parameters:
+        input_data (numpy.ndarray): The 1D input data to be smoothed.
+        sigma_points (float): The standard deviation of the Gaussian kernel in data points.
+
+    Returns:
+        numpy.ndarray: The smoothed 1D data with NaNs preserved.
+    """
+    if input_data.ndim != 1:
+        raise ValueError("Input data must be a 1D array.")
+
+    # Generate the Gaussian kernel
+    gaussian_kernel_1d,_ = generate_1d_gaussian_kernel(sigma,radius, truncate)
+
+    # Identify NaN positions
+    nan_mask = np.isnan(input_data)
+
+    # Replace NaNs with zero for convolution
+    data_filled = np.where(nan_mask, 0, input_data)
+
+    # Convolve the filled data with the Gaussian kernel
+    smoothed_data = sig.convolve(data_filled, gaussian_kernel_1d, mode='same')
+    # smoothed_data = np.apply_along_axis(lambda x: sig.convolve(x, gaussian_kernel_1d, mode='same'), axis=1, arr=input_data)
+
+    # Create a normalization factor to account for missing data
+    normalization_factor = sig.convolve(~nan_mask, gaussian_kernel_1d, mode='same')
+
+    # Avoid division by zero
+    with np.errstate(divide='ignore', invalid='ignore'):
+        smoothed_data /= normalization_factor
+
+    # Reinsert NaNs into their original positions
+    smoothed_data[nan_mask] = np.nan
+
+    return smoothed_data
+
 
 
 def gaussian_smooth_2d(input_matrix, sigma):

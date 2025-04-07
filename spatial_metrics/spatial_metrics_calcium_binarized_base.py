@@ -65,7 +65,7 @@ class PlaceCellBinarized:
 
 
 
-    def main(self, calcium_imag, time_vector, x_coordinates, y_coordinates=None):
+    def main(self, calcium_imag, time_vector, x_coordinates, y_coordinates=None, speed=None):
 
         warnings.filterwarnings("ignore", category=RuntimeWarning)
         
@@ -81,7 +81,8 @@ class PlaceCellBinarized:
 
             self.validate_input_data(calcium_imag, x_coordinates, y_coordinates,time_vector)
 
-            speed,speed_smoothed = hf.get_speed(x_coordinates, y_coordinates, time_vector, self.speed_smoothing_sigma)
+            if speed is None:
+                speed,speed_smoothed = hf.get_speed(x_coordinates, y_coordinates, time_vector, self.speed_smoothing_sigma)
 
             x_grid, y_grid, x_center_bins, y_center_bins, x_center_bins_repeated, y_center_bins_repeated = hf.get_position_grid(
                 x_coordinates, y_coordinates, self.x_bin_size, self.y_bin_size,
@@ -115,7 +116,6 @@ class PlaceCellBinarized:
             activity_map, activity_map_smoothed = hf.get_2D_activity_map(calcium_imag_valid, x_coordinates_valid,
                                                                     y_coordinates_valid, x_grid, y_grid,
                                                                     self.map_smoothing_sigma)
-
 
 
             mutual_info_original = self.get_mutual_information(calcium_imag_valid, position_binned_valid)
@@ -307,6 +307,7 @@ class PlaceCellBinarized:
 
         # I've translated this code to Python. 
         # Originally I took it from https://github.com/etterguillaume/CaImDecoding/blob/master/extract_1D_information.m
+        # https://github.com/nkinsky/ImageCamp/blob/e48c6fac407ef3997b67474a2333184bbc4915dc/General/CalculateSpatialInfo.m
 
         # I'm calling the input variable as calcium_imag just for the sake of class inheritance, but a better name
         # would be binarized_signal
@@ -324,7 +325,7 @@ class PlaceCellBinarized:
             position_idx = position_binned == bin_vector[i]
 
             if np.sum(position_idx) > 0:
-                occupancy_vector.append(position_idx.shape[0] / calcium_imag.shape[0])
+                occupancy_vector.append(position_idx.shape[0] / position_binned.shape[0])
 
                 activity_in_bin_idx = np.where((calcium_imag == 1) & position_idx)[0]
                 inactivity_in_bin_idx = np.where((calcium_imag == 0) & position_idx)[0]
@@ -346,4 +347,50 @@ class PlaceCellBinarized:
 
         posterior = likelihood * occupancy_vector / prob_being_active
 
+        return mutual_info
+
+
+
+    def get_mutual_information_2(self, binarized_signal, position_binned):
+
+        # I've translated this code to Python. 
+        # Originally I took it from https://github.com/etterguillaume/CaImDecoding/blob/master/extract_1D_information.m
+        # https://github.com/nkinsky/ImageCamp/blob/e48c6fac407ef3997b67474a2333184bbc4915dc/General/CalculateSpatialInfo.m
+
+        # I'm calling the input variable as calcium_imag just for the sake of class inheritance, but a better name
+        # would be binarized_signal
+        bin_vector = np.unique(position_binned)
+
+        # Create bin vectors
+        prob_being_active = np.nansum(binarized_signal == 1) / binarized_signal.shape[0]  # Expressed in probability of firing (<1)
+        prob_being_inactive = np.nansum(binarized_signal == 0) / binarized_signal.shape[0]  # Expressed in probability of firing (<1)
+
+        # Compute joint probabilities (of cell being active while being in a state bin)
+        info_pos = np.zeros(bin_vector.shape[0])
+        prob_in_bin = np.zeros(bin_vector.shape[0])
+        for i in range(bin_vector.shape[0]):
+            position_idx = position_binned == bin_vector[i]
+
+            info_aux = 0
+            if np.nansum(position_idx) > 0:
+
+                activity_in_bin_idx = np.where((binarized_signal == 1) & position_idx)[0]
+                inactivity_in_bin_idx = np.where((binarized_signal == 0) & position_idx)[0]
+
+                joint_prob_active = activity_in_bin_idx.shape[0] / binarized_signal.shape[0]
+                joint_prob_inactive = inactivity_in_bin_idx.shape[0] / binarized_signal.shape[0]
+
+                if joint_prob_active > 0:
+                    info_aux += joint_prob_active * np.log2(joint_prob_active /prob_being_active)
+
+                if joint_prob_inactive > 0:
+                    info_aux += joint_prob_inactive * np.log2(joint_prob_inactive /prob_being_inactive)
+                
+                info_pos[i] = info_aux
+                prob_in_bin[i] = np.sum(position_idx) / position_binned.shape[0]
+                
+            
+        mutual_info = np.nansum(info_pos*prob_in_bin)
+
+   
         return mutual_info
