@@ -34,7 +34,8 @@ class PlaceCellBinarized:
         kwargs.setdefault('x_bin_size', 1)
         kwargs.setdefault('y_bin_size', None)
         kwargs.setdefault('environment_edges', None)
-        kwargs.setdefault('map_smoothing_sigma', 2)
+        kwargs.setdefault('map_smoothing_sigma_x', 2)
+        kwargs.setdefault('map_smoothing_sigma_y', 2)
         kwargs.setdefault('shift_time', 10)
         kwargs.setdefault('num_cores', 1)
         kwargs.setdefault('num_surrogates', 200)
@@ -44,15 +45,17 @@ class PlaceCellBinarized:
         kwargs.setdefault('percentile_threshold', 95)
         kwargs.setdefault('min_num_of_bins', 4)
         kwargs.setdefault('detection_threshold', 2)
-        kwargs.setdefault('detection_smoothing_sigma', 2)
+        kwargs.setdefault('detection_smoothing_sigma_x', 2)
+        kwargs.setdefault('detection_smoothing_sigma_y', 2)
+
         kwargs.setdefault('field_detection_method','std_from_field')
 
 
         valid_kwargs = ['animal_id', 'day', 'neuron', 'dataset', 'trial', 'sampling_rate',
-                        'min_time_spent', 'min_visits', 'min_speed_threshold','speed_smoothing_sigma','map_smoothing_sigma',
+                        'min_time_spent', 'min_visits', 'min_speed_threshold','speed_smoothing_sigma','map_smoothing_sigma_x','map_smoothing_sigma_y',
                         'x_bin_size', 'y_bin_size', 'shift_time', 'num_cores', 'percentile_threshold','min_num_of_bins',
                         'num_surrogates', 'saving_path', 'saving', 'saving_string', 'environment_edges',
-                        'detection_threshold','detection_smoothing_sigma','field_detection_method']
+                        'detection_threshold','detection_smoothing_sigma_x','detection_smoothing_sigma_y','field_detection_method']
 
         for k, v in kwargs.items():
             if k not in valid_kwargs:
@@ -115,14 +118,14 @@ class PlaceCellBinarized:
 
             activity_map, activity_map_smoothed = hf.get_2D_activity_map(calcium_imag_valid, x_coordinates_valid,
                                                                     y_coordinates_valid, x_grid, y_grid,
-                                                                    self.map_smoothing_sigma)
+                                                                    self.map_smoothing_sigma_x,self.map_smoothing_sigma_y)
 
 
             mutual_info_original = self.get_mutual_information(calcium_imag_valid, position_binned_valid)
 
             results = self.parallelize_surrogate(calcium_imag_valid, position_binned_valid, self.sampling_rate,
                                         self.shift_time, x_coordinates_valid,
-                                        y_coordinates_valid, x_grid, y_grid, self.map_smoothing_sigma,
+                                        y_coordinates_valid, x_grid, y_grid, self.map_smoothing_sigma_x,self.map_smoothing_sigma_y,
                                         self.num_cores, self.num_surrogates)
             
             activity_map_shifted = []
@@ -149,16 +152,20 @@ class PlaceCellBinarized:
                 #                                   min_num_of_bins = self.min_num_of_bins)
                 
                 num_of_fields, fields_x_max, fields_y_max,pixels_place_cell_absolute,pixels_place_cell_relative,activity_map_identity = \
-                hf.field_coordinates_using_shifted(activity_map_smoothed,activity_map_smoothed_shifted,visits_occupancy,x_center_bins, y_center_bins,
+                hf.field_coordinates_using_shifted(activity_map,activity_map_shifted,visits_occupancy,x_center_bins, y_center_bins,
                                                     percentile_threshold=self.percentile_threshold,
-                                                    min_num_of_bins = self.min_num_of_bins)
-                
+                                                    min_num_of_bins = self.min_num_of_bins,
+                                                    sigma_x=self.detection_smoothing_sigma_x, 
+                                                    sigma_y=self.detection_smoothing_sigma_y)
+
 
             elif self.field_detection_method == 'std_from_field':
                 num_of_fields, fields_x_max, fields_y_max,pixels_place_cell_absolute,pixels_place_cell_relative,activity_map_identity = \
-                hf.field_coordinates_using_threshold(activity_map, visits_occupancy,x_center_bins, y_center_bins,detection_smoothing_sigma = self.detection_smoothing_sigma,    
-                                                field_threshold=self.detection_threshold,
-                                                min_num_of_bins=self.min_num_of_bins)
+                hf.field_coordinates_using_threshold(activity_map, visits_occupancy,x_center_bins, y_center_bins,                                                        
+                                                    field_threshold=self.detection_threshold, min_num_of_bins=self.min_num_of_bins,
+                                                    sigma_x = self.detection_smoothing_sigma_x, 
+                                                    sigma_y=self.detection_smoothing_sigma_y)
+                
             else:
                 warnings.warn("No field detection method set", UserWarning)
                 num_of_fields, fields_x_max, fields_y_max, pixels_place_cell_absolute, pixels_place_cell_relative, activity_map_identity = [[] for _ in range(6)]
@@ -276,13 +283,13 @@ class PlaceCellBinarized:
 
     def parallelize_surrogate(self, calcium_imag_valid, position_binned_valid, sampling_rate, shift_time,
                             x_coordinates_valid, y_coordinates_valid, x_grid, y_grid,
-                            map_smoothing_sigma, num_cores, num_surrogates):
+                            map_smoothing_sigma_x,map_smoothing_sigma_y, num_cores, num_surrogates):
         with tqdm_joblib(tqdm(desc="Processing Surrogates", total=num_surrogates)) as progress_bar:
             results = Parallel(n_jobs=num_cores)(
                 delayed(self.get_mutual_info_surrogate)(
                     calcium_imag_valid, position_binned_valid, sampling_rate,
                     shift_time, x_coordinates_valid, y_coordinates_valid,
-                    x_grid, y_grid, map_smoothing_sigma
+                    x_grid, y_grid, map_smoothing_sigma_x,map_smoothing_sigma_y
                 ) for _ in range(num_surrogates)
             )
         return results
@@ -290,7 +297,7 @@ class PlaceCellBinarized:
 
 
     def get_mutual_info_surrogate(self, calcium_imag_valid, position_binned_valid, sampling_rate, shift_time,
-                                  x_coordinates_valid, y_coordinates_valid, x_grid, y_grid, map_smoothing_sigma):
+                                  x_coordinates_valid, y_coordinates_valid, x_grid, y_grid, map_smoothing_sigma_x,map_smoothing_sigma_y):
 
         calcium_imag_shuffled_valid = surrogate.get_signal_surrogate(calcium_imag_valid, sampling_rate, shift_time)
 
@@ -298,12 +305,12 @@ class PlaceCellBinarized:
         activity_map_shuffled, activity_map_smoothed_shuffled = hf.get_2D_activity_map(calcium_imag_shuffled_valid,
                                                                                    x_coordinates_valid,
                                                                                    y_coordinates_valid, x_grid, y_grid,
-                                                                                   map_smoothing_sigma)
+                                                                                   map_smoothing_sigma_x,map_smoothing_sigma_y)
         return mutual_info_shuffled, activity_map_shuffled, activity_map_smoothed_shuffled
 
 
 
-    def get_mutual_information(self, calcium_imag, position_binned):
+    def get_mutual_information_bkp(self, calcium_imag, position_binned):
 
         # I've translated this code to Python. 
         # Originally I took it from https://github.com/etterguillaume/CaImDecoding/blob/master/extract_1D_information.m
@@ -351,18 +358,17 @@ class PlaceCellBinarized:
 
 
 
-    def get_mutual_information_2(self, binarized_signal, position_binned):
+    
+    def get_mutual_information(self,binarized_signal, position_binned):
 
-        # I've translated this code to Python. 
-        # Originally I took it from https://github.com/etterguillaume/CaImDecoding/blob/master/extract_1D_information.m
+        # https://github.com/etterguillaume/CaImDecoding/blob/master/extract_1D_information.m
         # https://github.com/nkinsky/ImageCamp/blob/e48c6fac407ef3997b67474a2333184bbc4915dc/General/CalculateSpatialInfo.m
 
-        # I'm calling the input variable as calcium_imag just for the sake of class inheritance, but a better name
-        # would be binarized_signal
         bin_vector = np.unique(position_binned)
 
         # Create bin vectors
         prob_being_active = np.nansum(binarized_signal == 1) / binarized_signal.shape[0]  # Expressed in probability of firing (<1)
+        # prob_being_inactive = 1-prob_being_active
         prob_being_inactive = np.nansum(binarized_signal == 0) / binarized_signal.shape[0]  # Expressed in probability of firing (<1)
 
         # Compute joint probabilities (of cell being active while being in a state bin)
@@ -371,26 +377,28 @@ class PlaceCellBinarized:
         for i in range(bin_vector.shape[0]):
             position_idx = position_binned == bin_vector[i]
 
-            info_aux = 0
+            info_bin = 0
             if np.nansum(position_idx) > 0:
 
-                activity_in_bin_idx = np.where((binarized_signal == 1) & position_idx)[0]
-                inactivity_in_bin_idx = np.where((binarized_signal == 0) & position_idx)[0]
+                active_in_bin_idx = np.nansum((binarized_signal == 1) & position_idx)
+                joint_prob_active = active_in_bin_idx / np.nansum(position_idx)
+                if joint_prob_active /prob_being_active > 0:
+                    aux = joint_prob_active * np.log2(joint_prob_active /prob_being_active)
 
-                joint_prob_active = activity_in_bin_idx.shape[0] / binarized_signal.shape[0]
-                joint_prob_inactive = inactivity_in_bin_idx.shape[0] / binarized_signal.shape[0]
+                    if not np.isnan(aux):
+                        info_bin += aux
+        
 
-                if joint_prob_active > 0:
-                    info_aux += joint_prob_active * np.log2(joint_prob_active /prob_being_active)
+                # inactivity_in_bin_idx = 1-active_in_bin_idx
+                inactivity_in_bin_idx = np.nansum((binarized_signal == 0) & position_idx)
+                joint_prob_inactive = inactivity_in_bin_idx / np.nansum(position_idx)
+                if joint_prob_inactive /prob_being_inactive > 0:
+                    aux = joint_prob_inactive * np.log2(joint_prob_inactive /prob_being_inactive)
+                    if not np.isnan(aux):
+                        info_bin += aux
+                            
+                info_pos[i] = info_bin.copy()
+                prob_in_bin[i] = np.nansum(position_idx) / position_binned.shape[0]
 
-                if joint_prob_inactive > 0:
-                    info_aux += joint_prob_inactive * np.log2(joint_prob_inactive /prob_being_inactive)
-                
-                info_pos[i] = info_aux
-                prob_in_bin[i] = np.sum(position_idx) / position_binned.shape[0]
-                
-            
         mutual_info = np.nansum(info_pos*prob_in_bin)
-
-   
         return mutual_info

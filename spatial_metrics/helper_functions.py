@@ -6,6 +6,8 @@ import numpy as np
 from scipy import signal as sig
 import math
 import warnings
+import spatial_metrics.smoothing_functions as smooth
+
 
 def correct_coordinates(x_coordinates, y_coordinates, environment_edges):
     # Assign NaN to out-of-bound x and y coordinates
@@ -38,7 +40,7 @@ def get_sparsity(activity_map, position_occupancy):
 
     return sparsity
 
-def get_2D_activity_map(signal, x_coordinates, y_coordinates, x_grid, y_grid, smoothing_sigma):
+def get_2D_activity_map(signal, x_coordinates, y_coordinates, x_grid, y_grid, sigma_x,sigma_y = None):
     warnings.filterwarnings("ignore", category=RuntimeWarning)
     # calculate mean calcium per pixel
     # Notice that this is the calcium trace normalized by occupancy.
@@ -58,9 +60,18 @@ def get_2D_activity_map(signal, x_coordinates, y_coordinates, x_grid, y_grid, sm
     # one must multiply by sampling_rate because position_occupancy is the time spent inside each bin
 
 
-    activity_map_to_smooth = np.copy(activity_map)
-    activity_map_to_smooth[np.isnan(activity_map_to_smooth)] = 0
-    activity_map_smoothed = gaussian_smooth_2d(activity_map_to_smooth, smoothing_sigma)
+    # activity_map_to_smooth = np.copy(activity_map)
+    # activity_map_to_smooth[np.isnan(activity_map_to_smooth)] = 0
+    
+    if sigma_y is None:
+        sigma_y = sigma_x
+
+    sigma_x_points = smooth.get_sigma_points(sigma_x,x_grid)
+    sigma_y_points = smooth.get_sigma_points(sigma_y,y_grid)
+
+    kernel, (x_mesh, y_mesh) = smooth.generate_2d_gaussian_kernel(sigma_x_points, sigma_y_points, radius_x=None, radius_y=None, truncate=4.0)
+
+    activity_map_smoothed = smooth.gaussian_smooth_2d(activity_map, kernel, handle_nans=False)
 
     return activity_map, activity_map_smoothed
 
@@ -472,7 +483,11 @@ def get_speed(x_coords, y_coords, time_vector, speed_smoothing_sigma=1):
     time_intervals = np.diff(time_vector)
     speed = distances / time_intervals
     speed = np.append(speed, 0)
-    smoothed_speed = gaussian_smooth_1d(speed, sigma = smoothing_sigma)
+
+    sigma_points = smooth.get_sigma_points(speed_smoothing_sigma,time_vector)
+    kernel,x_values = smooth.generate_1d_gaussian_kernel(sigma_points, radius=None, truncate=4.0)
+    smoothed_speed = smooth.gaussian_smooth_1d(speed, kernel, handle_nans=False)
+
     
     return speed, smoothed_speed
 
@@ -544,7 +559,7 @@ def caller_saving(inputdict, filename, saving_path):
     output.close()
     print('File saved.')
 
-
+'''
 def identify_islands(input_array):
     """
     Identifies islands in a binary input array.
@@ -613,10 +628,62 @@ def dfs(input_array, input_array2, count, row, col, i, j):
 
     if j != col - 1:
         dfs(input_array, input_array2, count, row, col, i, j + 1)
+'''
 
 
+def identify_islands(input_array):
+    """
+    Identifies islands in a binary input array, ignoring NaN values.
 
-def field_coordinates_using_shifted(activity_map, activity_map_shifted, visits_map, x_center_bins,y_center_bins,percentile_threshold=95, min_num_of_bins=4, detection_smoothing_sigma=2):
+    Parameters
+    ----------
+    input_array : numpy.ndarray
+        Input array containing islands marked as 1 (0s for background, NaNs ignored).
+
+    Returns
+    -------
+    labeled_array : numpy.ndarray
+        Array with islands labeled sequentially (NaNs preserved).
+    """
+    # Create working copies
+    working_array = np.where(np.isnan(input_array), 0, input_array.copy())
+    labeled_array = np.full_like(input_array, 0, dtype=float)
+    count = 0
+    
+    rows, cols = input_array.shape
+    
+    for i in range(rows):
+        for j in range(cols):
+            # Only process non-NaN cells with value 1 that haven't been labeled
+            if not np.isnan(input_array[i, j]) and working_array[i, j] == 1:
+                count += 1
+                dfs(working_array, labeled_array, count, rows, cols, i, j)
+    
+    # Restore NaN values from original array
+    labeled_array = np.where(np.isnan(input_array), np.nan, labeled_array)
+    return labeled_array
+
+def dfs(input_array, output_array, count, rows, cols, i, j):
+    """
+    Modified DFS to ignore NaN values during island labeling.
+    """
+    # Skip if out of bounds, NaN, or not part of an island
+    if (i < 0 or i >= rows or j < 0 or j >= cols or 
+        np.isnan(input_array[i, j]) or input_array[i, j] == 0):
+        return
+    
+    # Mark current cell
+    input_array[i, j] = 0
+    output_array[i, j] = count
+    
+    # Recursive calls to neighbors (4-directional)
+    dfs(input_array, output_array, count, rows, cols, i + 1, j)
+    dfs(input_array, output_array, count, rows, cols, i - 1, j)
+    dfs(input_array, output_array, count, rows, cols, i, j + 1)
+    dfs(input_array, output_array, count, rows, cols, i, j - 1)
+
+
+def field_coordinates_using_shifted(activity_map, activity_map_shifted, visits_map, x_center_bins,y_center_bins,percentile_threshold=95, min_num_of_bins=4, sigma_x=2, sigma_y=None):
     """
     Identifies and characterizes regions in a spatial field based on shifted field criteria,
     with the center of mass used as the location for each place field.
@@ -650,13 +717,37 @@ def field_coordinates_using_shifted(activity_map, activity_map_shifted, visits_m
         Identification map for the regions.
     """
 
-    activity_map_smoothed = gaussian_smooth_2d(activity_map, detection_smoothing_sigma)
+    activity_map = np.copy(activity_map)
+    activity_map_shifted = np.copy(activity_map_shifted)
+
+    if sigma_y is None:
+        sigma_y = sigma_x
+
+    sigma_x_points = smooth.get_sigma_points(sigma_x,x_center_bins)
+    sigma_y_points = smooth.get_sigma_points(sigma_y,y_center_bins)
+
+    kernel, (x_mesh, y_mesh) = smooth.generate_2d_gaussian_kernel(sigma_x_points, sigma_y_points, radius_x=None, radius_y=None, truncate=4.0)
+
+    
+    # nan_mask = np.isnan(activity_map)
+    # activity_map[nan_mask] = 0
+    activity_map_smoothed = smooth.gaussian_smooth_2d(activity_map, kernel, handle_nans=True)
+
+    # nan_mask = np.isnan(activity_map_shifted)
+    # activity_map_shifted[nan_mask] = 0
+    activity_map_shifted_smoothed = []
+    for idx in range(activity_map_shifted.shape[0]):
+        activity_map_shifted_smoothed.append(smooth.gaussian_smooth_2d(activity_map_shifted[idx,:,:], kernel, handle_nans=True))
+    activity_map_shifted_smoothed = np.array(activity_map_shifted_smoothed)
+
+
+
 
     # Calculate the threshold using the shifted place field data
-    activity_map_threshold = np.percentile(activity_map_shifted, percentile_threshold, 0)
+    activity_map_threshold = np.percentile(activity_map_shifted_smoothed, percentile_threshold, 0)
 
     # Create a binary map of areas above the threshold
-    field_above_threshold_binary = np.copy(activity_map)
+    field_above_threshold_binary = np.copy(activity_map_smoothed)
     field_above_threshold_binary[field_above_threshold_binary <= activity_map_threshold] = 0
     field_above_threshold_binary[field_above_threshold_binary > activity_map_threshold] = 1
 
@@ -693,7 +784,7 @@ def field_coordinates_using_shifted(activity_map, activity_map_shifted, visits_m
         pixels_above = np.array(pixels_above)
 
         total_visited_pixels = np.nansum(visits_map != 0)
-        pixels_total = activity_map.shape[0] * activity_map.shape[1]
+        pixels_total = activity_map_smoothed.shape[0] * activity_map_smoothed.shape[1]
 
         pixels_place_cell_relative = pixels_above / total_visited_pixels
         pixels_place_cell_absolute = pixels_above / pixels_total
@@ -793,7 +884,7 @@ def center_of_mass(island_mask, activity_map_smoothed, x_center_bins, y_center_b
     return x_com, y_com
 
 
-def field_coordinates_using_threshold(activity_map, visits_map, x_center_bins,y_center_bins,detection_smoothing_sigma=1, field_threshold=2, min_num_of_bins=4):
+def field_coordinates_using_threshold(activity_map, visits_map, x_center_bins,y_center_bins, field_threshold=2, min_num_of_bins=4, sigma_x=2, sigma_y=None):
     """
     Identify and characterize spatial regions in a field based on threshold criteria,
     with the center of mass as the place field location.
@@ -827,18 +918,35 @@ def field_coordinates_using_threshold(activity_map, visits_map, x_center_bins,y_
         Identification map for the regions.
     """
 
+    '''
     activity_map_to_smooth = np.copy(activity_map)
     I_nan = np.isnan(activity_map)
     
     activity_map_to_smooth[np.isnan(activity_map_to_smooth)] = 0
     activity_map_smoothed = gaussian_smooth_2d(activity_map_to_smooth, detection_smoothing_sigma)
 
+    '''
+
+    activity_map = np.copy(activity_map)
+
+    if sigma_y is None:
+        sigma_y = sigma_x
+
+    sigma_x_points = smooth.get_sigma_points(sigma_x,x_center_bins)
+    sigma_y_points = smooth.get_sigma_points(sigma_y,y_center_bins)
+
+    kernel, (x_mesh, y_mesh) = smooth.generate_2d_gaussian_kernel(sigma_x_points, sigma_y_points, radius_x=None, radius_y=None, truncate=4.0)
+    activity_map_smoothed = smooth.gaussian_smooth_2d(activity_map, kernel, handle_nans=True)
+
+    # nan_mask = np.isnan(activity_map_smoothed)
+    # activity_map_smoothed[nan_mask] = 0
+
     I_threshold = np.nanmean(activity_map_smoothed) + field_threshold * np.nanstd(activity_map_smoothed)
 
     field_above_threshold_binary = np.copy(activity_map_smoothed)
     field_above_threshold_binary[field_above_threshold_binary < I_threshold] = 0
     field_above_threshold_binary[field_above_threshold_binary >= I_threshold] = 1
-    field_above_threshold_binary[I_nan] = 0
+    # field_above_threshold_binary[I_nan] = 0
     
     if np.any(field_above_threshold_binary > 0):
         sys.setrecursionlimit(10000000)
@@ -968,11 +1076,7 @@ def eegfilt(signal, fs, lowcut, highcut, order = 3):
 
     filtered[non_nan_mask] = filtered_masked
 
-
     return filtered
-
-
-
 
 
 def find_matching_indexes(target_timestamps, reference_time_vector,error_threshold = 0.1):

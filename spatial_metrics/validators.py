@@ -126,7 +126,7 @@ class ParameterValidator:
     @staticmethod
     def validate_speed_smoothing_sigma(value):
         if value is not None:
-            if not isinstance(value, (int)):
+            if not isinstance(value, (int,float)):
                 raise TypeError("speed_smoothing_sigma must be of type int or float.")                           
             if value <= 0:
                 raise ValueError("speed_smoothing_sigma must be a positive number.")
