@@ -57,6 +57,7 @@ def smooth(x, window_len=11, window='hanning'):
 
 
 
+
 def get_sigma_points(sigma,units_vector):
     
     sampling_rate = 1/np.nanmean(np.diff(units_vector))
@@ -99,15 +100,17 @@ def generate_1d_gaussian_kernel(sigma, radius=None, truncate=4.0):
 
 
     x_values = np.arange(-radius, radius + 1)
-    constant = 1 / (np.sqrt(2 * math.pi) * sigma)
-    gaussian_kernel = constant * np.exp(-((x_values**2) / (2 * (sigma**2))))
+    dt = 1 # just making this more explicit
+    constant = dt / (np.sqrt(2 * math.pi) * sigma)
+    # We need to multiply by dt to normalize to area equal to one. Since here we have integer numbers meant to use as indexes, dt = 1
+    kernel = constant * np.exp(-((x_values**2) / (2 * (sigma**2))))
 
     # The kernel should be normalized to sum to 1 (especially important for convolution to preserve signal 
     # magnitude). Currently, it's normalized for a continuous Gaussian (area=1), but in discrete form 
     # the sum may not be exactly 1.
-    gaussian_kernel /= np.sum(gaussian_kernel)
+    kernel /= kernel.sum()
 
-    return gaussian_kernel,x_values
+    return kernel,x_values
 
 
 def gaussian_smooth_1d(input_data, kernel, handle_nans=False):
@@ -128,11 +131,10 @@ def gaussian_smooth_1d(input_data, kernel, handle_nans=False):
         raise ValueError("Input must be 1D array")
     
     if not handle_nans:
-
-        nan_mask = np.isnan(input_data)
-        input_data[nan_mask] = 0
-        result = sig.convolve(input_data, kernel, mode='same', method='auto')
-        result[nan_mask] = np.nan
+        # nan_mask = np.isnan(input_data)
+        # input_data[nan_mask] = 0
+        result = sig.convolve(input_data, kernel, mode='same', method='direct')
+        # result[nan_mask] = np.nan
         return 
     
     # Create mask of valid numbers
@@ -181,7 +183,9 @@ def generate_2d_gaussian_kernel(sigma_x, sigma_y=None, radius_x=None, radius_y=N
     x_mesh, y_mesh = np.meshgrid(x, y)
     
     # Compute 2D Gaussian
-    constant = 1 / (2 * np.pi * sigma_x * sigma_y)
+    # constant = (dt*dt) / (2 * np.pi * sigma_x * sigma_y) # since we are in 2D, we need to dt: dtx and dty
+
+    constant = (1*1) / (2 * np.pi * sigma_x * sigma_y)
     kernel = constant * np.exp(-(x_mesh**2/(2*sigma_x**2) + y_mesh**2/(2*sigma_y**2)))
     kernel /= kernel.sum()  # Normalize
     
@@ -225,6 +229,7 @@ def gaussian_smooth_2d(matrix, kernel, handle_nans=False):
         result[nan_mask] = np.nan
 
         return result
+
 
 '''
 
