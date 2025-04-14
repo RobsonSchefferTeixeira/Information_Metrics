@@ -1,5 +1,6 @@
 import inspect
 import warnings
+import numpy as np
 
 class ParameterValidator:
 
@@ -184,6 +185,8 @@ class ParameterValidator:
             else:
                 raise ValueError("environment_edges must be a list.")
 
+
+
     @classmethod
     def validate_all(cls, params):
         for key, validator in cls.get_validators().items():
@@ -198,3 +201,56 @@ class ParameterValidator:
                 param_name = name[len('validate_'):]  # Extract parameter name
                 validators[param_name] = func
         return validators
+
+
+
+
+class DataValidator:
+
+    @staticmethod
+    def validate_input_data(signal_data):
+
+        # valid input_signal points
+        I_valid_input_signal = ~np.isnan(signal_data.input_signal)
+
+        # valid x coordinates
+        I_valid_x_coord = ~np.isnan(signal_data.x_coordinates)
+
+        # valid y coordinates
+        I_valid_y_coord = ~np.isnan(signal_data.y_coordinates)
+
+        # valid time vector
+        I_valid_time_vector = ~np.isnan(signal_data.time_vector)
+
+        I_keep_valid = I_valid_input_signal * I_valid_x_coord * I_valid_y_coord * I_valid_time_vector
+
+        signal_data.input_signal = signal_data.input_signal[I_keep_valid]
+        signal_data.time_vector = signal_data.time_vector[I_keep_valid]
+        signal_data.x_coordinates = signal_data.x_coordinates[I_keep_valid]
+        signal_data.y_coordinates = signal_data.y_coordinates[I_keep_valid]
+
+
+    @staticmethod
+    def get_valid_timepoints(signal_data, min_speed_threshold, min_visits, min_time_spent):
+   
+        # min speed
+        I_speed_thres = signal_data.speed >= min_speed_threshold
+
+        # min visits
+        I_visits_times_thres = signal_data.visits_bins >= min_visits
+
+        # min time spent
+        I_time_spent_thres = signal_data.time_spent_inside_bins >= min_time_spent
+
+        keep_these_frames = I_speed_thres * I_visits_times_thres * I_time_spent_thres
+        
+        signal_data.input_signal = signal_data.input_signal[keep_these_frames]
+        signal_data.x_coordinates = signal_data.x_coordinates[keep_these_frames]
+        signal_data.y_coordinates = signal_data.y_coordinates[keep_these_frames]
+        signal_data.time_vector = signal_data.time_vector[keep_these_frames]
+        signal_data.speed = signal_data.speed[keep_these_frames]
+        signal_data.visits_bins = signal_data.visits_bins[keep_these_frames]
+        signal_data.position_binned = signal_data.position_binned[keep_these_frames]
+        signal_data.new_visits_times = signal_data.new_visits_times[keep_these_frames]
+
+    

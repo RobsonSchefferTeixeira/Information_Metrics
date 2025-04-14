@@ -1,4 +1,5 @@
 import numpy as np
+from spatial_metrics import smoothing_functions as sf
 from sklearn.feature_selection import mutual_info_classif
 from sklearn.feature_selection import mutual_info_regression
 import warnings
@@ -262,10 +263,7 @@ def get_mutual_information_binarized_from_map(x_coordinates, y_coordinates, acti
     return spatial_information
 
 
-
-
-
-def get_mutual_information_2d(calcium_imag_binned,position_binned,y_grid,x_grid,nbins_cal,nbins_pos,smoothing_size):
+def get_mutual_information_2d(calcium_imag_binned,position_binned,nbins_cal,nbins_pos,x_grid,y_grid,map_smoothing_sigma_x,map_smoothing_sigma_y):
 
     total_num_events = calcium_imag_binned.shape[0]
 
@@ -315,12 +313,15 @@ def get_mutual_information_2d(calcium_imag_binned,position_binned,y_grid,x_grid,
 
     mutual_info_distribution = P_xi * I_pos_xi
     mutual_info_distribution = mutual_info_distribution.reshape((x_grid.shape[0] - 1), (y_grid.shape[0] - 1)).T
+    
+    sigma_x_points = sf.get_sigma_points(map_smoothing_sigma_x,x_grid)
+    sigma_y_points = sf.get_sigma_points(map_smoothing_sigma_y,y_grid)
+    kernel,(x_mesh,y_mesh) = sf.generate_2d_gaussian_kernel(sigma_x = sigma_x_points, sigma_y=sigma_y_points)
+                                
+    mutual_info_distribution_smoothed = sf.gaussian_smooth_2d(mutual_info_distribution,kernel)
+    mutual_info_distribution_bezzi_smoothed = sf.gaussian_smooth_2d(mutual_info_distribution_bezzi,kernel)
 
-    mutual_info_distribution_smoothed = hf.gaussian_smooth_2d(mutual_info_distribution, smoothing_size)
-    mutual_info_distribution_bezzi_smoothed = hf.gaussian_smooth_2d(mutual_info_distribution_bezzi, smoothing_size)
-
-
-    return mutual_info_distribution,mutual_info_distribution_bezzi
+    return mutual_info_distribution,mutual_info_distribution_bezzi,mutual_info_distribution_smoothed,mutual_info_distribution_bezzi_smoothed
 
 
 def get_kullback_leibler_normalized(calcium_imag, position_binned):

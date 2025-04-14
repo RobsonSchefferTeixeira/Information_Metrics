@@ -6,6 +6,8 @@ from spatial_metrics import surrogate_functions as surrogate
 from spatial_metrics import information_base as info
 import warnings
 
+from tqdm.auto import tqdm
+from tqdm_joblib import tqdm_joblib
 
 class PlaceCell:
 
@@ -21,7 +23,6 @@ class PlaceCell:
         kwargs.setdefault('min_visits', 1)
         kwargs.setdefault('min_speed_threshold', 2.5)
         kwargs.setdefault('speed_smoothing_sigma', 1)
-
         kwargs.setdefault('x_bin_size', 1)
         kwargs.setdefault('y_bin_size', None)
         kwargs.setdefault('environment_edges', None)
@@ -119,17 +120,18 @@ class PlaceCell:
             mutual_info_regression_original = info.get_mutual_information_regression(calcium_imag_valid, position_binned_valid)
 
             mutual_info_skaggs_original = info.get_mutual_info_skaggs(calcium_imag_valid, position_binned_valid)
-
-            mutual_info_distribution, mutual_info_distribution_bezzi = info.get_mutual_information_2d(
-                calcium_imag_valid_binned,position_binned_valid, y_grid, x_grid, self.nbins_cal, nbins_pos,self.smoothing_size)
+            
+            mutual_info_distribution,mutual_info_distribution_bezzi, mutual_info_distribution_smoothed,mutual_info_distribution_bezzi_smoothed = info.get_mutual_information_2d(
+                calcium_imag_valid_binned,position_binned_valid,self.nbins_cal,nbins_pos,x_grid,y_grid,
+                self.map_smoothing_sigma_x, self.map_smoothing_sigma_y)
 
             results = self.parallelize_surrogate(calcium_imag_valid, position_binned_valid, self.sampling_rate,
                                                  self.shift_time, self.nbins_cal, nbins_pos, x_coordinates_valid,
-                                                 y_coordinates_valid, x_grid, y_grid, self.smoothing_size,
-                                                 self.num_cores, self.num_surrogates)
+                                                 y_coordinates_valid, x_grid, y_grid, self.map_smoothing_sigma_x, 
+                                                 self.map_smoothing_sigma_y, self.num_cores, self.num_surrogates)
 
-            place_field_shifted = []
-            place_field_smoothed_shifted = []
+            activity_map_shifted = []
+            activity_map_smoothed_shifted = []
             mutual_info_shifted = []
             mutual_info_NN_shifted = []
             mutual_info_kullback_leibler_shifted = []
@@ -143,8 +145,8 @@ class PlaceCell:
                 mutual_info_kullback_leibler_shifted.append(results[perm][1])
                 mutual_info_NN_shifted.append(results[perm][2])
                 mutual_info_skaggs_shifted.append(results[perm][3])
-                place_field_shifted.append(results[perm][4])
-                place_field_smoothed_shifted.append(results[perm][5])
+                activity_map_shifted.append(results[perm][4])
+                activity_map_smoothed_shifted.append(results[perm][5])
                 mutual_info_distribution_shifted.append(results[perm][6])
                 mutual_info_distribution_bezzi_shifted.append(results[perm][7])
                 mutual_info_regression_shifted.append(results[perm][8])
@@ -153,8 +155,8 @@ class PlaceCell:
             mutual_info_shifted = np.array(mutual_info_shifted)
             mutual_info_kullback_leibler_shifted = np.array(mutual_info_kullback_leibler_shifted)
             mutual_info_skaggs_shifted = np.array(mutual_info_skaggs_shifted)
-            place_field_shifted = np.array(place_field_shifted)
-            place_field_smoothed_shifted = np.array(place_field_smoothed_shifted)
+            activity_map_shifted = np.array(activity_map_shifted)
+            activity_map_smoothed_shifted = np.array(activity_map_smoothed_shifted)
             mutual_info_distribution_shifted = np.array(mutual_info_distribution_shifted)
             mutual_info_distribution_bezzi_shifted = np.array(mutual_info_distribution_bezzi_shifted)
             mutual_info_regression_shifted = np.array(mutual_info_regression_shifted)
@@ -175,42 +177,44 @@ class PlaceCell:
                 mutual_info_regression_original, mutual_info_regression_shifted)
 
             if self.field_detection_method == 'random_fields':
-                # num_of_islands, islands_x_max, islands_y_max,pixels_place_cell_absolute,pixels_place_cell_relative,place_field_identity = \
-                # hf.field_coordinates_using_shifted(place_field,place_field_shifted,visits_occupancy,
+                # num_of_fields, fields_x_max, fields_y_max,pixels_place_cell_absolute,pixels_place_cell_relative,activity_map_identity = \
+                # hf.field_coordinates_using_shifted(activity_map,activity_map_shifted,visits_occupancy,
                 #                                    percentile_threshold=self.percentile_threshold,
                 #                                   min_num_of_bins = self.min_num_of_bins)
                 
-                num_of_islands, islands_x_max, islands_y_max,pixels_place_cell_absolute,pixels_place_cell_relative,place_field_identity = \
-                hf.field_coordinates_using_shifted(place_field_smoothed,place_field_smoothed_shifted,visits_occupancy,x_center_bins, y_center_bins,
+                num_of_fields, fields_x_max, fields_y_max,pixels_place_cell_absolute,pixels_place_cell_relative,activity_map_identity = \
+                hf.field_coordinates_using_shifted(activity_map,activity_map_shifted,visits_occupancy,x_center_bins, y_center_bins,
                                                     percentile_threshold=self.percentile_threshold,
-                                                    min_num_of_bins = self.min_num_of_bins)
-                
+                                                    min_num_of_bins = self.min_num_of_bins,
+                                                    sigma_x=self.detection_smoothing_sigma_x, 
+                                                    sigma_y=self.detection_smoothing_sigma_y)
+
 
             elif self.field_detection_method == 'std_from_field':
-                num_of_islands, islands_x_max, islands_y_max,pixels_place_cell_absolute,pixels_place_cell_relative,place_field_identity = \
-                hf.field_coordinates_using_threshold(place_field, visits_occupancy,x_center_bins, y_center_bins,smoothing_size = self.detection_smoothing_size,    
-                                                   field_threshold=self.detection_threshold,
-                                                   min_num_of_bins=self.min_num_of_bins)
+                num_of_fields, fields_x_max, fields_y_max,pixels_place_cell_absolute,pixels_place_cell_relative,activity_map_identity = \
+                hf.field_coordinates_using_threshold(activity_map, visits_occupancy,x_center_bins, y_center_bins,                                                        
+                                                    field_threshold=self.detection_threshold, min_num_of_bins=self.min_num_of_bins,
+                                                    sigma_x = self.detection_smoothing_sigma_x, 
+                                                    sigma_y=self.detection_smoothing_sigma_y)
+                
             else:
-                 warnings.warn("No field detection method set", UserWarning)
-                 num_of_islands, islands_x_max, islands_y_max, pixels_place_cell_absolute, pixels_place_cell_relative, place_field_identity = [[] for _ in range(6)]
+                warnings.warn("No field detection method set", UserWarning)
+                num_of_fields, fields_x_max, fields_y_max, pixels_place_cell_absolute, pixels_place_cell_relative, activity_map_identity = [[] for _ in range(6)]
 
-            
 
-            I_peaks = hf.detect_peaks(calcium_imag_valid, mpd=0.5 * self.sampling_rate,
-                                      mph=1. * np.nanstd(calcium_imag_valid))
+            I_peaks = hf.detect_peaks(calcium_imag_valid, mpd=0.5 * self.sampling_rate, mph=1. * np.nanstd(calcium_imag_valid))
             peaks_amplitude = calcium_imag_valid[I_peaks]
             x_peaks_location = x_coordinates_valid[I_peaks]
             y_peaks_location = y_coordinates_valid[I_peaks]
 
-            sparsity = hf.get_sparsity(place_field, position_occupancy)
+            sparsity = hf.get_sparsity(activity_map, position_occupancy)
 
             inputdict = dict()
-            inputdict['place_field'] = place_field
-            inputdict['place_field_smoothed'] = place_field_smoothed
+            inputdict['activity_map'] = activity_map
+            inputdict['activity_map_smoothed'] = activity_map_smoothed
 
-            inputdict['place_field_shifted'] = place_field_shifted
-            inputdict['place_field_smoothed_shifted'] = place_field_smoothed_shifted
+            inputdict['activity_map_shifted'] = activity_map_shifted
+            inputdict['activity_map_smoothed_shifted'] = activity_map_smoothed_shifted
 
             inputdict['mutual_info_distribution'] = mutual_info_distribution
             inputdict['mutual_info_distribution_bezzi'] = mutual_info_distribution_bezzi
@@ -231,10 +235,10 @@ class PlaceCell:
             inputdict['y_peaks_location'] = y_peaks_location
             inputdict['events_amplitude'] = peaks_amplitude
 
-            inputdict['place_field_identity'] = place_field_identity
-            inputdict['num_of_islands'] = num_of_islands
-            inputdict['islands_x_max'] = islands_x_max
-            inputdict['islands_y_max'] = islands_y_max
+            inputdict['activity_map_identity'] = activity_map_identity
+            inputdict['num_of_fields'] = num_of_fields
+            inputdict['fields_x_max'] = fields_x_max
+            inputdict['fields_y_max'] = fields_y_max
             inputdict['sparsity'] = sparsity
 
             inputdict['place_cell_extension_absolute'] = pixels_place_cell_absolute
@@ -279,55 +283,15 @@ class PlaceCell:
         return inputdict
 
     
-    def validate_input_data(self,calcium_imag, x_coordinates, y_coordinates,time_vector):
-
-        # valid calcium points
-        I_valid_calcium = ~np.isnan(calcium_imag)
-
-        # valid x coordinates
-        I_valid_x_coord = ~np.isnan(x_coordinates)
-
-        # valid y coordinates
-        I_valid_y_coord = ~np.isnan(y_coordinates)
-
-        # valid time vector
-        I_valid_time_vector = ~np.isnan(time_vector)
-
-        I_keep_valid = I_valid_calcium * I_valid_x_coord * I_valid_y_coord * I_valid_time_vector
-
-        calcium_imag = calcium_imag[I_keep_valid]
-        time_vector = time_vector[I_keep_valid]
-        x_coordinates = x_coordinates[I_keep_valid]
-        y_coordinates = y_coordinates[I_keep_valid]
-
-
-
-
-
-    def get_valid_timepoints(self, speed, visits_bins, time_spent_inside_bins, min_speed_threshold, min_visits, min_time_spent):
-
-        # min speed
-        I_speed_thres = speed >= min_speed_threshold
-
-        # min visits
-        I_visits_times_thres = visits_bins >= min_visits
-
-        # min time spent
-        I_time_spent_thres = time_spent_inside_bins >= min_time_spent
-
-
-        I_keep = I_speed_thres * I_visits_times_thres * I_time_spent_thres
-
-        return I_keep
-
  
     def parallelize_surrogate(self, calcium_imag_valid, position_binned_valid, sampling_rate, shift_time,
                               nbins_cal, nbins_pos, x_coordinates_valid, y_coordinates_valid, x_grid, y_grid,
-                              smoothing_size, num_cores, num_surrogates):
+                              map_smoothing_sigma_x,map_smoothing_sigma_y, num_cores, num_surrogates):
         results = Parallel(n_jobs=num_cores)(
             delayed(self.get_mutual_info_surrogate)(calcium_imag_valid, position_binned_valid, sampling_rate,
                                                     shift_time, nbins_cal, nbins_pos, x_coordinates_valid,
-                                                    y_coordinates_valid, x_grid, y_grid, smoothing_size)
+                                                    y_coordinates_valid, x_grid, y_grid, map_smoothing_sigma_x,
+                                                    map_smoothing_sigma_y)
             for _ in range(num_surrogates))
 
         return results
@@ -336,9 +300,10 @@ class PlaceCell:
 
     def get_mutual_info_surrogate(self, calcium_imag_valid, position_binned_valid, sampling_rate, shift_time,
                                   nbins_cal, nbins_pos, x_coordinates_valid, y_coordinates_valid, x_grid, y_grid,
-                                  smoothing_size):
+                                  map_smoothing_sigma_x,map_smoothing_sigma_y):
 
         calcium_imag_shifted_valid = surrogate.get_signal_surrogate(calcium_imag_valid, sampling_rate, shift_time)
+        
         calcium_imag_shifted_binned = info.get_binned_signal(calcium_imag_shifted_valid, nbins_cal)
 
         mutual_info_shifted = info.get_mutual_information_binned(calcium_imag_shifted_binned,nbins_cal, position_binned_valid,nbins_pos)
@@ -352,17 +317,17 @@ class PlaceCell:
 
         mutual_info_skaggs_shifted = info.get_mutual_info_skaggs(calcium_imag_shifted_valid, position_binned_valid)
 
-        place_field_shifted, place_field_smoothed_shifted = self.get_place_field(calcium_imag_shifted_valid,
-                                                                                   x_coordinates_valid,
-                                                                                   y_coordinates_valid, x_grid, y_grid,
-                                                                                   smoothing_size)
-        
-        mutual_info_distribution,mutual_info_distribution_bezzi = info.get_mutual_information_2d(calcium_imag_shifted_binned,
-                                                                                                  position_binned_valid,y_grid,
-                                                                                                  x_grid,nbins_cal,nbins_pos,
-                                                                                                  smoothing_size)
+
+        activity_map_shifted, activity_map_smoothed_shifted = hf.get_2D_activity_map(calcium_imag_shifted_valid, x_coordinates_valid,
+                                                                    y_coordinates_valid, x_grid, y_grid,
+                                                                    map_smoothing_sigma_x,map_smoothing_sigma_y)
+
+        mutual_info_distribution,mutual_info_distribution_bezzi,mutual_info_distribution_smoothed,mutual_info_distribution_bezzi_smoothed = info.get_mutual_information_2d(calcium_imag_shifted_binned,
+                                                                                                  position_binned_valid,nbins_cal,
+                                                                                                  nbins_pos, x_grid,y_grid,
+                                                                                                  map_smoothing_sigma_x,map_smoothing_sigma_y)
 
         return mutual_info_shifted, modulation_index_shifted, mutual_info_shifted_NN, mutual_info_skaggs_shifted,\
-               place_field_shifted, place_field_smoothed_shifted,mutual_info_distribution,mutual_info_distribution_bezzi,mutual_info_shifted_regression
+               activity_map_shifted, activity_map_smoothed_shifted,mutual_info_distribution,mutual_info_distribution_bezzi,mutual_info_shifted_regression
 
 
