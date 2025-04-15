@@ -56,8 +56,6 @@ def smooth(x, window_len=11, window='hanning'):
     return y[int(window_len / 2 - 1):-int(window_len / 2)]
 
 
-
-
 def get_sigma_points(sigma,units_vector):
     
     sampling_rate = 1/np.nanmean(np.diff(units_vector))
@@ -131,8 +129,8 @@ def gaussian_smooth_1d(input_data, kernel, handle_nans=False):
         raise ValueError("Input must be 1D array")
     
     if not handle_nans:
-        # nan_mask = np.isnan(input_data)
-        # input_data[nan_mask] = 0
+        nan_mask = np.isnan(input_data)
+        input_data[nan_mask] = 0
         result = sig.convolve(input_data, kernel, mode='same', method='direct')
         # result[nan_mask] = np.nan
         return 
@@ -220,13 +218,13 @@ def gaussian_smooth_2d(matrix, kernel, handle_nans=False):
                          out=np.full_like(convolved, np.nan), 
                          where=kernel_mask > 1e-8)
         
-        result[nan_mask] = np.nan
+        # result[nan_mask] = np.nan
         return result
     else:
         nan_mask = np.isnan(matrix)
         matrix[nan_mask] = 0
         result = sig.convolve2d(matrix, kernel, mode='same', boundary='fill')
-        result[nan_mask] = np.nan
+        # result[nan_mask] = np.nan
 
         return result
 

@@ -11,6 +11,7 @@ from spatial_metrics.validators import DataValidator
 
 from tqdm.auto import tqdm
 from tqdm_joblib import tqdm_joblib
+import spatial_metrics.bootstrapped_estimation as be
 
 
 '''
@@ -35,7 +36,6 @@ class PlaceCellBinarized:
         kwargs.setdefault('speed_smoothing_sigma', 1)
         kwargs.setdefault('x_bin_size', 1)
         kwargs.setdefault('y_bin_size', None)
-        kwargs.setdefault('environment_edges', None)
         kwargs.setdefault('map_smoothing_sigma_x', 2)
         kwargs.setdefault('map_smoothing_sigma_y', 2)
         kwargs.setdefault('shift_time', 10)
@@ -50,13 +50,15 @@ class PlaceCellBinarized:
         kwargs.setdefault('detection_smoothing_sigma_x', 2)
         kwargs.setdefault('detection_smoothing_sigma_y', 2)
         kwargs.setdefault('field_detection_method','std_from_field')
+        kwargs.setdefault('alpha',0.05)
 
 
         valid_kwargs = ['signal_type','animal_id', 'day', 'neuron', 'dataset', 'trial',
                         'min_time_spent', 'min_visits', 'min_speed_threshold','speed_smoothing_sigma','map_smoothing_sigma_x','map_smoothing_sigma_y',
                         'x_bin_size', 'y_bin_size', 'shift_time', 'num_cores', 'percentile_threshold','min_num_of_bins',
-                        'num_surrogates', 'saving_path', 'saving', 'saving_string', 'environment_edges',
-                        'detection_threshold','detection_smoothing_sigma_x','detection_smoothing_sigma_y','field_detection_method']
+                        'num_surrogates', 'saving_path', 'saving', 'saving_string',
+                        'detection_threshold','detection_smoothing_sigma_x','detection_smoothing_sigma_y',
+                        'field_detection_method','alpha']
 
         for k, v in kwargs.items():
             if k not in valid_kwargs:
@@ -84,7 +86,7 @@ class PlaceCellBinarized:
                                                  self.neuron, self.trial)
         else:
             
-            signal_data.x_coordinates, signal_data.y_coordinates = hf.correct_coordinates(signal_data.x_coordinates,signal_data.y_coordinates,environment_edges=self.environment_edges)
+            signal_data.x_coordinates, signal_data.y_coordinates = hf.correct_coordinates(signal_data.x_coordinates,signal_data.y_coordinates,environment_edges=signal_data.environment_edges)
 
             DataValidator.validate_input_data(signal_data)
 
@@ -94,7 +96,7 @@ class PlaceCellBinarized:
 
             x_grid, y_grid, x_center_bins, y_center_bins, x_center_bins_repeated, y_center_bins_repeated = hf.get_position_grid(
                 signal_data.x_coordinates, signal_data.y_coordinates, self.x_bin_size, self.y_bin_size,
-                environment_edges=self.environment_edges)
+                environment_edges=signal_data.environment_edges)
 
             signal_data.add_position_binned(x_grid, y_grid)
 
@@ -147,11 +149,7 @@ class PlaceCellBinarized:
             
 
             if self.field_detection_method == 'random_fields':
-                # num_of_fields, fields_x_max, fields_y_max,pixels_place_cell_absolute,pixels_place_cell_relative,activity_map_identity = \
-                # hf.field_coordinates_using_shifted(activity_map,activity_map_shifted,visits_occupancy,
-                #                                    percentile_threshold=self.percentile_threshold,
-                #                                   min_num_of_bins = self.min_num_of_bins)
-                
+
                 num_of_fields, fields_x_max, fields_y_max,pixels_place_cell_absolute,pixels_place_cell_relative,activity_map_identity = \
                 hf.field_coordinates_using_shifted(activity_map,activity_map_shifted,visits_occupancy,x_center_bins, y_center_bins,
                                                     percentile_threshold=self.percentile_threshold,
@@ -176,11 +174,20 @@ class PlaceCellBinarized:
 
             sparsity = hf.get_sparsity(activity_map, position_occupancy)
 
-
             signal_data.add_peaks_detection(self.signal_type)
 
+            statistic = be.calculate_p_value(mutual_info_original, mutual_info_shifted, alternative='greater')
+            
+            if statistic.p_value > self.alpha:
 
-            inputdict = dict()
+                activity_map_identity = np.zeros(activity_map.shape)*np.nan
+                num_of_fields = 0
+                pixels_place_cell_absolute = np.nan
+                fields_x_max = np.nan
+                fields_y_max = np.nan
+                pixels_place_cell_absolute = np.nan
+                pixels_place_cell_relative = np.nan
+
 
             inputdict = dict()
             inputdict['activity_map'] = activity_map
@@ -202,14 +209,17 @@ class PlaceCellBinarized:
             inputdict['peaks_x_location'] = signal_data.peaks_x_location
             inputdict['peaks_y_location'] = signal_data.peaks_y_location
 
+            inputdict['mutual_information_pvalue'] = statistic.p_value
+
             inputdict['activity_map_identity'] = activity_map_identity
             inputdict['num_of_fields'] = num_of_fields
             inputdict['fields_x_max'] = fields_x_max
             inputdict['fields_y_max'] = fields_y_max
-            inputdict['sparsity'] = sparsity
 
             inputdict['place_cell_extension_absolute'] = pixels_place_cell_absolute
             inputdict['place_cell_extension_relative'] = pixels_place_cell_relative
+
+            inputdict['sparsity'] = sparsity
 
             inputdict['mutual_info_original'] = mutual_info_original
             inputdict['mutual_info_shifted'] = mutual_info_shifted

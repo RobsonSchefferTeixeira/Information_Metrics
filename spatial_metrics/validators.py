@@ -157,6 +157,31 @@ class ParameterValidator:
                 raise ValueError("nbins_cal must be a positive number higher than 1.")
 
 
+    @classmethod
+    def validate_all(cls, params):
+        for key, validator in cls.get_validators().items():
+            validator(params.get(key))
+
+    @classmethod
+    def get_validators(cls):
+        validators = {}
+        for name, func in inspect.getmembers(cls, inspect.isfunction):
+            # Check if the function is a static method by inspecting the class __dict__
+            if isinstance(cls.__dict__.get(name), staticmethod) and name.startswith('validate_'):
+                param_name = name[len('validate_'):]  # Extract parameter name
+                validators[param_name] = func
+        return validators
+
+
+
+
+class DataValidator:
+
+    @staticmethod
+    def validate_data_processing(signal_data):
+
+        
+
     @staticmethod
     def validate_environment_edges(value):
         if value is not None:
@@ -185,27 +210,6 @@ class ParameterValidator:
             else:
                 raise ValueError("environment_edges must be a list.")
 
-
-
-    @classmethod
-    def validate_all(cls, params):
-        for key, validator in cls.get_validators().items():
-            validator(params.get(key))
-
-    @classmethod
-    def get_validators(cls):
-        validators = {}
-        for name, func in inspect.getmembers(cls, inspect.isfunction):
-            # Check if the function is a static method by inspecting the class __dict__
-            if isinstance(cls.__dict__.get(name), staticmethod) and name.startswith('validate_'):
-                param_name = name[len('validate_'):]  # Extract parameter name
-                validators[param_name] = func
-        return validators
-
-
-
-
-class DataValidator:
 
     @staticmethod
     def validate_input_data(signal_data):

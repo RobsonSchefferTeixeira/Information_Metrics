@@ -631,6 +631,19 @@ def dfs(input_array, input_array2, count, row, col, i, j):
 '''
 
 
+def apply_threshold(activity_map_smoothed, visits_map, threshold_type="mean_std", field_threshold=2, percentile_threshold=95, shifted_maps=None):
+    if threshold_type == "mean_std":
+        I_threshold = np.nanmean(activity_map_smoothed) + field_threshold * np.nanstd(activity_map_smoothed)
+    elif threshold_type == "percentile" and shifted_maps is not None:
+        I_threshold = np.percentile(shifted_maps, percentile_threshold, axis=0)
+    else:
+        raise ValueError("Invalid threshold_type or missing shifted_maps")
+
+    binary_map = np.where(activity_map_smoothed > I_threshold, 1, 0).astype(float)
+    return binary_map
+
+
+
 def identify_islands(input_array):
     """
     Identifies islands in a binary input array, ignoring NaN values.
@@ -681,123 +694,6 @@ def dfs(input_array, output_array, count, rows, cols, i, j):
     dfs(input_array, output_array, count, rows, cols, i - 1, j)
     dfs(input_array, output_array, count, rows, cols, i, j + 1)
     dfs(input_array, output_array, count, rows, cols, i, j - 1)
-
-
-def field_coordinates_using_shifted(activity_map, activity_map_shifted, visits_map, x_center_bins,y_center_bins,percentile_threshold=95, min_num_of_bins=4, sigma_x=2, sigma_y=None):
-    """
-    Identifies and characterizes regions in a spatial field based on shifted field criteria,
-    with the center of mass used as the location for each place field.
-
-    Parameters
-    ----------
-    activity_map : numpy.ndarray
-        Original spatial field data.
-    activity_map_shifted : numpy.ndarray
-        Shifted spatial field data used for threshold calculation.
-    visits_map : numpy.ndarray
-        Map of visits to locations in the field.
-    percentile_threshold : int, optional
-        Percentile threshold for identifying regions. Default is 95.
-    min_num_of_bins : int, optional
-        Minimum number of pixels to constitute a region. Default is 4.
-
-    Returns
-    -------
-    num_of_islands : int
-        Number of identified regions.
-    islands_x_com : numpy.ndarray
-        X-coordinates of the center of mass in each identified region.
-    islands_y_com : numpy.ndarray
-        Y-coordinates of the center of mass in each identified region.
-    pixels_place_cell_absolute : numpy.ndarray
-        Absolute pixel count for each identified region.
-    pixels_place_cell_relative : numpy.ndarray
-        Relative pixel count for each identified region.
-    activity_map_identity : numpy.ndarray
-        Identification map for the regions.
-    """
-
-    activity_map = np.copy(activity_map)
-    activity_map_shifted = np.copy(activity_map_shifted)
-
-    if sigma_y is None:
-        sigma_y = sigma_x
-
-    sigma_x_points = smooth.get_sigma_points(sigma_x,x_center_bins)
-    sigma_y_points = smooth.get_sigma_points(sigma_y,y_center_bins)
-
-    kernel, (x_mesh, y_mesh) = smooth.generate_2d_gaussian_kernel(sigma_x_points, sigma_y_points, radius_x=None, radius_y=None, truncate=4.0)
-
-    
-    # nan_mask = np.isnan(activity_map)
-    # activity_map[nan_mask] = 0
-    activity_map_smoothed = smooth.gaussian_smooth_2d(activity_map, kernel, handle_nans=True)
-
-    # nan_mask = np.isnan(activity_map_shifted)
-    # activity_map_shifted[nan_mask] = 0
-    activity_map_shifted_smoothed = []
-    for idx in range(activity_map_shifted.shape[0]):
-        activity_map_shifted_smoothed.append(smooth.gaussian_smooth_2d(activity_map_shifted[idx,:,:], kernel, handle_nans=True))
-    activity_map_shifted_smoothed = np.array(activity_map_shifted_smoothed)
-
-
-
-
-    # Calculate the threshold using the shifted place field data
-    activity_map_threshold = np.percentile(activity_map_shifted_smoothed, percentile_threshold, 0)
-
-    # Create a binary map of areas above the threshold
-    field_above_threshold_binary = np.copy(activity_map_smoothed)
-    field_above_threshold_binary[field_above_threshold_binary <= activity_map_threshold] = 0
-    field_above_threshold_binary[field_above_threshold_binary > activity_map_threshold] = 1
-
-    if np.any(field_above_threshold_binary > 0):
-        sys.setrecursionlimit(10000000)
-        activity_map_identity = identify_islands(np.copy(field_above_threshold_binary))
-        num_of_islands_pre = np.unique(activity_map_identity)[1:].shape[0]
-
-        num_of_islands = 0
-        for ii in range(1, num_of_islands_pre + 1):
-            if np.where(activity_map_identity == ii)[0].shape[0] > min_num_of_bins:
-                num_of_islands += 1
-            else:
-                activity_map_identity[np.where(activity_map_identity == ii)] = 0
-
-        islands_id = np.unique(activity_map_identity[~np.isnan(activity_map_identity)])[1:]
-
-        islands_y_com = []
-        islands_x_com = []
-        pixels_above = []
-        
-        for ii in islands_id:
-            island_mask = (activity_map_identity == ii)
-
-            x_com, y_com = center_of_mass(island_mask, activity_map_smoothed,x_center_bins,y_center_bins)
-
-            islands_y_com.append(y_com)
-            islands_x_com.append(x_com)
-
-            pixels_above.append(np.nansum(island_mask))
-
-        islands_x_com = np.array(islands_x_com)
-        islands_y_com = np.array(islands_y_com)
-        pixels_above = np.array(pixels_above)
-
-        total_visited_pixels = np.nansum(visits_map != 0)
-        pixels_total = activity_map_smoothed.shape[0] * activity_map_smoothed.shape[1]
-
-        pixels_place_cell_relative = pixels_above / total_visited_pixels
-        pixels_place_cell_absolute = pixels_above / pixels_total
-
-    else:
-        num_of_islands = 0
-        islands_y_com = np.nan
-        islands_x_com = np.nan
-        pixels_place_cell_relative = np.nan
-        pixels_place_cell_absolute = np.nan
-        activity_map_identity = np.nan
-
-    return num_of_islands, islands_x_com, islands_y_com, pixels_place_cell_absolute, pixels_place_cell_relative, correct_island_identifiers(activity_map_identity)
 
 
 def correct_island_identifiers(island_ids):
@@ -884,121 +780,72 @@ def center_of_mass(island_mask, activity_map_smoothed, x_center_bins, y_center_b
     return x_com, y_com
 
 
-def field_coordinates_using_threshold(activity_map, visits_map, x_center_bins,y_center_bins, field_threshold=2, min_num_of_bins=4, sigma_x=2, sigma_y=None):
-    """
-    Identify and characterize spatial regions in a field based on threshold criteria,
-    with the center of mass as the place field location.
+def detect_islands_and_com(field_above_threshold_binary, activity_map_smoothed, visits_map, x_center_bins, y_center_bins, min_num_of_bins=4):
+    sys.setrecursionlimit(10000000)
+    activity_map_identity = identify_islands(np.copy(field_above_threshold_binary))
+    unique_islands = np.unique(activity_map_identity[~np.isnan(activity_map_identity)])[1:]
 
-    Parameters
-    ----------
-    activity_map : numpy.ndarray
-        Input spatial field data.
-    visits_map : numpy.ndarray
-        Map of visits to locations in the field.
-    detection_smoothing_sigma : int, optional
-        Size of the smoothing window. Default is 1.
-    field_threshold : float, optional
-        Threshold value for identifying regions. Default is 2.
-    min_num_of_bins : int, optional
-        Minimum number of pixels to constitute a region. Default is 4.
+    islands_id = []
+    islands_x_com = []
+    islands_y_com = []
+    pixels_above = []
 
-    Returns
-    -------
-    num_of_islands : int
-        Number of identified regions.
-    islands_x_com : numpy.ndarray
-        X-coordinates of the center of mass in each identified region.
-    islands_y_com : numpy.ndarray
-        Y-coordinates of the center of mass in each identified region.
-    pixels_place_cell_absolute : numpy.ndarray
-        Absolute pixel count for each identified region.
-    pixels_place_cell_relative : numpy.ndarray
-        Relative pixel count for each identified region.
-    activity_map_identity : numpy.ndarray
-        Identification map for the regions.
-    """
+    for ii in unique_islands:
+        island_mask = (activity_map_identity == ii)
+        if np.sum(island_mask) > min_num_of_bins:
+            x_com, y_com = center_of_mass(island_mask, activity_map_smoothed, x_center_bins, y_center_bins)
+            islands_id.append(ii)
+            islands_x_com.append(x_com)
+            islands_y_com.append(y_com)
+            pixels_above.append(np.sum(island_mask))
 
-    '''
-    activity_map_to_smooth = np.copy(activity_map)
-    I_nan = np.isnan(activity_map)
-    
-    activity_map_to_smooth[np.isnan(activity_map_to_smooth)] = 0
-    activity_map_smoothed = gaussian_smooth_2d(activity_map_to_smooth, detection_smoothing_sigma)
+    if not islands_id:
+        return 0, np.nan, np.nan, np.nan, np.nan, np.nan
 
-    '''
+    total_visited_pixels = np.nansum(visits_map != 0)
+    pixels_total = activity_map_smoothed.size
 
-    activity_map = np.copy(activity_map)
+    pixels_relative = np.array(pixels_above) / total_visited_pixels
+    pixels_absolute = np.array(pixels_above) / pixels_total
 
+    return len(islands_id), np.array(islands_x_com), np.array(islands_y_com), pixels_absolute, pixels_relative, correct_island_identifiers(activity_map_identity)
+
+def smooth_activity_map(activity_map, x_center_bins, y_center_bins, sigma_x=2, sigma_y=None, handle_nans=False):
     if sigma_y is None:
         sigma_y = sigma_x
 
-    sigma_x_points = smooth.get_sigma_points(sigma_x,x_center_bins)
-    sigma_y_points = smooth.get_sigma_points(sigma_y,y_center_bins)
+    sigma_x_points = smooth.get_sigma_points(sigma_x, x_center_bins)
+    sigma_y_points = smooth.get_sigma_points(sigma_y, y_center_bins)
 
-    kernel, (x_mesh, y_mesh) = smooth.generate_2d_gaussian_kernel(sigma_x_points, sigma_y_points, radius_x=None, radius_y=None, truncate=4.0)
-    activity_map_smoothed = smooth.gaussian_smooth_2d(activity_map, kernel, handle_nans=True)
+    kernel, (x_mesh, y_mesh) = smooth.generate_2d_gaussian_kernel(
+        sigma_x_points, sigma_y_points, radius_x=None, radius_y=None, truncate=4.0
+    )
+    return smooth.gaussian_smooth_2d(activity_map, kernel, handle_nans=handle_nans)
 
-    # nan_mask = np.isnan(activity_map_smoothed)
-    # activity_map_smoothed[nan_mask] = 0
 
-    I_threshold = np.nanmean(activity_map_smoothed) + field_threshold * np.nanstd(activity_map_smoothed)
-
-    field_above_threshold_binary = np.copy(activity_map_smoothed)
-    field_above_threshold_binary[field_above_threshold_binary < I_threshold] = 0
-    field_above_threshold_binary[field_above_threshold_binary >= I_threshold] = 1
-    # field_above_threshold_binary[I_nan] = 0
+def field_coordinates_using_threshold(activity_map, visits_map, x_center_bins, y_center_bins, field_threshold=2, min_num_of_bins=4, sigma_x=2, sigma_y=None):
     
-    if np.any(field_above_threshold_binary > 0):
-        sys.setrecursionlimit(10000000)
-        activity_map_identity = identify_islands(np.copy(field_above_threshold_binary))
-        num_of_islands_pre = np.unique(activity_map_identity)[1:].shape[0]
+    activity_map_smoothed = smooth_activity_map(activity_map, x_center_bins, y_center_bins, sigma_x, sigma_y, handle_nans=False)
+    
+    binary_map = apply_threshold(activity_map_smoothed, visits_map, threshold_type="mean_std", field_threshold=field_threshold)
+    binary_map[np.isnan(activity_map)] = np.nan
 
-        island_counter = 0
-        for ii in range(1, num_of_islands_pre + 1):
-            if np.where(activity_map_identity == ii)[0].shape[0] > min_num_of_bins:
-                island_counter += 1
-            else:
-                activity_map_identity[np.where(activity_map_identity == ii)] = 0
+    return detect_islands_and_com(binary_map, activity_map_smoothed, visits_map, x_center_bins, y_center_bins, min_num_of_bins)
 
-        num_of_islands = island_counter
 
-        islands_id = np.unique(activity_map_identity)[1:]
-        islands_y_com = []
-        islands_x_com = []
-        pixels_above = []
-        
-        for ii in islands_id:
-            # Create a mask for the current island
-            island_mask = (activity_map_identity == ii)
-            
-            # Calculate the center of mass for this island
-            x_com, y_com = center_of_mass(island_mask, activity_map_smoothed,x_center_bins,y_center_bins)
-            
-            islands_y_com.append(y_com)
-            islands_x_com.append(x_com)
+def field_coordinates_using_shifted(activity_map, activity_map_shifted, visits_map, x_center_bins, y_center_bins, percentile_threshold=95, min_num_of_bins=4, sigma_x=2, sigma_y=None):
+    
+    activity_map_smoothed = smooth_activity_map(activity_map, x_center_bins, y_center_bins, sigma_x, sigma_y, handle_nans=False)
+    
+    shifted_smoothed = np.array([smooth_activity_map(m, x_center_bins, y_center_bins, sigma_x, sigma_y, handle_nans=True) for m in activity_map_shifted])
+    
+    binary_map = apply_threshold(activity_map_smoothed, visits_map, threshold_type="percentile", percentile_threshold=percentile_threshold, shifted_maps=shifted_smoothed)
+    binary_map[np.isnan(activity_map)] = np.nan
 
-            pixels_above.append(np.nansum(island_mask))
+    return detect_islands_and_com(binary_map, activity_map_smoothed, visits_map, x_center_bins, y_center_bins, min_num_of_bins)
 
-        islands_x_com = np.array(islands_x_com)
-        islands_y_com = np.array(islands_y_com)
-        pixels_above = np.array(pixels_above)
 
-        total_visited_pixels = np.nansum(visits_map != 0)
-        pixels_total = activity_map_smoothed.shape[0] * activity_map_smoothed.shape[1]
 
-        pixels_place_cell_relative = pixels_above / total_visited_pixels
-        pixels_place_cell_absolute = pixels_above / pixels_total
-
-    else:
-        num_of_islands = 0
-        islands_y_com = np.nan
-        islands_x_com = np.nan
-        pixels_place_cell_relative = np.nan
-        pixels_place_cell_absolute = np.nan
-        activity_map_identity = np.nan
-        
-
-    return num_of_islands, islands_x_com, islands_y_com, pixels_place_cell_absolute, pixels_place_cell_relative, correct_island_identifiers(activity_map_identity)
 
 
 

@@ -17,7 +17,9 @@ class ProcessData:
         if self.sampling_rate is None:
             self.sampling_rate = 1 / np.nanmean(np.diff(self.time_vector))
 
-        self.environment_edges = self.validate_environment_edges(environment_edges)
+        
+        self.validate_environment_edges(environment_edges)
+        
 
 
 
@@ -39,9 +41,10 @@ class ProcessData:
                 x_max = np.nanmax(self.x_coordinates)
                 y_min = np.nanmin(self.y_coordinates)
                 y_max = np.nanmax(self.y_coordinates)
-                environment_edges = [[x_min, x_max], [y_min, y_max]]
+                self.environment_edges = [[x_min, x_max], [y_min, y_max]]
+        else:
+            self.environment_edges = environment_edges
 
-            return environment_edges
 
 
     def add_speed(self,speed_smoothing_sigma):
