@@ -8,8 +8,6 @@ class ProcessData:
 
     def __init__(self, input_signal, x_coordinates, y_coordinates, time_vector, sampling_rate = None, environment_edges = None, speed = None):
         
-        
-
         self.input_signal = input_signal
         self.x_coordinates = x_coordinates
         self.y_coordinates = y_coordinates
@@ -23,8 +21,6 @@ class ProcessData:
         
         DataValidator.validate_input_data(self)
         DataValidator.validate_environment_edges(self,environment_edges)
-
-
 
 
     def add_speed(self,speed_smoothing_sigma):
@@ -46,7 +42,7 @@ class ProcessData:
 
 
     def add_peaks_detection(self,signal_type):
-            if signal_type == 'binarized':
+            if signal_type == 'binary':
 
                 self.peaks_idx = self.input_signal == 1
                 self.peaks_amplitude = self.input_signal[self.peaks_idx]
@@ -61,4 +57,5 @@ class ProcessData:
                 self.peaks_y_location = self.y_coordinates[self.peaks_idx]
 
             else:
-                warnings.warn(f"Unrecognized signal_type '{signal_type}'. Expected 'binarized' or 'continuous'.", UserWarning)
+                warnings.warn(f"Unrecognized signal_type '{signal_type}'. Expected 'binary' or 'continuous'.", UserWarning)
+

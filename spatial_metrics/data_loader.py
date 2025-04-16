@@ -23,21 +23,43 @@ class LoadData:
         self.dataset_name = dataset_name
         self.data_path = self._resolve_data_path()
         
-        # Dataset-specific parameters
-        self.valid_mice = [1, 2, 3, 4]
-        self.valid_days = range(1, 9)
-        self.valid_sessions = [1, 2]
         
         if not os.path.exists(self.data_path):
             warnings.warn(f"Dataset '{dataset_name}' not found at {self.data_path}")
         else:
             print(f"Dataset path resolved: {self.data_path}")
 
+
     def _resolve_data_path(self) -> Path:
         """Resolve the absolute path to the dataset directory."""
         current_file = Path(__file__).absolute()
         project_root = current_file.parent.parent  # Adjust based on your structure
         return project_root / 'tutorial' / 'data' / self.dataset_name
+
+    def load_hanna(self):
+
+        filename = f'{self.data_path}/real_signal.npy'
+        data = np.load(filename,allow_pickle = True).item()
+
+
+        return {
+            'position': {
+                'x': data['x_coordinates'],
+                'y': data['y_coordinates'],
+                'time': data['time_vector']
+            },
+            'traces': {
+                'raw': data['signal'],
+                'filtered': [],
+                'diff': [],
+                'binary': []
+            },
+            'speed': [],
+            'sampling_rate': data['sampling_rate'],
+            'environment_edges': data['environment_edges']
+        }
+
+        
 
     def load_kinsky(self, mouse_id: int, day: int, session: int) -> Dict[str, np.ndarray]:
         """
@@ -51,7 +73,6 @@ class LoadData:
         Returns:
             Dictionary containing all data components
         """
-        self._validate_kinsky_params(mouse_id, day, session)
         
         data_dir = self.data_path / f'mouse_{mouse_id}' / f'day_{day}' / f'session_{session}'
         mat_file = data_dir / 'Pos_align.mat'
@@ -77,17 +98,11 @@ class LoadData:
                 'binary': mat_dict['PSAbool']
             },
             'speed': mat_dict['speed'],
-            'sampling_rate': 20  # Hz, from paper
+            'sampling_rate': 20,  # Hz, from paper
+            'environment_edges': []
         }
 
-    def _validate_kinsky_params(self, mouse_id: int, day: int, session: int):
-        """Validate Kinsky dataset parameters."""
-        if mouse_id not in self.valid_mice:
-            raise ValueError(f"Invalid mouse_id: {mouse_id}. Must be one of {self.valid_mice}")
-        if day not in self.valid_days:
-            raise ValueError(f"Invalid day: {day}. Must be between 1-8")
-        if session not in self.valid_sessions:
-            raise ValueError(f"Invalid session: {session}. Must be 1 or 2")
+
 
     def load(self, **kwargs) -> Union[Dict, None]:
         """
@@ -102,6 +117,10 @@ class LoadData:
         """
         if self.dataset_name == 'kinsky':
             return self.load_kinsky(**kwargs)
+        
+        elif self.dataset_name == 'hanna':
+            return self.load_hanna()
+        
         else:
             warnings.warn(f"No loader implemented for dataset: {self.dataset_name}")
             return None
