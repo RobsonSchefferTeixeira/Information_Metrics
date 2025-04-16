@@ -88,7 +88,6 @@ class PlaceCellBinarized:
             
             signal_data.x_coordinates, signal_data.y_coordinates = hf.correct_coordinates(signal_data.x_coordinates,signal_data.y_coordinates,environment_edges=signal_data.environment_edges)
 
-            DataValidator.validate_input_data(signal_data)
 
 
             if signal_data.speed is None:

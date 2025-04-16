@@ -178,12 +178,107 @@ class ParameterValidator:
 class DataValidator:
 
     @staticmethod
-    def validate_data_processing(signal_data):
-
+    def validate_input_data(signal_data):
+        """
+        Comprehensive validation and cleaning of input data that:
+        1. Validates array shapes and dimensions
+        2. Handles optional y_coordinates
+        3. Ensures float dtype
+        4. Automatically transposes 2D input_signal if needed
+        5. Removes NaN and infinite values across all arrays
         
+        Parameters:
+            signal_data (object): Input data object containing:
+                - input_signal (np.ndarray): 1D [timesteps] or 2D [cells × timesteps]
+                - x_coordinates (np.ndarray): 1D array of x positions
+                - y_coordinates (np.ndarray, optional): 1D array of y positions
+                - time_vector (np.ndarray): 1D array of timestamps
+        """
+        # ======================
+        # 1. Initial Setup and Validation
+        # ======================
+        
+        # Check required fields
+        required_fields = ['input_signal', 'x_coordinates', 'time_vector']
+        for field in required_fields:
+            if not hasattr(signal_data, field):
+                raise AttributeError(f"signal_data is missing required field: {field}")
+        
+        # Convert to numpy arrays and ensure float type
+        signal_data.input_signal = np.asarray(signal_data.input_signal, dtype=float)
+        signal_data.x_coordinates = np.asarray(signal_data.x_coordinates, dtype=float)
+        signal_data.time_vector = np.asarray(signal_data.time_vector, dtype=float)
+        
+        # Handle optional y_coordinates
+        has_y_coords = hasattr(signal_data, 'y_coordinates') and signal_data.y_coordinates is not None
+        if has_y_coords:
+            signal_data.y_coordinates = np.asarray(signal_data.y_coordinates, dtype=float)
+        
+        # ======================
+        # 2. Shape Validation and Correction
+        # ======================
+        
+        # Validate input_signal shape and auto-transpose if needed
+        if signal_data.input_signal.ndim == 1:
+            n_timesteps = len(signal_data.input_signal)
+        elif signal_data.input_signal.ndim == 2:
+            # Auto-transpose if cells > timesteps
+            if signal_data.input_signal.shape[0] > signal_data.input_signal.shape[1]:
+                signal_data.input_signal = signal_data.input_signal.T
+            n_timesteps = signal_data.input_signal.shape[1]
+        else:
+            raise ValueError("input_signal must be 1D [timesteps] or 2D [cells × timesteps]")
+        
+        # Validate coordinate/time dimensions
+        for name, arr in [('x_coordinates', signal_data.x_coordinates),
+                        ('time_vector', signal_data.time_vector)] + \
+                        ([('y_coordinates', signal_data.y_coordinates)] if has_y_coords else []):
+            if arr.ndim != 1:
+                raise ValueError(f"{name} must be 1D array")
+            if len(arr) != n_timesteps:
+                raise ValueError(f"{name} length {len(arr)} doesn't match input_signal timesteps {n_timesteps}")
+        
+        # ======================
+        # 3. NaN and Infinite Value Filtering
+        # ======================
+        
+        def is_finite(x):
+            """Helper function to check for both NaN and infinite values"""
+            return np.isfinite(x)
+        
+        # Create combined validity mask
+        valid_mask = is_finite(signal_data.x_coordinates) & is_finite(signal_data.time_vector)
+        
+        # Handle input_signal based on dimensionality
+        if signal_data.input_signal.ndim == 1:
+            valid_mask &= is_finite(signal_data.input_signal)
+        else:
+            valid_mask &= np.all(is_finite(signal_data.input_signal), axis=0)
+        
+        # Include y_coordinates in mask if present
+        if has_y_coords:
+            valid_mask &= is_finite(signal_data.y_coordinates)
+        
+        # Apply filtering
+        if signal_data.input_signal.ndim == 1:
+            signal_data.input_signal = signal_data.input_signal[valid_mask]
+        else:
+            signal_data.input_signal = signal_data.input_signal[:, valid_mask]
+        
+        signal_data.x_coordinates = signal_data.x_coordinates[valid_mask]
+        signal_data.time_vector = signal_data.time_vector[valid_mask]
+        
+        if has_y_coords:
+            signal_data.y_coordinates = signal_data.y_coordinates[valid_mask]
+        
+        # Final validation check
+        if len(signal_data.time_vector) == 0:
+            raise ValueError("All data points were removed during validation - check for excessive NaN/inf values")
+
+
 
     @staticmethod
-    def validate_environment_edges(value):
+    def validate_environment_edges_format(value):
         if value is not None:
             if isinstance(value, list):
                 if all(isinstance(sublist, list) for sublist in value):
@@ -211,28 +306,30 @@ class DataValidator:
                 raise ValueError("environment_edges must be a list.")
 
 
-    @staticmethod
-    def validate_input_data(signal_data):
+    def validate_environment_edges(signal_data,environment_edges):
 
-        # valid input_signal points
-        I_valid_input_signal = ~np.isnan(signal_data.input_signal)
+        DataValidator.validate_environment_edges_format(environment_edges)
 
-        # valid x coordinates
-        I_valid_x_coord = ~np.isnan(signal_data.x_coordinates)
+        if environment_edges is None:
+                
+            if signal_data.y_coordinates is None:
+                # 1D tracking
+        
+                x_min = np.nanmin(signal_data.x_coordinates)
+                x_max = np.nanmax(signal_data.x_coordinates)    
+                signal_data.environment_edges = [[x_min, x_max]]
+            
+            else:
+                # 2D tracking
+                x_min = np.nanmin(signal_data.x_coordinates)
+                x_max = np.nanmax(signal_data.x_coordinates)
+                y_min = np.nanmin(signal_data.y_coordinates)
+                y_max = np.nanmax(signal_data.y_coordinates)
+                signal_data.environment_edges = [[x_min, x_max], [y_min, y_max]]
+        else:
+            signal_data.environment_edges = environment_edges
 
-        # valid y coordinates
-        I_valid_y_coord = ~np.isnan(signal_data.y_coordinates)
-
-        # valid time vector
-        I_valid_time_vector = ~np.isnan(signal_data.time_vector)
-
-        I_keep_valid = I_valid_input_signal * I_valid_x_coord * I_valid_y_coord * I_valid_time_vector
-
-        signal_data.input_signal = signal_data.input_signal[I_keep_valid]
-        signal_data.time_vector = signal_data.time_vector[I_keep_valid]
-        signal_data.x_coordinates = signal_data.x_coordinates[I_keep_valid]
-        signal_data.y_coordinates = signal_data.y_coordinates[I_keep_valid]
-
+    
 
     @staticmethod
     def get_valid_timepoints(signal_data, min_speed_threshold, min_visits, min_time_spent):
@@ -247,10 +344,18 @@ class DataValidator:
         I_time_spent_thres = signal_data.time_spent_inside_bins >= min_time_spent
 
         keep_these_frames = I_speed_thres * I_visits_times_thres * I_time_spent_thres
-        
-        signal_data.input_signal = signal_data.input_signal[keep_these_frames]
+            
+        # Handle input_signal (works for both 1D and 2D)
+        if signal_data.input_signal.ndim == 1:
+            signal_data.input_signal = signal_data.input_signal[keep_these_frames]
+        else:
+            signal_data.input_signal = signal_data.input_signal[:, keep_these_frames]
+                    
         signal_data.x_coordinates = signal_data.x_coordinates[keep_these_frames]
-        signal_data.y_coordinates = signal_data.y_coordinates[keep_these_frames]
+
+        if signal_data.y_coordinates is not None:
+            signal_data.y_coordinates = signal_data.y_coordinates[keep_these_frames]
+
         signal_data.time_vector = signal_data.time_vector[keep_these_frames]
         signal_data.speed = signal_data.speed[keep_these_frames]
         signal_data.visits_bins = signal_data.visits_bins[keep_these_frames]

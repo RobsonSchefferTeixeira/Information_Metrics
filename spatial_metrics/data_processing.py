@@ -1,12 +1,15 @@
 
 import numpy as np
 from spatial_metrics import helper_functions as hf
+from spatial_metrics.validators import DataValidator
 import warnings
 
 class ProcessData:
 
     def __init__(self, input_signal, x_coordinates, y_coordinates, time_vector, sampling_rate = None, environment_edges = None, speed = None):
         
+        
+
         self.input_signal = input_signal
         self.x_coordinates = x_coordinates
         self.y_coordinates = y_coordinates
@@ -18,32 +21,9 @@ class ProcessData:
             self.sampling_rate = 1 / np.nanmean(np.diff(self.time_vector))
 
         
-        self.validate_environment_edges(environment_edges)
-        
+        DataValidator.validate_input_data(self)
+        DataValidator.validate_environment_edges(self,environment_edges)
 
-
-
-
-    def validate_environment_edges(self,environment_edges):
-
-        if environment_edges is None:
-                
-            if self.y_coordinates is None:
-                # 1D tracking
-        
-                x_min = np.nanmin(self.x_coordinates)
-                x_max = np.nanmax(self.x_coordinates)    
-                self.environment_edges = [[x_min, x_max]]
-            
-            else:
-                # 2D tracking
-                x_min = np.nanmin(self.x_coordinates)
-                x_max = np.nanmax(self.x_coordinates)
-                y_min = np.nanmin(self.y_coordinates)
-                y_max = np.nanmax(self.y_coordinates)
-                self.environment_edges = [[x_min, x_max], [y_min, y_max]]
-        else:
-            self.environment_edges = environment_edges
 
 
 
