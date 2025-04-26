@@ -1,7 +1,7 @@
 
 import numpy as np
-from spatial_metrics import helper_functions as hf
-from spatial_metrics.validators import DataValidator
+from src.utils import helper_functions as hf
+from src.utils.validators import DataValidator
 import warnings
 
 class ProcessData:

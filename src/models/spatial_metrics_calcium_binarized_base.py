@@ -1,17 +1,17 @@
 import numpy as np
 import os
-from . import helper_functions as hf
-from joblib import Parallel, delayed
-import warnings
 import sys
-from spatial_metrics import surrogate_functions as surrogate
-from spatial_metrics.validators import ParameterValidator
-from spatial_metrics import information_base as info
-from spatial_metrics.validators import DataValidator
+import warnings
+
+from src.utils import helper_functions as hf
+from src.utils import surrogate_functions as surrogate
+from src.utils.validators import ParameterValidator,DataValidator
+from src.utils import information_base as info
+import src.utils.bootstrapped_estimation as be
 
 from tqdm.auto import tqdm
 from tqdm_joblib import tqdm_joblib
-import spatial_metrics.bootstrapped_estimation as be
+from joblib import Parallel, delayed
 
 
 '''

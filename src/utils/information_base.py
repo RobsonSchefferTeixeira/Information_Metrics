@@ -1,5 +1,5 @@
 import numpy as np
-from spatial_metrics import smoothing_functions as sf
+from src.utils import smoothing_functions as sf
 from sklearn.feature_selection import mutual_info_classif
 from sklearn.feature_selection import mutual_info_regression
 import warnings

@@ -4,7 +4,7 @@ import numpy as np
 import math
 import random
 from scipy import interpolate
-from spatial_metrics import helper_functions as hf
+from src.utils import helper_functions as hf
 
 def generate_random_walk_old(input_srate = 100.,input_total_Time = 500,rho1  = 1.,sigma = 0.02,mu_e  = 0.,smooth_coeff = 0.5):
 

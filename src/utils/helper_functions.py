@@ -6,7 +6,7 @@ import numpy as np
 from scipy import signal as sig
 import math
 import warnings
-import spatial_metrics.smoothing_functions as smooth
+import src.utils.smoothing_functions as smooth
 
 
 def correct_coordinates(x_coordinates, y_coordinates, environment_edges):

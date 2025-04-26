@@ -32,9 +32,10 @@ class LoadData:
 
     def _resolve_data_path(self) -> Path:
         """Resolve the absolute path to the dataset directory."""
+        
         current_file = Path(__file__).absolute()
-        project_root = current_file.parent.parent  # Adjust based on your structure
-        return project_root / 'tutorial' / 'data' / self.dataset_name
+        project_root = current_file.parent.parent.parent  # Adjust based on your structure
+        return project_root / 'data' / self.dataset_name
 
     def load_hanna(self):
 
