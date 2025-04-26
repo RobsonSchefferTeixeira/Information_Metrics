@@ -1,7 +1,0 @@
-TO DO
-	- include real data to test
-
-DOING
-
-
-DONE
