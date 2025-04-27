@@ -88,8 +88,6 @@ class PlaceCellBinarized:
             
             signal_data.x_coordinates, signal_data.y_coordinates = hf.correct_coordinates(signal_data.x_coordinates,signal_data.y_coordinates,environment_edges=signal_data.environment_edges)
 
-
-
             if signal_data.speed is None:
                 signal_data.add_speed(self.speed_smoothing_sigma)
 
@@ -120,8 +118,6 @@ class PlaceCellBinarized:
 
             mutual_info_original = info.get_mutual_information_binarized(signal_data.input_signal, signal_data.position_binned)
             
-            # mutual_info_original = info.mutual_information_from_map(x_coordinates_valid, y_coordinates_valid, input_signal_valid, self.x_bin_size)
-
             results = self.parallelize_surrogate(signal_data.input_signal, signal_data.position_binned, signal_data.sampling_rate,
                                         self.shift_time, signal_data.x_coordinates,signal_data.y_coordinates,
                                         x_grid, y_grid, self.map_smoothing_sigma_x,self.map_smoothing_sigma_y,
@@ -245,11 +241,13 @@ class PlaceCellBinarized:
                             map_smoothing_sigma_x,map_smoothing_sigma_y, num_cores, num_surrogates):
         with tqdm_joblib(tqdm(desc="Processing Surrogates", total=num_surrogates)) as progress_bar:
             results = Parallel(n_jobs=num_cores)(
-                delayed(self.get_mutual_info_surrogate)(
+                delayed(self.get_mutual_info_surrogate)
+                (
                     input_signal, position_binned, sampling_rate,
                     shift_time, x_coordinates, y_coordinates,
-                    x_grid, y_grid, map_smoothing_sigma_x,map_smoothing_sigma_y
-                ) for _ in range(num_surrogates)
+                    x_grid, y_grid, map_smoothing_sigma_x, map_smoothing_sigma_y
+                ) 
+                for _ in range(num_surrogates)
             )
         return results
 

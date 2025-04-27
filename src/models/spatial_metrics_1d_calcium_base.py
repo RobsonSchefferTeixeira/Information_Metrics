@@ -1,7 +1,6 @@
 import numpy as np
 import os
-from spatial_metrics import helper_functions as hf
-from spatial_metrics import detect_peaks as dp
+from src.utils import helper_functions as hf
 from joblib import Parallel, delayed
 from sklearn.feature_selection import mutual_info_classif
 from sklearn.feature_selection import mutual_info_regression
@@ -141,7 +140,7 @@ class PlaceCell:
             
 
 
-            I_peaks = dp.detect_peaks(calcium_imag_valid, mpd=0.5 * self.sampling_rate,
+            I_peaks = hf.detect_peaks(calcium_imag_valid, mpd=0.5 * self.sampling_rate,
                                       mph=1. * np.nanstd(calcium_imag_valid))
             peaks_amplitude = calcium_imag_valid[I_peaks]
             x_peaks_location = x_coordinates_valid[I_peaks]

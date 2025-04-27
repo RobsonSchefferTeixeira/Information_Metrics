@@ -2,6 +2,8 @@
 import numpy as np
 from src.utils import helper_functions as hf
 from src.utils.validators import DataValidator
+from src.utils import information_base as info
+
 import warnings
 
 class ProcessData:
@@ -40,6 +42,9 @@ class ProcessData:
     def add_position_time_spent(self):
         self.time_spent_inside_bins = hf.get_position_time_spent(self.position_binned, self.sampling_rate)
 
+    def add_binned_input_signal(self,nbins_cal):
+        self.input_signal_binned = info.get_binned_signal(self.input_signal, nbins_cal)
+
 
     def add_peaks_detection(self,signal_type):
             if signal_type == 'binary':
@@ -49,13 +54,13 @@ class ProcessData:
                 self.peaks_x_location = self.x_coordinates[self.peaks_idx]
                 self.peaks_y_location = self.y_coordinates[self.peaks_idx]
 
-            elif signal_type == 'continuous':
+            else:
 
                 self.peaks_idx = hf.detect_peaks(self.input_signal,mpd=0.5 * self.sampling_rate, mph=1. * np.nanstd(self.input_signal))
                 self.peaks_amplitude = self.input_signal[self.peaks_idx]
                 self.peaks_x_location = self.x_coordinates[self.peaks_idx]
                 self.peaks_y_location = self.y_coordinates[self.peaks_idx]
 
-            else:
-                warnings.warn(f"Unrecognized signal_type '{signal_type}'. Expected 'binary' or 'continuous'.", UserWarning)
+            # else:
+            #    warnings.warn(f"Unrecognized signal_type '{signal_type}'. Expected 'binary' or 'continuous'.", UserWarning)
 
