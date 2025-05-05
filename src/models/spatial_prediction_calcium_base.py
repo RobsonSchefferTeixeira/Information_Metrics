@@ -1,103 +1,121 @@
+
 import numpy as np
-from scipy.io import loadmat
 import os
-from scipy import stats as stats
-from joblib import Parallel, delayed
-from sklearn.naive_bayes import GaussianNB
-from spatial_metrics import detect_peaks as dp
-from spatial_metrics import helper_functions as hf
 import warnings
+
+from src.utils import helper_functions as hf
+from src.utils import surrogate_functions as surrogate
+from src.utils import information_base as info
+from src.utils.validators import ParameterValidator,DataValidator
+import src.utils.bootstrapped_estimation as be
+
+from tqdm.auto import tqdm
+from tqdm_joblib import tqdm_joblib
+from joblib import Parallel, delayed
 
 
 class SpatialPrediction:
     def __init__(self,**kwargs):
            
+        kwargs.setdefault('num_of_folds', 10)
+        kwargs.setdefault('classifier', 'GaussianBayes')
+
+        kwargs.setdefault('signal_type',None)
         kwargs.setdefault('animal_id', None)
         kwargs.setdefault('day', None)
         kwargs.setdefault('neuron', None)
         kwargs.setdefault('trial', None)
         kwargs.setdefault('dataset', None)
-        kwargs.setdefault('mean_video_srate', 30.)  
-        kwargs.setdefault('min_time_spent', 0.1)  
+        kwargs.setdefault('min_time_spent', 0.1)
         kwargs.setdefault('min_visits', 1)
-        kwargs.setdefault('min_speed_threshold', 2.5)  
-        kwargs.setdefault('x_bin_size', 1)  # in cm
-        kwargs.setdefault('y_bin_size', 1)  # in cm
-        kwargs.setdefault('environment_edges', []) # [[x1,x2],[y1,y2]]
-        kwargs.setdefault('shift_time', 10)  # in seconds
+        kwargs.setdefault('min_speed_threshold', 2.5)
+        kwargs.setdefault('speed_smoothing_sigma', 1)
+        kwargs.setdefault('x_bin_size', 1)
+        kwargs.setdefault('y_bin_size', None)
+        kwargs.setdefault('environment_edges', None)
+        kwargs.setdefault('map_smoothing_sigma_x', 2)
+        kwargs.setdefault('map_smoothing_sigma_y', 2)
+        kwargs.setdefault('shift_time', 10)
         kwargs.setdefault('num_cores', 1)
         kwargs.setdefault('num_surrogates', 200)
         kwargs.setdefault('saving_path', os.getcwd())
         kwargs.setdefault('saving', False)
-        kwargs.setdefault('saving_string', 'SpatialPrediction')
-        kwargs.setdefault('num_of_folds', 10)
-        kwargs.setdefault('smoothing_size', 2)        
+        kwargs.setdefault('saving_string', 'SpatialMetrics')
+        kwargs.setdefault('nbins_cal', 10)
+        kwargs.setdefault('percentile_threshold', 95)
+        kwargs.setdefault('min_num_of_bins', 4)
+        kwargs.setdefault('detection_threshold', 2)
+        kwargs.setdefault('detection_smoothing_sigma_x', 2)
+        kwargs.setdefault('detection_smoothing_sigma_y', 2)
+        kwargs.setdefault('field_detection_method','std_from_field')
+        kwargs.setdefault('alpha',0.05)
+
+        valid_kwargs = ['num_of_folds','classifier','signal_type','animal_id', 'day', 'neuron', 'dataset', 'trial',
+                        'min_time_spent', 'min_visits', 'min_speed_threshold', 'speed_smoothing_sigma',
+                        'x_bin_size', 'y_bin_size', 'shift_time', 'map_smoothing_sigma_x','map_smoothing_sigma_y','num_cores', 'percentile_threshold','min_num_of_bins',
+                        'num_surrogates', 'saving_path', 'saving', 'saving_string', 'environment_edges', 'nbins_cal',
+                        'detection_threshold','detection_smoothing_sigma_x','detection_smoothing_sigma_y','field_detection_method','alpha']
         
-        valid_kwargs = ['animal_id','day','neuron','dataset','trial', 'mean_video_srate',
-                        'min_time_spent','min_visits','min_speed_threshold','smoothing_size',
-                        'x_bin_size','y_bin_size','shift_time','num_cores',
-                        'num_surrogates','saving_path','saving','saving_string',
-                        'num_of_folds','environment_edges']
-        
+
         for k, v in kwargs.items():
             if k not in valid_kwargs:
                 raise TypeError("Invalid keyword argument %s" % k)
             setattr(self, k, v)
-            
+
+        ParameterValidator.validate_all(kwargs)
+
         self.__dict__['input_parameters'] = kwargs
+
         
-    def main(self,calcium_imag,track_timevector,x_coordinates,y_coordinates):
+    def main(self, signal_data):
+
+        warnings.filterwarnings("ignore", category=RuntimeWarning)
         
-        if np.all(np.isnan(calcium_imag)):
+        
+        if np.all(np.isnan(signal_data.input_signal)):
             warnings.warn("Signal contains only NaN's")
             inputdict = np.nan
+            filename = self.filename_constructor(self.saving_string, self.animal_id, self.dataset, self.day,
+                                                 self.neuron, self.trial)
         else:
-
-            calcium_imag = np.atleast_2d(calcium_imag)
-            if np.any(np.isnan(calcium_imag)):
-                I_keep = ~np.isnan(calcium_imag)
-                calcium_imag = calcium_imag[:,I_keep]
-                track_timevector = track_timevector[I_keep]
-                x_coordinates = x_coordinates[I_keep]
-                y_coordinates = y_coordinates[I_keep]
-
-    
-            speed = hf.get_speed(x_coordinates, y_coordinates, track_timevector)
-
-            x_grid, y_grid, x_center_bins, y_center_bins, x_center_bins_repeated, y_center_bins_repeated = \
-                hf.get_position_grid(x_coordinates, y_coordinates, self.x_bin_size,
-                                       self.y_bin_size, environment_edges=self.environment_edges)
-
-            position_binned = hf.get_binned_2Dposition(x_coordinates, y_coordinates, x_grid, y_grid)
-
-            visits_bins, new_visits_times = hf.get_visits(x_coordinates, y_coordinates, position_binned,
-                                                            x_center_bins, y_center_bins)
-            time_spent_inside_bins = hf.get_position_time_spent(position_binned, self.mean_video_srate)
-
-            I_keep = self.get_valid_timepoints(calcium_imag, speed, visits_bins, time_spent_inside_bins,
-                                               self.min_speed_threshold, self.min_visits, self.min_time_spent)
-
-            calcium_imag_valid = calcium_imag[:,I_keep].copy()
-            x_coordinates_valid = x_coordinates[I_keep].copy()
-            y_coordinates_valid = y_coordinates[I_keep].copy()
-            track_timevector_valid = track_timevector[I_keep].copy()
-            visits_bins_valid = visits_bins[I_keep].copy()
-            position_binned_valid = position_binned[I_keep].copy()
+            signal_data.x_coordinates, signal_data.y_coordinates = hf.correct_coordinates(signal_data.x_coordinates,signal_data.y_coordinates,environment_edges=signal_data.environment_edges)
 
 
-            all_I_peaks = []
-            events_x_localization = []
-            events_y_localization = []
-            numb_events = []
-            events_amp = []
-            for cc in range(calcium_imag_valid.shape[0]):
-                I_peaks = dp.detect_peaks(np.squeeze(calcium_imag_valid[cc,:]),mpd=0.5*self.mean_video_srate,mph=1.*np.nanstd(np.squeeze(calcium_imag_valid[cc,:])))
-                events_x_localization.append(x_coordinates_valid[I_peaks])
-                events_y_localization.append(y_coordinates_valid[I_peaks])
-                all_I_peaks.append(I_peaks)
-                numb_events.append(I_peaks.shape[0])
-                events_amp.append(np.squeeze(calcium_imag_valid[cc,:][I_peaks]))
-                
+            if signal_data.speed is None:
+                signal_data.add_speed(self.speed_smoothing_sigma)
+
+            x_grid, y_grid, x_center_bins, y_center_bins, x_center_bins_repeated, y_center_bins_repeated = hf.get_position_grid(
+                signal_data.x_coordinates, signal_data.y_coordinates, self.x_bin_size, self.y_bin_size,
+                environment_edges=signal_data.environment_edges)
+
+            signal_data.add_position_binned(x_grid, y_grid)
+
+            signal_data.add_visits(x_center_bins, y_center_bins)
+
+            signal_data.add_position_time_spent()
+
+            DataValidator.get_valid_timepoints(signal_data, self.min_speed_threshold, self.min_visits, self.min_time_spent)
+
+            position_occupancy = hf.get_occupancy(signal_data.x_coordinates, signal_data.y_coordinates, x_grid, y_grid, signal_data.sampling_rate)
+            
+            speed_occupancy = hf.get_speed_occupancy(signal_data.speed,signal_data.x_coordinates, signal_data.y_coordinates,x_grid, y_grid)
+            
+            visits_occupancy = hf.get_visits_occupancy(signal_data.x_coordinates, signal_data.y_coordinates, signal_data.new_visits_times, x_grid, y_grid)
+
+
+            activity_map, activity_map_smoothed = hf.get_2D_activity_map(signal_data.input_signal, signal_data.x_coordinates,
+                                                                    signal_data.y_coordinates, x_grid, y_grid,
+                                                                    self.map_smoothing_sigma_x,self.map_smoothing_sigma_y)
+
+            signal_data.add_peaks_detection(self.signal_type)
+            
+            signal_data.add_binned_input_signal(self.nbins_cal)
+
+
+
+
+
+
             Input_Variable,Target_Variable = self.define_input_variables(calcium_imag_valid,position_binned_valid,time_bin=1)
 
             concat_accuracy,concat_continuous_error,concat_mean_error,concat_continuous_accuracy = self.run_all_folds(Input_Variable,Target_Variable,x_coordinates_valid,y_coordinates_valid,self.num_of_folds,x_center_bins_repeated,y_center_bins_repeated,self.mean_video_srate)
