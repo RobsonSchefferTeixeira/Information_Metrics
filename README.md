@@ -1,6 +1,6 @@
 # Information_Metrics
 
-**Information_Metrics** is a Python package designed to compute spatial information metrics from neural data, supporting both calcium imaging signals and electrophysiological spikes. It offers tools for analyzing spatial coding properties of neurons, such as place cells, in one-dimensional (1D) and two-dimensional (2D) environments.
+**Information_Metrics** is a Python package designed to compute spatial information metrics from neural data, supporting both calcium imaging signals and spikes. It offers tools for analyzing spatial coding properties of neurons, such as place cells, in one-dimensional (1D) and two-dimensional (2D) environments.
 
 ## Features
 
