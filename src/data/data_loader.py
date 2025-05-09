@@ -30,6 +30,13 @@ class LoadData:
             print(f"Dataset path resolved: {self.data_path}")
 
 
+    def data_lakes(self) -> str:
+        """ Just a placeholder for data lakes URL"""
+        'https://www.cell.com/cell-reports/fulltext/S2211-1247(25)00162-7?uuid=uuid%3A90314a59-1e6c-4ba4-9584-1c6aab11b469'
+        
+        return None
+    
+
     def _resolve_data_path(self) -> Path:
         """Resolve the absolute path to the dataset directory."""
         

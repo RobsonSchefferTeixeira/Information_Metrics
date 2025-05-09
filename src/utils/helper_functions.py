@@ -312,7 +312,7 @@ def get_occupancy_1D(x_coordinates, x_grid, sampling_rate):
     position_occupancy = np.zeros(x_grid.shape[0] - 1)
     for xx in range(0, x_grid.shape[0] - 1):
         check_x_occupancy = np.logical_and(x_coordinates >= x_grid[xx], x_coordinates < (x_grid[xx + 1]))
-        position_occupancy[xx] = np.sum(check_x_occupancy)/sampling_rate
+        position_occupancy[xx] = np.nansum(check_x_occupancy)/sampling_rate
 
     # position_occupancy[position_occupancy == 0] = np.nan
     return position_occupancy
@@ -339,7 +339,7 @@ def get_occupancy(x_coordinates, y_coordinates, x_grid, y_grid, sampling_rate):
             check_x_occupancy = np.logical_and(x_coordinates >= x_grid[xx], x_coordinates < (x_grid[xx + 1]))
             check_y_occupancy = np.logical_and(y_coordinates >= y_grid[yy], y_coordinates < (y_grid[yy + 1]))
 
-            position_occupancy[yy, xx] = np.sum(
+            position_occupancy[yy, xx] = np.nansum(
                 np.logical_and(check_x_occupancy, check_y_occupancy)) / sampling_rate
 
     # position_occupancy[position_occupancy == 0] = np.nan
@@ -798,6 +798,8 @@ def detect_islands_and_com(field_above_threshold_binary, activity_map_smoothed, 
             islands_x_com.append(x_com)
             islands_y_com.append(y_com)
             pixels_above.append(np.sum(island_mask))
+        else:
+            activity_map_identity[island_mask] = np.nan
 
     if not islands_id:
         return 0, np.nan, np.nan, np.nan, np.nan, np.nan

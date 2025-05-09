@@ -4,6 +4,137 @@ from sklearn.feature_selection import mutual_info_classif
 from sklearn.feature_selection import mutual_info_regression
 import warnings
 
+
+''' 
+This part calculates the mutual information for binarized signals 
+(i.e., calcium imaging data that has been binned into 0s and 1s)
+
+'''
+
+def get_binarized_spatial_info_nkinsky(binarized_signal, position_binned):
+    """
+    Adapted from https://github.com/nkinsky/ImageCamp/blob/e48c6fac407ef3997b67474a2333184bbc4915dc/General/CalculateSpatialInfo.m
+    Also check this nice work: On information metrics for spatial coding by Bryan Souza et al
+
+    Compute spatial information per spike and per second for a single neuron.
+
+    Parameters:
+    - binarized_signal: 1D numpy array of binary values (1 = active, 0 = inactive).
+    - position_binned: 1D numpy array of positions (same length as binarized_signal).
+
+    Returns:
+    - info_per_spike: Float, spatial information per spike (bits/spike).
+    - info_per_second: Float, spatial information per second (bits/second).
+    - occupancy: 1D numpy array of occupancy probabilities per bin.
+    - firing_rate: 1D numpy array of firing rates per bin.
+    """
+    # Ensure inputs are numpy arrays
+    binarized_signal = np.asarray(binarized_signal)
+    position_binned = np.asarray(position_binned)
+
+    # Identify unique position bins
+    bin_vector = np.unique(position_binned)
+    num_bins = len(bin_vector)
+
+    # Initialize arrays
+    occupancy = np.zeros(num_bins)
+    firing_rate = np.zeros(num_bins)
+
+    # Total number of time points
+    total_time = len(binarized_signal)
+
+    # Compute occupancy and firing rate per bin
+    for i, bin_val in enumerate(bin_vector):
+        # Indices where the position matches the current bin
+        position_idx = position_binned == bin_val
+        occupancy[i] = np.sum(position_idx) / total_time
+        if np.sum(position_idx) > 0:
+            firing_rate[i] = np.sum(binarized_signal[position_idx]) / np.sum(position_idx)
+        else:
+            firing_rate[i] = 0.0
+
+    # Overall mean firing rate
+    mean_firing_rate = np.sum(binarized_signal) / total_time
+
+    # Compute information per spike and per second
+    info_per_spike = 0.0
+    info_per_second = 0.0
+    for i in range(num_bins):
+        if occupancy[i] > 0 and firing_rate[i] > 0 and mean_firing_rate > 0:
+            ratio = firing_rate[i] / mean_firing_rate
+            log_term = np.log2(ratio)
+            info_per_spike += occupancy[i] * ratio * log_term
+            info_per_second += occupancy[i] * firing_rate[i] * log_term
+
+    return info_per_spike, info_per_second
+
+
+def get_binarized_spatial_info_etter(binarized_signal, position_binned):
+    """
+    Adapted from https://github.com/etterguillaume/CaImDecoding/blob/master/extract_1D_information.m
+    Compute mutual information between a binarized neural signal and binned positions.
+
+    Parameters:
+    - binarized_signal: 1D numpy array of binary values (1 = active, 0 = inactive).
+    - position_binned: 1D numpy array of position bin indices (same length as binarized_signal).
+
+    Returns:
+    - mutual_info: Float, mutual information value in bits.
+    """
+    # Ensure inputs are numpy arrays
+    binarized_signal = np.asarray(binarized_signal)
+    position_binned = np.asarray(position_binned)
+
+    # Identify unique position bins
+    bin_vector = np.unique(position_binned)
+
+    # Compute overall probabilities of being active and inactive
+    prob_active = np.sum(binarized_signal == 1) / len(binarized_signal)
+    prob_inactive = np.sum(binarized_signal == 0) / len(binarized_signal)
+
+    # Initialize arrays to store information per position bin and occupancy probabilities
+    info_per_bin = np.zeros(bin_vector.shape[0])
+    prob_in_bin = np.zeros(bin_vector.shape[0])
+
+    # Iterate over each position bin to compute mutual information contributions
+    for i, bin_val in enumerate(bin_vector):
+        # Indices where the position matches the current bin
+        position_idx = position_binned == bin_val
+
+        if np.any(position_idx):
+            # Compute occupancy probability for the current bin
+            prob_in_bin[i] = np.sum(position_idx) / len(position_binned)
+
+            # Compute joint probabilities for active and inactive states within the bin
+            joint_active = np.sum((binarized_signal == 1) & position_idx) / len(binarized_signal)
+            joint_inactive = np.sum((binarized_signal == 0) & position_idx) / len(binarized_signal)
+
+            # Compute conditional probabilities
+            cond_active = joint_active / prob_in_bin[i] if prob_in_bin[i] > 0 else 0
+            cond_inactive = joint_inactive / prob_in_bin[i] if prob_in_bin[i] > 0 else 0
+
+            # Calculate mutual information contributions, ensuring no division by zero or log of zero
+            info = 0
+            if joint_active > 0 and prob_active > 0:
+                info += joint_active * np.log2(cond_active / prob_active)
+            if joint_inactive > 0 and prob_inactive > 0:
+                info += joint_inactive * np.log2(cond_inactive / prob_inactive)
+
+            info_per_bin[i] = info
+
+    # Sum contributions from all bins to get total mutual information
+    mutual_info = np.nansum(info_per_bin)
+
+    return mutual_info
+
+
+
+
+''' 
+This part calculates the mutual information for continuous signals (i.e., calcium imaging data that has been binned into several bins or [near] continuous)
+
+'''
+
 def get_joint_entropy(bin_vector1, bin_vector2, nbins_1, nbins_2):
 
     eps = np.finfo(float).eps
@@ -94,57 +225,11 @@ def get_mutual_information_regression(calcium_imag, position_binned):
     return mutual_info_regression_original
 
 
-def get_mutual_information_bkp(calcium_imag, position_binned):
-
-    # I've translated this code to Python. 
-    # Originally I took it from https://github.com/etterguillaume/CaImDecoding/blob/master/extract_1D_information.m
-    # https://github.com/nkinsky/ImageCamp/blob/e48c6fac407ef3997b67474a2333184bbc4915dc/General/CalculateSpatialInfo.m
-
-    # I'm calling the input variable as calcium_imag just for the sake of class inheritance, but a better name
-    # would be binarized_signal
-    bin_vector = np.unique(position_binned)
-
-    # Create bin vectors
-    prob_being_active = np.nansum(calcium_imag) / calcium_imag.shape[0]  # Expressed in probability of firing (<1)
-
-    # Compute joint probabilities (of cell being active while being in a state bin)
-    likelihood = []
-    occupancy_vector = []
-
-    mutual_info = 0
-    for i in range(bin_vector.shape[0]):
-        position_idx = position_binned == bin_vector[i]
-
-        if np.sum(position_idx) > 0:
-            occupancy_vector.append(position_idx.shape[0] / position_binned.shape[0])
-
-            activity_in_bin_idx = np.where((calcium_imag == 1) & position_idx)[0]
-            inactivity_in_bin_idx = np.where((calcium_imag == 0) & position_idx)[0]
-            likelihood.append(activity_in_bin_idx.shape[0] / np.sum(position_idx))
-
-            joint_prob_active = activity_in_bin_idx.shape[0] / calcium_imag.shape[0]
-            joint_prob_inactive = inactivity_in_bin_idx.shape[0] / calcium_imag.shape[0]
-            prob_in_bin = np.sum(position_idx) / position_binned.shape[0]
-
-            if joint_prob_active > 0:
-                mutual_info = mutual_info + joint_prob_active * np.log2(
-                    joint_prob_active / (prob_in_bin * prob_being_active))
-
-            if joint_prob_inactive > 0:
-                mutual_info = mutual_info + joint_prob_inactive * np.log2(
-                    joint_prob_inactive / (prob_in_bin * (1 - prob_being_active)))
-    occupancy_vector = np.array(occupancy_vector)
-    likelihood = np.array(likelihood)
-
-    posterior = likelihood * occupancy_vector / prob_being_active
-
-    return mutual_info
 
 
 def get_mutual_information_binarized(binarized_signal, position_binned):
 
-    # https://github.com/etterguillaume/CaImDecoding/blob/master/extract_1D_information.m
-    # https://github.com/nkinsky/ImageCamp/blob/e48c6fac407ef3997b67474a2333184bbc4915dc/General/CalculateSpatialInfo.m
+    
 
     bin_vector = np.unique(position_binned)
 
@@ -366,3 +451,174 @@ def get_mutual_info_skaggs(calcium_imag, position_binned):
     # spatial info in bits per deltaF/F s^-1
 
     return mutual_info_skaggs
+
+
+
+
+
+
+
+
+def extract_2D_information(binarized_trace, interp_behav_vec, X_bin_vector, Y_bin_vector, inclusion_vector):
+    """
+    # I translated it from https://github.com/etterguillaume/CaImDecoding/blob/master/extract_1D_information.m
+    Analyzes spatial information by computing mutual information between neuronal activity and position.
+
+    Parameters:
+    - binarized_trace: 1D numpy array of binary values indicating neuron activity.
+    - interp_behav_vec: 2D numpy array of shape (n, 2), interpolated behavioral positions.
+    - X_bin_vector: 1D numpy array defining the bin edges along the X-axis.
+    - Y_bin_vector: 1D numpy array defining the bin edges along the Y-axis.
+    - inclusion_vector: 1D boolean numpy array indicating which time points to include.
+
+    Returns:
+    - MI: Mutual Information value.
+    - posterior: 2D numpy array representing the posterior probability map.
+    - occupancy_map: 2D numpy array representing the occupancy probability map.
+    - prob_being_active: Float, probability of the neuron being active.
+    - likelihood: 2D numpy array representing the likelihood of neuron activity given position.
+    """
+    # Apply inclusion vector
+    binarized_trace = binarized_trace[inclusion_vector]
+    interp_behav_vec = interp_behav_vec[inclusion_vector, :]
+
+    prob_being_active = np.sum(binarized_trace) / len(binarized_trace)
+
+    num_y_bins = len(Y_bin_vector) - 1
+    num_x_bins = len(X_bin_vector) - 1
+
+    likelihood = np.zeros((num_y_bins, num_x_bins))
+    occupancy_map = np.zeros((num_y_bins, num_x_bins))
+    MI = 0.0
+
+    for y in range(num_y_bins):
+        for x in range(num_x_bins):
+            # Identify indices where position falls within the current bin
+            in_bin = (
+                (interp_behav_vec[:, 0] >= X_bin_vector[x]) & (interp_behav_vec[:, 0] < X_bin_vector[x + 1]) &
+                (interp_behav_vec[:, 1] >= Y_bin_vector[y]) & (interp_behav_vec[:, 1] < Y_bin_vector[y + 1])
+            )
+
+            position_idx = np.where(in_bin)[0]
+
+            if position_idx.size > 0:
+                occupancy_map[y, x] = position_idx.size / len(binarized_trace)
+
+                activity_in_bin = binarized_trace[position_idx]
+                likelihood[y, x] = np.sum(activity_in_bin) / position_idx.size
+
+                joint_prob_active = np.sum(activity_in_bin) / len(binarized_trace)
+                joint_prob_inactive = (position_idx.size - np.sum(activity_in_bin)) / len(binarized_trace)
+                prob_in_bin = position_idx.size / len(binarized_trace)
+
+                if joint_prob_active > 0:
+                    MI += joint_prob_active * np.log2(joint_prob_active / (prob_in_bin * prob_being_active))
+                if joint_prob_inactive > 0:
+                    MI += joint_prob_inactive * np.log2(joint_prob_inactive / (prob_in_bin * (1 - prob_being_active)))
+
+    # Compute posterior probability map
+    with np.errstate(divide='ignore', invalid='ignore'):
+        posterior = np.divide(likelihood * occupancy_map, prob_being_active)
+        posterior = np.nan_to_num(posterior)
+
+    return MI, posterior, occupancy_map, prob_being_active, likelihood
+
+
+
+def calculate_spatial_info_nkinsky(FT, x, y, speed, cmperbin):
+    """
+    I translated it from https://github.com/nkinsky/ImageCamp/blob/e48c6fac407ef3997b67474a2333184bbc4915dc/General/CalculateSpatialInfo.m
+
+    Calculate spatial information for each neuron based on spatial binning.
+
+    Parameters:
+    - FT: (NumNeurons, NumFrames) binary array of neural activity (1 = active)
+    - x, y: arrays of position coordinates (length = NumFrames)
+    - speed: array of speed values (length = NumFrames), unused but can be for movement filtering
+    - cmperbin: spatial bin size in cm
+
+    Returns:
+    - INFO: (NumNeurons,) spatial information per neuron (bits/spike)
+    - p_i: (num_bins,) occupancy probability per bin
+    - lambda_: (NumNeurons,) mean firing rate per neuron
+    - lambda_i: (NumNeurons, num_bins) mean firing rate per neuron per bin
+    """
+
+    NumNeurons = FT.shape[0]
+    NumFrames = FT.shape[1]
+
+    # Assume all frames are valid (e.g., no movement filtering)
+    turn_ind = np.ones(NumFrames, dtype=bool)
+
+    # Compute spatial range
+    Xrange = np.nanmax(x) - np.nanmin(x)
+    Yrange = np.nanmax(y) - np.nanmin(y)
+
+    # Determine number of spatial bins
+    NumXBins = int(np.ceil(Xrange / cmperbin))
+    NumYBins = int(np.ceil(Yrange / cmperbin))
+
+    # Bin edges
+    Xedges = np.arange(0, NumXBins + 1) * cmperbin + np.nanmin(x)
+    Yedges = np.arange(0, NumYBins + 1) * cmperbin + np.nanmin(y)
+
+    # Digitize positions into bins
+    Xbin = np.digitize(x, Xedges) - 1
+    Ybin = np.digitize(y, Yedges) - 1
+
+    # Clip to valid range
+    Xbin[Xbin >= NumXBins] = NumXBins - 1
+    Ybin[Ybin >= NumYBins] = NumYBins - 1
+    Xbin[Xbin < 0] = 0
+    Ybin[Ybin < 0] = 0
+
+    # Convert 2D bins to linear index
+    loc_index = np.ravel_multi_index((Xbin, Ybin), (NumXBins, NumYBins))
+
+    # Identify unique bins and initialize
+    bins = np.unique(loc_index)
+    num_bins = len(bins)
+
+    lambda_ = np.full(NumNeurons, np.nan)          # overall mean firing rate per neuron
+    lambda_i = np.full((NumNeurons, num_bins), np.nan)  # bin-specific mean firing rates
+    p_i = np.full(num_bins, np.nan)                # occupancy probabilities
+    INFO = np.full(NumNeurons, np.nan)             # output spatial information per neuron
+    in_bin = np.zeros((NumFrames, num_bins), dtype=bool)  # mask of frames in each bin
+    dwell = np.full(num_bins, np.nan)              # number of frames spent in each bin
+    LR_Frames = np.sum(turn_ind)                   # total number of valid frames
+
+    # Compute dwell time and occupancy for each bin
+    for i, bin_val in enumerate(bins):
+        in_bin[:, i] = loc_index == bin_val
+        dwell[i] = np.nansum(in_bin[turn_ind, i])
+        p_i[i] = dwell[i] / LR_Frames
+
+    # Exclude low-occupancy bins
+    dwell[dwell <= 1] = np.nan
+    p_i[np.isnan(dwell)] = np.nan
+
+    good = ~np.isnan(p_i)
+
+    for this_neuron in range(NumNeurons):
+        if (this_neuron + 1) % 10 == 0:
+            print(f'Calculating spatial information for neuron #{this_neuron + 1}...')
+
+        # Mean firing rate over all valid frames
+        lambda_[this_neuron] = np.nanmean(FT[this_neuron, turn_ind])
+
+        # Mean firing rate in each spatial bin
+        for i in range(num_bins):
+            if good[i]:
+                frames_in_bin = turn_ind & in_bin[:, i]
+                if np.nansum(frames_in_bin) > 0:
+                    lambda_i[this_neuron, i] = np.nansum(FT[this_neuron, frames_in_bin]) / dwell[i]
+
+        # Calculate spatial information
+        with np.errstate(divide='ignore', invalid='ignore'):
+            ratio = lambda_i[this_neuron, :] / lambda_[this_neuron]
+            info_terms = p_i * lambda_i[this_neuron, :] * np.log2(ratio)
+            # info_terms = p_i * ratio * np.log2(ratio)
+            INFO[this_neuron] = np.nansum(info_terms)
+
+    return INFO, p_i, lambda_, lambda_i
+
