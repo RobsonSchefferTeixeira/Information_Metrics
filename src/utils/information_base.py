@@ -128,7 +128,52 @@ def get_binarized_spatial_info_etter(binarized_signal, position_binned):
     return mutual_info
 
 
+def get_spatial_info_from_map(activity_map, occupancy):
+    """
+    Compute spatial information per spike and per second from activity and occupancy maps.
 
+    Parameters:
+    - activity_map: 2D numpy array of summed binary activity per spatial bin.
+    - occupancy: 2D numpy array of time spent in each spatial bin.
+    Returns:
+    - info_per_spike: Spatial information per spike (bits/spike).
+    - info_per_second: Spatial information per second (bits/second).
+    """
+    # Ensure inputs are numpy arrays
+    activity_map = np.asarray(activity_map, dtype=np.float64)
+    occupancy = np.asarray(occupancy, dtype=np.float64)
+
+    # Validate input shapes
+    if activity_map.shape != occupancy.shape:
+        raise ValueError("activity_map and occupancy must have the same shape.")
+
+    # Compute total occupancy time and total spikes
+    total_time = np.nansum(occupancy)
+    total_spikes = np.nansum(activity_map)
+
+    if total_time == 0 or total_spikes == 0:
+        return 0.0, 0.0
+
+    # Compute occupancy probability per bin
+    P_i = occupancy / total_time
+
+    # Compute firing rate per bin (spikes per second)
+    with np.errstate(divide='ignore', invalid='ignore'):
+        firing_rate = np.divide(activity_map, occupancy)
+        firing_rate[np.isnan(firing_rate)] = 0.0  # Replace NaNs with zeros
+
+    # Compute mean firing rate across all bins
+    mean_firing_rate = total_spikes / total_time
+
+    # Compute spatial information per spike and per second
+    with np.errstate(divide='ignore', invalid='ignore'):
+        ratio = np.divide(firing_rate, mean_firing_rate)
+        log_term = np.log2(ratio, where=ratio > 0)
+        log_term[np.isnan(log_term)] = 0.0  # Replace NaNs with zeros
+        info_per_spike = np.nansum(P_i * ratio * log_term)
+        info_per_second = np.nansum(P_i * firing_rate * log_term)
+
+    return info_per_spike, info_per_second
 
 ''' 
 This part calculates the mutual information for continuous signals (i.e., calcium imaging data that has been binned into several bins or [near] continuous)
@@ -272,80 +317,6 @@ def get_mutual_information_binarized(binarized_signal, position_binned):
 
 
 
-def get_mutual_information_binarized_from_map(x_coordinates, y_coordinates, activity, bin_size=4.0):
-
-    '''
-    Compute spatial mutual information between position (x, y) and binary activity.
-
-    Parameters:
-    - x_coordinates: 1D array of x positions.
-    - y_coordinates: 1D array of y positions.
-    - activity: 1D array of binary activity (0 or 1).
-    - bin_size: Size of spatial bins (default is 4.0 units).
-
-    Returns:
-    - mutual_info: Mutual information value in bits.
-    '''
-    # Ensure inputs are numpy arrays
-    x = np.asarray(x_coordinates)
-    y = np.asarray(y_coordinates)
-    a = np.asarray(activity)
-
-    # Validate input lengths
-    if not (len(x) == len(y) == len(a)):
-        raise ValueError("Input arrays x_coordinates, y_coordinates, and activity must have the same length.")
-
-    # Define spatial bin edges
-    x_edges = np.arange(np.nanmin(x), np.nanmax(x) + bin_size, bin_size)
-    y_edges = np.arange(np.nanmin(y), np.nanmax(y) + bin_size, bin_size)
-
-    # Digitize positions to get bin indices
-    x_bin = np.digitize(x, x_edges) - 1
-    y_bin = np.digitize(y, y_edges) - 1
-
-    # Initialize occupancy and activity maps
-    occupancy = np.zeros((len(x_edges), len(y_edges)))
-    activity_map = np.zeros((len(x_edges), len(y_edges)))
-
-    # Populate maps
-    for xi, yi, act in zip(x_bin, y_bin, a):
-        if 0 <= xi < occupancy.shape[0] and 0 <= yi < occupancy.shape[1]:
-            occupancy[xi, yi] += 1
-            activity_map[xi, yi] += act
-
-    # Compute probabilities
-    total_time = np.nansum(occupancy)
-    P_x = occupancy / total_time  # P(x_i)
-    P_k = np.array([np.nanmean(a == k) for k in [0, 1]])  # P(k)
-
-    # Compute conditional probabilities P(k|x_i)
-    P_k_given_x = np.zeros((2, occupancy.shape[0], occupancy.shape[1]))
-    with np.errstate(divide='ignore', invalid='ignore'):
-        P_k_given_x[1] = activity_map / occupancy
-        P_k_given_x[0] = 1 - P_k_given_x[1]
-        P_k_given_x = np.nan_to_num(P_k_given_x)
-
-
-    # Compute spatial information
-    info_pos = 0
-    for k in [0, 1]:
-        with np.errstate(divide='ignore', invalid='ignore'):
-            ratio = P_k_given_x[k] / P_k[k]
-            log_term = np.log2(ratio, where=ratio > 0)
-            log_term = np.nan_to_num(log_term)
-            info_pos += P_k_given_x[k] * log_term
-    spatial_information = np.nansum(info_pos*P_x)
-
-    '''
-    mutual_info = 0.0
-    for k in [0, 1]:
-        with np.errstate(divide='ignore', invalid='ignore'):
-            ratio = P_k_given_x[k] / P_k[k]
-            log_term = np.log2(ratio, where=ratio > 0)
-            log_term = np.nan_to_num(log_term)
-            mutual_info += np.nansum(P_x * P_k_given_x[k] * log_term)
-    '''
-    return spatial_information
 
 
 def get_mutual_information_2d(calcium_imag_binned,position_binned,nbins_cal,nbins_pos,x_grid,y_grid,map_smoothing_sigma_x,map_smoothing_sigma_y):
