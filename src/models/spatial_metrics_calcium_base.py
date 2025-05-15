@@ -44,9 +44,12 @@ class PlaceCell:
         kwargs.setdefault('detection_smoothing_sigma_y', 2)
         kwargs.setdefault('field_detection_method','std_from_field')
         kwargs.setdefault('alpha',0.05)
+        kwargs.setdefault('x_bin_size_info', 2)
+        kwargs.setdefault('y_bin_size_info', 2)
 
 
-        valid_kwargs = ['signal_type','animal_id', 'day', 'neuron', 'dataset', 'trial',
+
+        valid_kwargs = ['signal_type','animal_id', 'day', 'neuron', 'dataset', 'trial','x_bin_size_info','y_bin_size_info',
                         'min_time_spent', 'min_visits', 'min_speed_threshold', 'speed_smoothing_sigma',
                         'x_bin_size', 'y_bin_size', 'shift_time', 'map_smoothing_sigma_x','map_smoothing_sigma_y','num_cores', 'percentile_threshold','min_num_of_bins',
                         'num_surrogates', 'saving_path', 'saving', 'saving_string', 'environment_edges', 'nbins_cal',
@@ -79,11 +82,16 @@ class PlaceCell:
             if signal_data.speed is None:
                 signal_data.add_speed(self.speed_smoothing_sigma)
 
-            x_grid, y_grid, x_center_bins, y_center_bins, x_center_bins_repeated, y_center_bins_repeated = hf.get_position_grid(
+            x_grid, y_grid, x_center_bins, y_center_bins, _, _ = hf.get_position_grid(
                 signal_data.x_coordinates, signal_data.y_coordinates, self.x_bin_size, self.y_bin_size,
                 environment_edges=signal_data.environment_edges)
+            
+            x_grid_info, y_grid_info, _, _, _, _ = hf.get_position_grid(
+                signal_data.x_coordinates, signal_data.y_coordinates, self.x_bin_size_info, self.y_bin_size_info,
+                environment_edges=signal_data.environment_edges)
 
-            signal_data.add_position_binned(x_grid, y_grid)
+
+            signal_data.add_position_binned(x_grid_info, y_grid_info)
 
             signal_data.add_visits(x_center_bins, y_center_bins)
 
@@ -107,7 +115,7 @@ class PlaceCell:
             
             signal_data.add_binned_input_signal(self.nbins_cal)
 
-            nbins_pos = (x_grid.shape[0] - 1) * (y_grid.shape[0] - 1)
+            nbins_pos = (x_grid_info.shape[0] - 1) * (y_grid_info.shape[0] - 1)
 
             mutual_info_original = info.get_mutual_information_binned(signal_data.input_signal_binned,self.nbins_cal,signal_data.position_binned,nbins_pos)
 
@@ -120,13 +128,13 @@ class PlaceCell:
             mutual_info_skaggs_original = info.get_mutual_info_skaggs(signal_data.input_signal,signal_data.position_binned)
             
             mutual_info_distribution,mutual_info_distribution_bezzi, mutual_info_distribution_smoothed,mutual_info_distribution_bezzi_smoothed = info.get_mutual_information_2d(
-                signal_data.input_signal_binned,signal_data.position_binned,self.nbins_cal,nbins_pos,x_grid,y_grid,
+                signal_data.input_signal_binned,signal_data.position_binned,self.nbins_cal,nbins_pos,x_grid_info,y_grid_info,
                 self.map_smoothing_sigma_x, self.map_smoothing_sigma_y)
 
             results = self.parallelize_surrogate(signal_data.input_signal,signal_data.position_binned, signal_data.sampling_rate,
-                                                 self.shift_time, self.nbins_cal, nbins_pos, signal_data.x_coordinates,
-                                                 signal_data.y_coordinates, x_grid, y_grid, self.map_smoothing_sigma_x, 
-                                                 self.map_smoothing_sigma_y, self.num_cores, self.num_surrogates)
+                                                 self.shift_time, self.nbins_cal, nbins_pos, x_grid_info, y_grid_info, 
+                                                 signal_data.x_coordinates, signal_data.y_coordinates, x_grid, y_grid, 
+                                                 self.map_smoothing_sigma_x, self.map_smoothing_sigma_y, self.num_cores, self.num_surrogates)
 
             activity_map_shifted = []
             activity_map_smoothed_shifted = []
@@ -175,6 +183,7 @@ class PlaceCell:
                 mutual_info_regression_original, mutual_info_regression_shifted)
 
 
+           
             if self.field_detection_method == 'random_fields':
 
                 num_of_fields, fields_x_max, fields_y_max,pixels_place_cell_absolute,pixels_place_cell_relative,activity_map_identity = \
@@ -196,11 +205,29 @@ class PlaceCell:
                 warnings.warn("No field detection method set", UserWarning)
                 num_of_fields, fields_x_max, fields_y_max, pixels_place_cell_absolute, pixels_place_cell_relative, activity_map_identity = [[] for _ in range(6)]
 
+        
             
             sparsity = hf.get_sparsity(activity_map, position_occupancy)
 
-            statistic = be.calculate_p_value(mutual_info_original, mutual_info_shifted, alternative='greater')
-            if statistic.p_value > self.alpha:
+    
+            
+            mutual_info_statistic = be.calculate_p_value(mutual_info_original, mutual_info_shifted, alternative='greater')
+            mutual_info_pvalue = mutual_info_statistic.p_value
+
+            mutual_info_kullback_leibler_statistic = be.calculate_p_value(mutual_info_kullback_leibler_original, mutual_info_kullback_leibler_shifted, alternative='greater')
+            mutual_info_kullback_leibler_pvalue = mutual_info_kullback_leibler_statistic.p_value
+            
+            mutual_info_NN_statistic = be.calculate_p_value(mutual_info_NN_original, mutual_info_NN_shifted, alternative='greater')
+            mutual_info_NN_pvalue = mutual_info_NN_statistic.p_value
+
+            mutual_info_regression_statistic = be.calculate_p_value(mutual_info_regression_original, mutual_info_regression_shifted, alternative='greater')
+            mutual_info_regression_pvalue = mutual_info_regression_statistic.p_value
+            
+            mutual_info_skaggs_statistic = be.calculate_p_value(mutual_info_skaggs_original, mutual_info_skaggs_shifted, alternative='greater')
+            mutual_info_skaggs_pvalue = mutual_info_skaggs_statistic.p_value
+            
+
+            if mutual_info_pvalue > self.alpha:
 
                 activity_map_identity = np.zeros(activity_map.shape)*np.nan
                 num_of_fields = 0
@@ -253,26 +280,32 @@ class PlaceCell:
             inputdict['mutual_info_shifted'] = mutual_info_shifted
             inputdict['mutual_info_zscored'] = mutual_info_zscored
             inputdict['mutual_info_centered'] = mutual_info_centered
+            inputdict['mutual_info_pvalue'] = mutual_info_pvalue
 
             inputdict['mutual_info_kullback_leibler_original'] = mutual_info_kullback_leibler_original
             inputdict['mutual_info_kullback_leibler_shifted'] = mutual_info_kullback_leibler_shifted
             inputdict['mutual_info_kullback_leibler_zscored'] = mutual_info_kullback_leibler_zscored
             inputdict['mutual_info_kullback_leibler_centered'] = mutual_info_kullback_leibler_centered
+            inputdict['mutual_info_kullback_leibler_pvalue'] = mutual_info_kullback_leibler_pvalue
 
             inputdict['mutual_info_NN_original'] = mutual_info_NN_original
             inputdict['mutual_info_NN_shifted'] = mutual_info_NN_shifted
             inputdict['mutual_info_NN_zscored'] = mutual_info_NN_zscored
             inputdict['mutual_info_NN_centered'] = mutual_info_NN_centered
+            inputdict['mutual_info_NN_pvalue'] = mutual_info_NN_pvalue
 
             inputdict['mutual_info_regression_original'] = mutual_info_regression_original
             inputdict['mutual_info_regression_shifted'] = mutual_info_regression_shifted
             inputdict['mutual_info_regression_zscored'] = mutual_info_regression_zscored
             inputdict['mutual_info_regression_centered'] = mutual_info_regression_centered
+            inputdict['mutual_info_regression_pvalue'] = mutual_info_regression_pvalue
 
             inputdict['mutual_info_skaggs_original'] = mutual_info_skaggs_original
             inputdict['mutual_info_skaggs_shifted'] = mutual_info_skaggs_shifted
             inputdict['mutual_info_skaggs_zscored'] = mutual_info_skaggs_zscored
             inputdict['mutual_info_skaggs_centered'] = mutual_info_skaggs_centered
+            inputdict['mutual_info_skaggs_pvalue'] = mutual_info_skaggs_pvalue
+
 
             inputdict['input_parameters'] = self.__dict__['input_parameters']
 
@@ -290,15 +323,15 @@ class PlaceCell:
     
  
     def parallelize_surrogate(self, input_signal, position_binned, sampling_rate, shift_time,
-                              nbins_cal, nbins_pos, x_coordinates, y_coordinates, x_grid, y_grid,
+                              nbins_cal, nbins_pos, x_grid_info, y_grid_info, x_coordinates, y_coordinates, x_grid, y_grid,
                               map_smoothing_sigma_x,map_smoothing_sigma_y, num_cores, num_surrogates):
         with tqdm_joblib(tqdm(desc="Processing Surrogates", total=num_surrogates)) as progress_bar:
             results = Parallel(n_jobs=num_cores)(
                 delayed(self.get_mutual_info_surrogate)
                 (
                     input_signal, position_binned, sampling_rate,
-                    shift_time, nbins_cal, nbins_pos, x_coordinates,
-                    y_coordinates, x_grid, y_grid, map_smoothing_sigma_x,
+                    shift_time, nbins_cal, nbins_pos, x_grid_info, y_grid_info,
+                    x_coordinates, y_coordinates, x_grid, y_grid, map_smoothing_sigma_x,
                     map_smoothing_sigma_y
                 )
                 for _ in range(num_surrogates)
@@ -310,7 +343,7 @@ class PlaceCell:
 
 
     def get_mutual_info_surrogate(self, input_signal, position_binned, sampling_rate, shift_time,
-                                  nbins_cal, nbins_pos, x_coordinates, y_coordinates, x_grid, y_grid,
+                                  nbins_cal, nbins_pos,x_grid_info, y_grid_info, x_coordinates, y_coordinates, x_grid, y_grid,
                                   map_smoothing_sigma_x,map_smoothing_sigma_y):
 
         input_signal_shifted = surrogate.get_signal_surrogate(input_signal, sampling_rate, shift_time)
@@ -334,7 +367,7 @@ class PlaceCell:
 
         mutual_info_distribution,mutual_info_distribution_bezzi,mutual_info_distribution_smoothed,mutual_info_distribution_bezzi_smoothed = info.get_mutual_information_2d(input_signal_shifted_shifted_binned,
                                                                                                   position_binned,nbins_cal,
-                                                                                                  nbins_pos, x_grid,y_grid,
+                                                                                                  nbins_pos, x_grid_info,y_grid_info,
                                                                                                   map_smoothing_sigma_x,map_smoothing_sigma_y)
 
         return mutual_info_shifted, modulation_index_shifted, mutual_info_shifted_NN, mutual_info_skaggs_shifted,\

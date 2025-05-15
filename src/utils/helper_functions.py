@@ -792,12 +792,12 @@ def detect_islands_and_com(field_above_threshold_binary, activity_map_smoothed, 
 
     for ii in unique_islands:
         island_mask = (activity_map_identity == ii)
-        if np.sum(island_mask) > min_num_of_bins:
+        if np.nansum(island_mask) > min_num_of_bins:
             x_com, y_com = center_of_mass(island_mask, activity_map_smoothed, x_center_bins, y_center_bins)
             islands_id.append(ii)
             islands_x_com.append(x_com)
             islands_y_com.append(y_com)
-            pixels_above.append(np.sum(island_mask))
+            pixels_above.append(np.nansum(island_mask))
         else:
             activity_map_identity[island_mask] = np.nan
 
