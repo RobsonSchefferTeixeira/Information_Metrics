@@ -178,6 +178,10 @@ class ParameterValidator:
 class DataValidator:
 
     @staticmethod
+    def is_empty_or_all_nan(arr):
+        return arr.size == 0 or np.isnan(arr).all()
+
+    @staticmethod
     def validate_input_data(signal_data):
         """
         Comprehensive validation and cleaning of input data that:
@@ -204,6 +208,9 @@ class DataValidator:
             if not hasattr(signal_data, field):
                 raise AttributeError(f"signal_data is missing required field: {field}")
         
+        if DataValidator.is_empty_or_all_nan(signal_data.time_vector):
+            signal_data.time_vector = np.linspace(0,len(signal_data.input_signal)/signal_data.sampling_rate,len(signal_data.input_signal))
+
         # Convert to numpy arrays and ensure float type
         signal_data.input_signal = np.asarray(signal_data.input_signal, dtype=float)
         signal_data.x_coordinates = np.asarray(signal_data.x_coordinates, dtype=float)
@@ -257,22 +264,21 @@ class DataValidator:
             valid_mask &= np.isfinite(signal_data.y_coordinates)
         
         # I need to improve this. Let`s deactivate it for now`
-        if False:   
-            # Apply filtering
-            if signal_data.input_signal.ndim == 1:
-                signal_data.input_signal = signal_data.input_signal[valid_mask]
-            else:
-                signal_data.input_signal = signal_data.input_signal[:, valid_mask]
-            
-            signal_data.x_coordinates = signal_data.x_coordinates[valid_mask]
-            signal_data.time_vector = signal_data.time_vector[valid_mask]
-            
-            if has_y_coords:
-                signal_data.y_coordinates = signal_data.y_coordinates[valid_mask]
-            
-            # Final validation check
-            if len(signal_data.time_vector) == 0:
-                raise ValueError("All data points were removed during validation - check for excessive NaN/inf values")
+        # Apply filtering
+        if signal_data.input_signal.ndim == 1:
+            signal_data.input_signal = signal_data.input_signal[valid_mask]
+        else:
+            signal_data.input_signal = signal_data.input_signal[:, valid_mask]
+        
+        signal_data.x_coordinates = signal_data.x_coordinates[valid_mask]
+        signal_data.time_vector = signal_data.time_vector[valid_mask]
+        
+        if has_y_coords:
+            signal_data.y_coordinates = signal_data.y_coordinates[valid_mask]
+        
+        # Final validation check
+        if len(signal_data.time_vector) == 0:
+            warnings.warn("All data points were removed during validation - check for excessive NaN/inf values")
 
 
 

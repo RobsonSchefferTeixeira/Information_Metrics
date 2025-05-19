@@ -1,6 +1,7 @@
 import numpy as np
 import os
 import warnings
+from pathlib import Path
 
 from src.utils import helper_functions as hf
 from src.utils import surrogate_functions as surrogate
@@ -35,6 +36,7 @@ class PlaceCell:
         kwargs.setdefault('num_surrogates', 200)
         kwargs.setdefault('saving_path', os.getcwd())
         kwargs.setdefault('saving', False)
+        kwargs.setdefault('overwrite', False)
         kwargs.setdefault('saving_string', 'SpatialMetrics')
         kwargs.setdefault('nbins_cal', 10)
         kwargs.setdefault('percentile_threshold', 95)
@@ -47,10 +49,8 @@ class PlaceCell:
         kwargs.setdefault('x_bin_size_info', 2)
         kwargs.setdefault('y_bin_size_info', 2)
 
-
-
         valid_kwargs = ['signal_type','animal_id', 'day', 'neuron', 'dataset', 'trial','x_bin_size_info','y_bin_size_info',
-                        'min_time_spent', 'min_visits', 'min_speed_threshold', 'speed_smoothing_sigma',
+                        'min_time_spent', 'min_visits', 'min_speed_threshold', 'speed_smoothing_sigma','overwrite',
                         'x_bin_size', 'y_bin_size', 'shift_time', 'map_smoothing_sigma_x','map_smoothing_sigma_y','num_cores', 'percentile_threshold','min_num_of_bins',
                         'num_surrogates', 'saving_path', 'saving', 'saving_string', 'environment_edges', 'nbins_cal',
                         'detection_threshold','detection_smoothing_sigma_x','detection_smoothing_sigma_y','field_detection_method','alpha']
@@ -67,10 +67,17 @@ class PlaceCell:
     def main(self, signal_data):
 
         warnings.filterwarnings("ignore", category=RuntimeWarning)
-        
-        
-        if np.all(np.isnan(signal_data.input_signal)):
-            warnings.warn("Signal contains only NaN's")
+
+        filename = hf.filename_constructor(self.saving_string, self.animal_id, self.dataset, self.day, self.neuron, self.trial)
+        full_path = f"{self.saving_path}/{filename}"
+        # Check if the file exists and handle based on the overwrite flag
+        if os.path.exists(full_path) and not self.overwrite:
+            print(f"File already exists and overwrite is set to False: {full_path}")
+            return
+            
+
+        if DataValidator.is_empty_or_all_nan(signal_data.input_signal) or DataValidator.is_empty_or_all_nan(signal_data.x_coordinates) or DataValidator.is_empty_or_all_nan(signal_data.y_coordinates):
+            warnings.warn("Signal contains only NaN's or is empty", UserWarning)
             inputdict = np.nan
             filename = hf.filename_constructor(self.saving_string, self.animal_id, self.dataset, self.day,
                                                  self.neuron, self.trial)
@@ -311,12 +318,9 @@ class PlaceCell:
 
             inputdict['input_parameters'] = self.__dict__['input_parameters']
 
-            filename = hf.filename_constructor(self.saving_string, self.animal_id, self.dataset, self.day, self.neuron,self.trial)
 
         if self.saving == True:
-            hf.caller_saving(inputdict, filename, self.saving_path)
-            print(filename + ' saved')
-
+            hf.caller_saving(inputdict, filename, self.saving_path, self.overwrite)
         else:
             print(filename + ' not saved')
 

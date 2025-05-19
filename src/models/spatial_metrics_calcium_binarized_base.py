@@ -30,6 +30,10 @@ class PlaceCellBinarized:
         kwargs.setdefault('neuron', None)
         kwargs.setdefault('trial', None)
         kwargs.setdefault('dataset', None)
+        kwargs.setdefault('saving_path', os.getcwd())
+        kwargs.setdefault('saving', False)
+        kwargs.setdefault('saving_string', 'SpatialMetrics')
+        kwargs.setdefault('overwrite', False)
         kwargs.setdefault('min_time_spent', 0.1)
         kwargs.setdefault('min_visits', 1)
         kwargs.setdefault('min_speed_threshold', 2.5)
@@ -43,9 +47,6 @@ class PlaceCellBinarized:
         kwargs.setdefault('shift_time', 10)
         kwargs.setdefault('num_cores', 1)
         kwargs.setdefault('num_surrogates', 200)
-        kwargs.setdefault('saving_path', os.getcwd())
-        kwargs.setdefault('saving', False)
-        kwargs.setdefault('saving_string', 'SpatialMetrics')
         kwargs.setdefault('percentile_threshold', 95)
         kwargs.setdefault('min_num_of_bins', 4)
         kwargs.setdefault('detection_threshold', 2)
@@ -60,7 +61,7 @@ class PlaceCellBinarized:
                         'x_bin_size', 'y_bin_size', 'shift_time', 'num_cores', 'percentile_threshold','min_num_of_bins',
                         'num_surrogates', 'saving_path', 'saving', 'saving_string','x_bin_size_info','y_bin_size_info',
                         'detection_threshold','detection_smoothing_sigma_x','detection_smoothing_sigma_y',
-                        'field_detection_method','alpha']
+                        'field_detection_method','alpha','overwrite']
 
         for k, v in kwargs.items():
             if k not in valid_kwargs:
@@ -75,11 +76,15 @@ class PlaceCellBinarized:
 
     # def main(self, input_signal, time_vector, x_coordinates, y_coordinates=None, speed=None):
     def main(self, signal_data):
-
-
-
+        
         warnings.filterwarnings("ignore", category=RuntimeWarning)
         
+        filename = hf.filename_constructor(self.saving_string, self.animal_id, self.dataset, self.day, self.neuron, self.trial)
+        full_path = f"{self.saving_path}/{filename}"
+        # Check if the file exists and handle based on the overwrite flag
+        if os.path.exists(full_path) and not self.overwrite:
+            print(f"File already exists and overwrite is set to False: {full_path}")
+            return
         
         if np.all(np.isnan(signal_data.input_signal)):
             warnings.warn("Signal contains only NaN's")

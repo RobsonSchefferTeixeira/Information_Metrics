@@ -534,30 +534,78 @@ def correct_lost_tracking(x_coordinates, y_coordinates, track_timevector, sampli
     return x_coordinates_interpolated, y_coordinates_interpolated
 
 
-def filename_constructor(saving_string, animal_id, dataset, day, neuron, trial):
-    first_string = saving_string
-    animal_id_string = '.' + animal_id
-    dataset_string = '.Dataset.' + dataset
-    day_string = '.Day.' + str(day)
-    neuron_string = '.Neuron.' + str(neuron)
-    trial_string = '.Trial.' + str(trial)
+def filename_constructor(saving_string, animal_id=None, dataset=None, day=None, neuron=None, trial=None):
+    """
+    Construct a filename by concatenating provided components with specific prefixes.
 
-    filename_checklist = np.array([first_string, animal_id, dataset, day, neuron, trial])
-    inlcude_this = np.where(filename_checklist != None)[0]
+    Parameters:
+        saving_string (str): Base string for the filename.
+        animal_id (str, optional): Identifier for the animal.
+        dataset (str, optional): Dataset name.
+        day (int or str, optional): Day identifier.
+        neuron (int or str, optional): Neuron identifier.
+        trial (int or str, optional): Trial identifier.
 
-    filename_backbone = [first_string, animal_id_string, dataset_string, day_string, neuron_string, trial_string]
+    Returns:
+        str: Constructed filename.
+    """
+    parts = [saving_string]
 
-    filename = ''.join([filename_backbone[i] for i in inlcude_this])
+    if animal_id is not None:
+        parts.append(f".{animal_id}")
+    if dataset is not None:
+        parts.append(f".Dataset.{dataset}")
+    if day is not None:
+        parts.append(f".Day.{day}")
+    if neuron is not None:
+        parts.append(f".Neuron.{neuron}")
+    if trial is not None:
+        parts.append(f".Trial.{trial}")
 
-    return filename
+    return ''.join(parts)
 
-
+'''
 def caller_saving(inputdict, filename, saving_path):
     os.chdir(saving_path)
     output = open(filename, 'wb')
     np.save(output, inputdict)
     output.close()
     print('File saved.')
+'''
+
+def caller_saving(inputdict, filename, saving_path, overwrite=False):
+    """
+    Save a dictionary to a .npy file, with an option to overwrite existing files.
+
+    Parameters:
+        inputdict (dict): The dictionary to save.
+        filename (str): The name of the file to save.
+        saving_path (str): The directory path where the file will be saved.
+        overwrite (bool): If True, overwrite the file if it exists. Default is False.
+
+    Returns:
+        None
+    """
+    # Ensure the saving path exists
+    os.makedirs(saving_path, exist_ok=True)
+
+    # Construct the full file path
+    full_path = os.path.join(saving_path, filename)
+
+    # Check if the file exists and handle based on the overwrite flag
+    if os.path.exists(full_path):
+        if overwrite:
+            print(f"Overwriting existing file: {full_path}")
+        else:
+            print(f"File already exists and overwrite is set to False: {full_path}")
+            return
+
+    # Save the dictionary to the .npy file
+    with open(full_path, 'wb') as output:
+        np.save(output, inputdict)
+
+    print(f"File saved at: {full_path}")
+
 
 '''
 def identify_islands(input_array):

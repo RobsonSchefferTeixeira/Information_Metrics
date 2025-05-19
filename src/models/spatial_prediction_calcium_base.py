@@ -31,6 +31,11 @@ class SpatialPrediction:
         kwargs.setdefault('trial', None)
         kwargs.setdefault('dataset', None)
 
+        kwargs.setdefault('saving_path', os.getcwd())
+        kwargs.setdefault('saving', False)
+        kwargs.setdefault('saving_string', 'SpatialMetrics')
+        kwargs.setdefault('overwrite', False)
+
         kwargs.setdefault('min_time_spent', 0.1)
         kwargs.setdefault('min_visits', 1)
         kwargs.setdefault('min_speed_threshold', 2.5)
@@ -43,16 +48,13 @@ class SpatialPrediction:
         kwargs.setdefault('shift_time', 10)
         kwargs.setdefault('num_cores', 1)
         kwargs.setdefault('num_surrogates', 200)
-        kwargs.setdefault('saving_path', os.getcwd())
-        kwargs.setdefault('saving', False)
-        kwargs.setdefault('saving_string', 'SpatialMetrics')
         kwargs.setdefault('nbins_cal', 10)
 
 
         valid_kwargs = ['num_of_folds','classifier','signal_type','animal_id', 'day', 'neuron', 'dataset', 'trial',
                         'min_time_spent', 'min_visits', 'min_speed_threshold', 'speed_smoothing_sigma',
                         'x_bin_size', 'y_bin_size', 'shift_time', 'map_smoothing_sigma_x','map_smoothing_sigma_y','num_cores',
-                        'num_surrogates', 'saving_path', 'saving', 'saving_string', 'environment_edges', 'nbins_cal']
+                        'num_surrogates', 'saving_path', 'saving', 'saving_string', 'environment_edges', 'nbins_cal','overwrite']
         
 
         for k, v in kwargs.items():
@@ -68,6 +70,13 @@ class SpatialPrediction:
     def main(self, signal_data):
 
         warnings.filterwarnings("ignore", category=RuntimeWarning)
+        
+        filename = hf.filename_constructor(self.saving_string, self.animal_id, self.dataset, self.day, self.neuron, self.trial)
+        full_path = f"{self.saving_path}/{filename}"
+        # Check if the file exists and handle based on the overwrite flag
+        if os.path.exists(full_path) and not self.overwrite:
+            print(f"File already exists and overwrite is set to False: {full_path}")
+            return
         
         if np.all(np.isnan(signal_data.input_signal)):
             warnings.warn("Signal contains only NaN's")
