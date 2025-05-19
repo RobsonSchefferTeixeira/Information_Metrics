@@ -55,7 +55,41 @@ def get_spikes_surrogate(time_stamps, time_vector, shift_time_limit):
 
     return np.sort(time_stamps_shifted)
 
-def get_signal_surrogate(input_vector, sampling_rate, shift_time):
+def get_signal_surrogate(input_array, sampling_rate, shift_time, axis=0):
+    """
+    Generate a surrogate signal by applying a time shift to the input array.
+
+    This function creates a surrogate signal by shifting the input array in time
+    along the specified axis while maintaining the same signal characteristics.
+
+    Parameters:
+        input_array (numpy.ndarray): The input signal to generate a surrogate for.
+        sampling_rate (float): The sampling rate of the input signal (samples per second).
+        shift_time (float): The desired time shift for the surrogate signal (seconds).
+        axis (int): The axis along which to apply the time shift.
+
+    Returns:
+        numpy.ndarray: The surrogate signal obtained by applying the time shift.
+    """
+    # Calculate the maximum allowable shift in samples
+    max_shift_samples = int(np.floor(input_array.shape[axis] / 2))
+    desired_shift_samples = int(np.round(sampling_rate * shift_time))
+
+    # Adjust the shift if it exceeds half the length of the signal along the specified axis
+    if abs(desired_shift_samples) > max_shift_samples:
+        desired_shift_samples = max_shift_samples * np.sign(desired_shift_samples)
+
+    # Generate a random shift within the allowable range
+    shift_samples = np.random.randint(-abs(desired_shift_samples), abs(desired_shift_samples) + 1)
+
+    # Apply the time shift using np.roll
+    input_array_shifted = np.roll(input_array, shift=shift_samples, axis=axis)
+
+    return input_array_shifted
+
+
+
+def get_signal_surrogate_old(input_vector, sampling_rate, shift_time):
     """
     Generate a surrogate signal by applying a time shift to the input vector.
 

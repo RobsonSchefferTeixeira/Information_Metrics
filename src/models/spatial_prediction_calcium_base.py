@@ -6,8 +6,12 @@ import warnings
 from src.utils import helper_functions as hf
 from src.utils import surrogate_functions as surrogate
 from src.utils import information_base as info
+from src.utils import smoothing_functions as smooth
+
 from src.utils.validators import ParameterValidator,DataValidator
 import src.utils.bootstrapped_estimation as be
+import src.utils.decoding_model_helper_functions as decoding
+
 
 from tqdm.auto import tqdm
 from tqdm_joblib import tqdm_joblib
@@ -26,6 +30,7 @@ class SpatialPrediction:
         kwargs.setdefault('neuron', None)
         kwargs.setdefault('trial', None)
         kwargs.setdefault('dataset', None)
+
         kwargs.setdefault('min_time_spent', 0.1)
         kwargs.setdefault('min_visits', 1)
         kwargs.setdefault('min_speed_threshold', 2.5)
@@ -42,19 +47,12 @@ class SpatialPrediction:
         kwargs.setdefault('saving', False)
         kwargs.setdefault('saving_string', 'SpatialMetrics')
         kwargs.setdefault('nbins_cal', 10)
-        kwargs.setdefault('percentile_threshold', 95)
-        kwargs.setdefault('min_num_of_bins', 4)
-        kwargs.setdefault('detection_threshold', 2)
-        kwargs.setdefault('detection_smoothing_sigma_x', 2)
-        kwargs.setdefault('detection_smoothing_sigma_y', 2)
-        kwargs.setdefault('field_detection_method','std_from_field')
-        kwargs.setdefault('alpha',0.05)
+
 
         valid_kwargs = ['num_of_folds','classifier','signal_type','animal_id', 'day', 'neuron', 'dataset', 'trial',
                         'min_time_spent', 'min_visits', 'min_speed_threshold', 'speed_smoothing_sigma',
-                        'x_bin_size', 'y_bin_size', 'shift_time', 'map_smoothing_sigma_x','map_smoothing_sigma_y','num_cores', 'percentile_threshold','min_num_of_bins',
-                        'num_surrogates', 'saving_path', 'saving', 'saving_string', 'environment_edges', 'nbins_cal',
-                        'detection_threshold','detection_smoothing_sigma_x','detection_smoothing_sigma_y','field_detection_method','alpha']
+                        'x_bin_size', 'y_bin_size', 'shift_time', 'map_smoothing_sigma_x','map_smoothing_sigma_y','num_cores',
+                        'num_surrogates', 'saving_path', 'saving', 'saving_string', 'environment_edges', 'nbins_cal']
         
 
         for k, v in kwargs.items():
@@ -71,11 +69,10 @@ class SpatialPrediction:
 
         warnings.filterwarnings("ignore", category=RuntimeWarning)
         
-        
         if np.all(np.isnan(signal_data.input_signal)):
             warnings.warn("Signal contains only NaN's")
             inputdict = np.nan
-            filename = self.filename_constructor(self.saving_string, self.animal_id, self.dataset, self.day,
+            filename = hf.filename_constructor(self.saving_string, self.animal_id, self.dataset, self.day,
                                                  self.neuron, self.trial)
         else:
             signal_data.x_coordinates, signal_data.y_coordinates = hf.correct_coordinates(signal_data.x_coordinates,signal_data.y_coordinates,environment_edges=signal_data.environment_edges)
@@ -96,49 +93,61 @@ class SpatialPrediction:
 
             DataValidator.get_valid_timepoints(signal_data, self.min_speed_threshold, self.min_visits, self.min_time_spent)
 
-            position_occupancy = hf.get_occupancy(signal_data.x_coordinates, signal_data.y_coordinates, x_grid, y_grid, signal_data.sampling_rate)
             
-            speed_occupancy = hf.get_speed_occupancy(signal_data.speed,signal_data.x_coordinates, signal_data.y_coordinates,x_grid, y_grid)
-            
-            visits_occupancy = hf.get_visits_occupancy(signal_data.x_coordinates, signal_data.y_coordinates, signal_data.new_visits_times, x_grid, y_grid)
-
-
-            activity_map, activity_map_smoothed = hf.get_2D_activity_map(signal_data.input_signal, signal_data.x_coordinates,
-                                                                    signal_data.y_coordinates, x_grid, y_grid,
-                                                                    self.map_smoothing_sigma_x,self.map_smoothing_sigma_y)
 
             signal_data.add_peaks_detection(self.signal_type)
             
             signal_data.add_binned_input_signal(self.nbins_cal)
 
+            X = signal_data.input_signal_binned.copy().reshape(-1,1)
+            y = signal_data.position_binned.copy()
+
+            y_pred = self.run_classifier(X,y,kfolds = self.num_of_folds)
+
+            continuous_error,mean_error = self.get_continuous_error(y_pred,signal_data.x_coordinates,signal_data.y_coordinates,
+                            x_center_bins_repeated,y_center_bins_repeated)
+
+            spatial_error = self.get_spatial_error(continuous_error,y,x_center_bins,y_center_bins)
+                                
+            spatial_error_smoothed = self.get_smoothed_spatial_error(spatial_error,x_center_bins,y_center_bins, self.map_smoothing_sigma_x, self.map_smoothing_sigma_y)
 
 
+            results = self.parallelize_surrogate(X,y,self.num_of_folds,signal_data.x_coordinates,signal_data.y_coordinates,x_center_bins, y_center_bins,
+                            x_center_bins_repeated, y_center_bins_repeated, signal_data.sampling_rate, self.shift_time,
+                            self.num_cores, self.num_surrogates)
 
 
+            mean_error_shifted = []
+            spatial_error_shifted = []
+            for perm in range(self.num_surrogates):
+                mean_error_shifted.append(results[perm][0])
+                spatial_error_shifted.append(results[perm][1])
+            mean_error_shifted = np.array(mean_error_shifted)
+            spatial_error_shifted = np.array(spatial_error_shifted)
 
-            Input_Variable,Target_Variable = self.define_input_variables(calcium_imag_valid,position_binned_valid,time_bin=1)
-
-            concat_accuracy,concat_continuous_error,concat_mean_error,concat_continuous_accuracy = self.run_all_folds(Input_Variable,Target_Variable,x_coordinates_valid,y_coordinates_valid,self.num_of_folds,x_center_bins_repeated,y_center_bins_repeated,self.mean_video_srate)
-
-            spatial_error = self.get_spatial_error(concat_continuous_error,Target_Variable,x_center_bins,y_center_bins)
-            smoothed_spatial_error = self.smooth_spatial_error(spatial_error,spatial_bins=self.smoothing_size)
+            mean_error_zscored, mean_error_centered = info.get_mutual_information_zscored(mean_error, mean_error_shifted)
+            
+            mean_error_statistic = be.calculate_p_value(mean_error, mean_error_shifted, alternative='less')
+            mean_error_pvalue = mean_error_statistic.p_value
 
             inputdict = dict()
-            inputdict['concat_accuracy'] = concat_accuracy
-            inputdict['concat_continuous_error'] = concat_continuous_error
-            inputdict['concat_continuous_accuracy'] = concat_continuous_accuracy
-            inputdict['concat_mean_error'] = concat_mean_error     
+            
+            inputdict['continuous_error'] = continuous_error
+            inputdict['mean_error'] = mean_error
+            inputdict['mean_error_zscored'] = mean_error_zscored
+            inputdict['mean_error_centered'] = mean_error_centered
+            inputdict['mean_error_shifted'] = mean_error_shifted     
+            inputdict['mean_error_pvalue'] = mean_error_pvalue     
+ 
             inputdict['spatial_error'] = spatial_error
-            inputdict['spatial_error_smoothed'] = smoothed_spatial_error
+            inputdict['spatial_error_shifted'] = spatial_error_shifted
+
+            inputdict['spatial_error_smoothed'] = spatial_error_smoothed
             inputdict['x_grid'] = x_grid
             inputdict['y_grid'] = y_grid
             inputdict['x_center_bins'] = x_center_bins
             inputdict['y_center_bins'] = y_center_bins
-            inputdict['numb_events'] = numb_events
-            inputdict['events_index'] = all_I_peaks
-            inputdict['events_amp'] = events_amp
-            inputdict['events_x_localization'] = events_x_localization
-            inputdict['events_y_localization'] = events_y_localization
+
             inputdict['input_parameters'] = self.__dict__['input_parameters']
 
             filename = hf.filename_constructor(self.saving_string,self.animal_id,self.dataset,self.day,self.neuron,self.trial)
@@ -149,149 +158,125 @@ class SpatialPrediction:
                 print('File not saved!')
 
         return inputdict
+        
     
-    def define_input_variables(self,calcium_imag_valid,position_binned_valid,time_bin):
 
-        calcium_imag_valid_norm = hf.min_max_norm(calcium_imag_valid)
-        Input_Variable = np.copy(calcium_imag_valid_norm.T)
-        Target_Variable = np.copy(position_binned_valid)
-        return Input_Variable,Target_Variable           
+    def parallelize_surrogate(self,X,y,kfolds,x_coordinates,y_coordinates,x_center_bins, y_center_bins,
+                            x_center_bins_repeated, y_center_bins_repeated, sampling_rate, shift_time,
+                            num_cores, num_surrogates):
+        
+
+        with tqdm_joblib(tqdm(desc="Processing Surrogates", total=num_surrogates)) as progress_bar:
+            results = Parallel(n_jobs=num_cores)(
+                delayed(self.run_classifier_surrogate)
+                (
+                    X, y, kfolds, x_coordinates,y_coordinates, x_center_bins, y_center_bins, 
+                    x_center_bins_repeated, y_center_bins_repeated, sampling_rate, shift_time
+                )
+                for _ in range(num_surrogates)
+            )
+        return results
+
+
+    def run_classifier_surrogate(self, X, y, kfolds, x_coordinates,y_coordinates, x_center_bins, y_center_bins, 
+                                x_center_bins_repeated, y_center_bins_repeated, sampling_rate, shift_time):
+        
+        X_shifted = surrogate.get_signal_surrogate(X, sampling_rate, shift_time, axis=0)
+        y_pred_shifted = self.run_classifier(X_shifted, y, kfolds)
+
+        continuous_error_shifted,mean_error_shifted = self.get_continuous_error(y_pred_shifted,x_coordinates,y_coordinates,
+                                                                        x_center_bins_repeated,y_center_bins_repeated)
+
+        spatial_error_shifted = self.get_spatial_error(continuous_error_shifted,y,x_center_bins,y_center_bins)
+
+        return mean_error_shifted,spatial_error_shifted
 
     
-    def run_all_folds(self,Input_Variable,Target_Variable,x_coordinates_valid,y_coordinates_valid,num_of_folds,x_center_bins_repeated,y_center_bins_repeated,mean_video_srate):
+    def run_classifier(self, X, y, kfolds=3):
+        
+        from sklearn.naive_bayes import GaussianNB
 
-        concat_continuous_accuracy = []
-        concat_continuous_error = []
-        concat_mean_error = []
-        concat_accuracy = []
-        for fold in range(1,num_of_folds+1):
-            X_train,y_train,X_test,y_test,Trials_training_set,Trials_testing_set = self.get_fold_trials(Input_Variable,Target_Variable,fold,num_of_folds)
-            classifier_accuracy,y_pred,predict_proba = self.run_classifier(X_train,y_train,X_test,y_test)
+        def random_argmax(probabilities):
+            """
+            Selects a class index randomly among those with the highest probability.
             
-            concat_continuous_accuracy.append((y_pred == y_test).astype(int))
+            Parameters:
+            probabilities (array-like): Array of class probabilities for a single sample.
             
-            x_coordinates_test = x_coordinates_valid[Trials_testing_set].copy()
-            y_coordinates_test = y_coordinates_valid[Trials_testing_set].copy()
+            Returns:
+            int: Index of the selected class.
+            """
+            max_prob = np.nanmax(probabilities)
+            candidates = np.flatnonzero(probabilities == max_prob)
+            return np.random.choice(candidates)
 
-            continuous_error,mean_error = self.get_continuous_error(y_test,y_pred,x_coordinates_test,y_coordinates_test,x_center_bins_repeated,y_center_bins_repeated)
 
-            concat_accuracy.append(classifier_accuracy)
-            concat_continuous_error.append(continuous_error)
-            concat_mean_error.append(mean_error)
-
-        concat_continuous_accuracy = np.concatenate(concat_continuous_accuracy)
-        concat_accuracy = np.array(concat_accuracy)
-        concat_continuous_error = np.concatenate(concat_continuous_error)
-        concat_mean_error = np.array(concat_mean_error)
-
-        return concat_accuracy,concat_continuous_error,concat_mean_error,concat_continuous_accuracy
-
-    def get_fold_trials(self,Input_Variable,Target_Variable,fold,num_of_folds):
-
-        window_size = int(np.floor(Input_Variable.shape[0]/num_of_folds))
-        I_start = np.arange(0,Input_Variable.shape[0],window_size)
-
-        if fold==(num_of_folds):
-            Trials_testing_set =  np.arange(I_start[fold-1],Input_Variable.shape[0]).astype(int)
-        elif (fold == 0) | (fold > num_of_folds):
-            raise ValueError('Fold number must be a integer between 1 and num_of_folds') 
-        else:
-            Trials_testing_set =  np.arange(I_start[fold-1],I_start[fold]).astype(int)
-
-        Trials_training_set = np.setdiff1d(range(Input_Variable.shape[0]),Trials_testing_set)
-
-        X_train = Input_Variable[Trials_training_set,:].copy()
-        y_train = Target_Variable[Trials_training_set].copy()
-
-        X_test = Input_Variable[Trials_testing_set,:].copy()
-        y_test = Target_Variable[Trials_testing_set].copy()
-
-        return X_train,y_train,X_test,y_test,Trials_training_set,Trials_testing_set
-
-    def run_classifier(self,X_train,y_train,X_test,y_test):
-
-        priors_in = np.ones(np.unique(y_train).shape[0])/np.unique(y_train).shape[0]
-
-        gnb = GaussianNB(priors = priors_in)
-        gnb.fit(X_train, y_train)
-        predict_proba = gnb.predict_proba(X_test)
-
-        accuracy_original = gnb.score(X_test, y_test)
-
-        # When the classifier assigns the same probability to all classes, the argmax returns the lowest index.
-        # To avoid this, we add a small random number to the probabilities.
-        # y_pred = gnb.predict(X_test)
-        # y_test = y_test.astype(int)
-        # y_pred = y_pred.astype(int)
+        folds_samples = decoding.kfold_split_continuous(y, kfolds)
         y_pred = []
-        for ii in range(len(predict_proba)):
-            predict_proba[ii] += np.random.randn(predict_proba[ii].shape[0]) / 100
-            y_pred.append(gnb.classes_[np.argmax(predict_proba[ii])])
-        y_pred = np.array(y_pred).astype(int)
 
-        return accuracy_original,y_pred,predict_proba
+        for test_fold in range(kfolds):
+            X_train, X_test, y_train, y_test = decoding.kfold_run(X, y, folds_samples, test_fold)
 
+            priors_in = np.ones(np.unique(y_train).shape[0]) / np.unique(y_train).shape[0]
 
-    
-    def get_spatial_error(self,continuous_error,y_test,x_center_bins,y_center_bins):
+            gnb = GaussianNB(priors=priors_in)
+            gnb.fit(X_train, y_train)
+            predict_probability = gnb.predict_proba(X_test)
 
-        pred_dist_grid_original = np.zeros((y_center_bins.shape[0],x_center_bins.shape[0]))*np.nan
-        count = 0
-        for xx in range(pred_dist_grid_original.shape[1]):
-            for yy in range(pred_dist_grid_original.shape[0]):
+            y_pred_fold = []
+            for probs in predict_probability:
+                selected_class_index = random_argmax(probs)
+                y_pred_fold.append(gnb.classes_[selected_class_index])
 
-                I_test = np.where(y_test == count)[0]
-                if len(I_test)>0:
-                    pred_dist_grid_original[yy,xx] = np.nanmean(continuous_error[I_test])
+            y_pred.append(np.array(y_pred_fold).astype(int))
 
-                count += 1
-        return pred_dist_grid_original
+        y_pred = np.concatenate(y_pred)
+        return y_pred
 
 
-    def get_continuous_error(self,y_test,y_pred,x_coordinates,y_coordinates,
-                             x_center_bins_repeated,y_center_bins_repeated):
+    def get_continuous_error(self,y_pred,x_coordinates,y_coordinates,
+                            x_center_bins_repeated,y_center_bins_repeated):
 
         diffx = (x_center_bins_repeated[y_pred]-x_coordinates)**2
         diffy = (y_center_bins_repeated[y_pred]-y_coordinates)**2
 
-        continuous_nearest_dist_to_predicted = np.sqrt(diffx + diffy)
-        continuous_nearest_dist_to_predicted = np.array(continuous_nearest_dist_to_predicted)
-        mean_nearest_dist_to_predicted = np.nanmean(continuous_nearest_dist_to_predicted)
-        return continuous_nearest_dist_to_predicted,mean_nearest_dist_to_predicted
+        continuous_error = np.sqrt(diffx + diffy)
+        continuous_error = np.array(continuous_error)
+        mean_error = np.nanmean(continuous_error)
+        return continuous_error,mean_error
 
 
-    def get_valid_timepoints(self, calcium_imag, speed, visits_bins, time_spent_inside_bins, min_speed_threshold,
-                             min_visits, min_time_spent):
+    def get_spatial_error(self,continuous_error,y,x_center_bins,y_center_bins):
 
-        # min speed
-        I_speed_thres = speed >= min_speed_threshold
+        spatial_error = np.zeros((y_center_bins.shape[0],x_center_bins.shape[0]))*np.nan
+        count = 0
+        for xx in range(spatial_error.shape[1]):
+            for yy in range(spatial_error.shape[0]):
+                y_mask = y == count
+                if np.nansum(y_mask) > 0:
+                    spatial_error[yy,xx] = np.nanmean(continuous_error[y_mask])
+                count += 1
+            
+        return spatial_error
 
-        # min visits
-        I_visits_times_thres = visits_bins >= min_visits
+    def get_smoothed_spatial_error(self,spatial_error,x_center_bins,y_center_bins, sigma_x,sigma_y):
 
-        # min time spent
-        I_time_spent_thres = time_spent_inside_bins >= min_time_spent
+        if sigma_y is None:
+            sigma_y = sigma_x
 
-        # valid calcium points
-        I_valid_calcium = ~np.any(np.isnan(calcium_imag),0)
-        # I_valid_calcium = ~np.isnan(calcium_imag)
+        sigma_x_points = smooth.get_sigma_points(sigma_x,x_center_bins)
+        sigma_y_points = smooth.get_sigma_points(sigma_y,y_center_bins)
 
-        I_keep = I_speed_thres * I_visits_times_thres * I_time_spent_thres * I_valid_calcium
-        return I_keep
+        kernel, (x_mesh, y_mesh) = smooth.generate_2d_gaussian_kernel(sigma_x_points, sigma_y_points, radius_x=None, radius_y=None, truncate=4.0)
+
+        spatial_error_smoothed = smooth.gaussian_smooth_2d(spatial_error, kernel, handle_nans=False)
+
+        return spatial_error_smoothed
 
 
-    def smooth_spatial_error(self,original_spatial_error,spatial_bins=2):
         
 
-        original_spatial_error_to_smooth = np.copy(original_spatial_error)
-        I_nan = np.isnan(original_spatial_error_to_smooth)
-        original_spatial_error_to_smooth[I_nan] = 0 
-        smoothed_spatial_error = -hf.gaussian_smooth_2d(-original_spatial_error_to_smooth,spatial_bins)
-        # smoothed_spatial_error[I_nan] = np.nan
-        return smoothed_spatial_error
-
-
-
+'''
 class SpatialPredictionSurrogates(SpatialPrediction):
     
     def main(self,calcium_imag,track_timevector,x_coordinates,y_coordinates):
@@ -438,3 +423,4 @@ class SpatialPredictionSurrogates(SpatialPrediction):
         I_break = np.random.choice(np.arange(-shift_time*mean_video_srate,mean_video_srate*shift_time),1)[0].astype(int)
         input_vector_shuffled = np.concatenate([input_vector[:,I_break:], input_vector[:,0:I_break]],1)
         return input_vector_shuffled
+'''
