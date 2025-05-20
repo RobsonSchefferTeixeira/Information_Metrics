@@ -69,3 +69,38 @@ class ProcessData:
         # else:
         #    warnings.warn(f"Unrecognized signal_type '{signal_type}'. Expected 'binary' or 'continuous'.", UserWarning)
 
+
+    @staticmethod
+    def sync_imaging_to_video(input_signal, time_vector, track_time_vector):
+        """
+        Interpolates input_signal from time_vector to track_time_vector.
+        Warns if track_time_vector is outside the time range of time_vector.
+
+        Parameters:
+        - input_signal (np.ndarray): Original signal values.
+        - time_vector (np.ndarray): Time in seconds for each input_signal point.
+        - track_time_vector (np.ndarray): New time vector to interpolate onto.
+
+        Returns:
+        - track_input_signal (np.ndarray): Interpolated signal at track_time_vector.
+        """
+
+        if np.isnan(input_signal).any():
+            warnings.warn("input_signal contains NaN values. These may propagate or distort interpolation.")
+
+        if np.isnan(time_vector).any():
+            warnings.warn("time_vector contains NaN values. This may break interpolation.")
+
+        if np.isnan(track_time_vector).any():
+            warnings.warn("track_time_vector contains NaN values. Output will have NaNs at those positions.")
+
+        if track_time_vector[0] < time_vector[0]:
+            warnings.warn("track_time_vector starts before the first time point in time_vector. Values are extrapolated.")
+
+        if track_time_vector[-1] > time_vector[-1]:
+            warnings.warn("track_time_vector ends after the last time point in time_vector. Values are extrapolated.")
+
+        # Perform interpolation
+        track_input_signal = np.interp(track_time_vector, time_vector, input_signal)
+
+        return track_input_signal

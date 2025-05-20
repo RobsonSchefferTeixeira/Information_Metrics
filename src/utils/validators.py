@@ -257,6 +257,10 @@ class DataValidator:
             if len(arr) != n_timesteps:
                 raise ValueError(f"{name} length {len(arr)} doesn't match input_signal timesteps {n_timesteps}")
     
+        if np.diff(signal_data.time_vector).min() <= 0:
+            warnings.warn("time_vector is not strictly increasing",UserWarning)
+
+
     @staticmethod
     def filter_invalid_values(signal_data):
         """
@@ -295,7 +299,7 @@ class DataValidator:
 
         # Final validation check: Warn if no data is left.
         if len(signal_data.time_vector) == 0:
-            warnings.warn("All data points were removed during validation - check for excessive NaN/inf values")
+            warnings.warn("All data points were removed during validation - check for excessive NaN/inf values",UserWarning)
 
 
     @staticmethod

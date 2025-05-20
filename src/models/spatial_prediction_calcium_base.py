@@ -213,7 +213,7 @@ class SpatialPrediction:
 
         return mean_error_shifted,spatial_error_shifted,continuous_error_shifted
 
-    
+    ''' 
     def run_classifier(self, X, y, kfolds=3):
         
         from sklearn.naive_bayes import GaussianNB
@@ -254,6 +254,75 @@ class SpatialPrediction:
 
         y_pred = np.concatenate(y_pred)
         return y_pred
+        '''
+
+    def run_classifier(self, X, y, kfolds=3):
+
+        from sklearn.naive_bayes import GaussianNB
+
+
+        def random_argmax(probabilities, epsilon=np.finfo(float).eps):
+            """
+            Adds small random noise to the probabilities and returns the index of the maximum value.
+            
+            Parameters:
+            probabilities (array-like): Array of class probabilities for a single sample.
+            epsilon (float): Standard deviation of the Gaussian noise to add.
+            
+            Returns:
+            int: Index of the selected class.
+            """
+            noise = np.random.normal(loc=0.0, scale=epsilon, size=probabilities.shape)
+            noisy_probs = probabilities + noise
+            return np.argmax(noisy_probs)
+
+            '''
+            def random_argmax(probabilities):
+                """
+                Selects a class index randomly among those with the highest probability.
+                """
+                max_prob = np.nanmax(probabilities)
+                candidates = np.flatnonzero(probabilities == max_prob)
+                return np.random.choice(candidates)
+            '''
+            
+        # Step 1: Generate a random label mapping
+        unique_labels = np.unique(y)
+        shuffled_labels = np.random.permutation(unique_labels)
+        label_mapping = dict(zip(unique_labels, shuffled_labels))
+        inverse_label_mapping = {v: k for k, v in label_mapping.items()}
+
+        # Step 2: Apply the mapping to y
+        y_mapped = np.vectorize(label_mapping.get)(y)
+
+        # Step 3: Proceed with training and prediction using y_mapped
+        folds_samples = decoding.kfold_split_continuous(y_mapped, kfolds)
+        y_pred = []
+
+        for test_fold in range(kfolds):
+            X_train, X_test, y_train, y_test = decoding.kfold_run(X, y_mapped, folds_samples, test_fold)
+
+            unique_classes = np.unique(y_train)
+            priors_in = np.ones(len(unique_classes)) / len(unique_classes)
+            gnb = GaussianNB(priors=priors_in)
+            gnb.fit(X_train, y_train)
+            predict_probability = gnb.predict_proba(X_test)
+
+            y_pred_fold = []
+            for probs in predict_probability:
+                selected_class_index = random_argmax(probs)
+                y_pred_fold.append(gnb.classes_[selected_class_index])
+
+            y_pred.append(y_pred_fold)
+
+        # Concatenate predictions from all folds
+        y_pred = np.concatenate(y_pred)
+
+        # Step 4: Restore original labels in predictions
+        y_pred_restored = np.vectorize(inverse_label_mapping.get)(y_pred)
+
+        return y_pred_restored.astype(int)
+
 
 
     def get_continuous_error(self,y_pred,x_coordinates,y_coordinates,
