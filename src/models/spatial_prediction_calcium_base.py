@@ -81,8 +81,7 @@ class SpatialPrediction:
         if np.all(np.isnan(signal_data.input_signal)):
             warnings.warn("Signal contains only NaN's")
             inputdict = np.nan
-            filename = hf.filename_constructor(self.saving_string, self.animal_id, self.dataset, self.day,
-                                                 self.neuron, self.trial)
+
         else:
             signal_data.x_coordinates, signal_data.y_coordinates = hf.correct_coordinates(signal_data.x_coordinates,signal_data.y_coordinates,environment_edges=signal_data.environment_edges)
 
@@ -102,13 +101,12 @@ class SpatialPrediction:
 
             DataValidator.get_valid_timepoints(signal_data, self.min_speed_threshold, self.min_visits, self.min_time_spent)
 
-            
-
             signal_data.add_peaks_detection(self.signal_type)
             
             signal_data.add_binned_input_signal(self.nbins_cal)
 
             X = signal_data.input_signal_binned.copy().reshape(-1,1)
+
             y = signal_data.position_binned.copy()
 
             y_pred = self.run_classifier(X,y,kfolds = self.num_of_folds)
@@ -125,19 +123,28 @@ class SpatialPrediction:
                             x_center_bins_repeated, y_center_bins_repeated, signal_data.sampling_rate, self.shift_time,
                             self.num_cores, self.num_surrogates)
 
+            events_error = np.nanmean(continuous_error[signal_data.peaks_idx])
 
             mean_error_shifted = []
             spatial_error_shifted = []
+            events_error_shifted = []
             for perm in range(self.num_surrogates):
                 mean_error_shifted.append(results[perm][0])
                 spatial_error_shifted.append(results[perm][1])
+                continuous_error_shifted = results[perm][2]
+                events_error_shifted.append(np.nanmean(continuous_error_shifted[signal_data.peaks_idx]))
             mean_error_shifted = np.array(mean_error_shifted)
             spatial_error_shifted = np.array(spatial_error_shifted)
+            events_error_shifted = np.array(events_error_shifted)
 
             mean_error_zscored, mean_error_centered = info.get_mutual_information_zscored(mean_error, mean_error_shifted)
-            
             mean_error_statistic = be.calculate_p_value(mean_error, mean_error_shifted, alternative='less')
             mean_error_pvalue = mean_error_statistic.p_value
+
+            events_error_zscored, events_error_centered = info.get_mutual_information_zscored(events_error, events_error_shifted)
+            events_error_statistic = be.calculate_p_value(events_error, events_error_shifted, alternative='less')
+            events_error_pvalue = events_error_statistic.p_value
+
 
             inputdict = dict()
             
@@ -148,6 +155,12 @@ class SpatialPrediction:
             inputdict['mean_error_shifted'] = mean_error_shifted     
             inputdict['mean_error_pvalue'] = mean_error_pvalue     
  
+            inputdict['events_error'] = events_error     
+            inputdict['events_error_zscored'] = events_error_zscored     
+            inputdict['events_error_centered'] = events_error_centered  
+            inputdict['events_error_shifted'] = events_error_shifted    
+            inputdict['events_error_pvalue'] = events_error_pvalue     
+
             inputdict['spatial_error'] = spatial_error
             inputdict['spatial_error_shifted'] = spatial_error_shifted
 
@@ -198,7 +211,7 @@ class SpatialPrediction:
 
         spatial_error_shifted = self.get_spatial_error(continuous_error_shifted,y,x_center_bins,y_center_bins)
 
-        return mean_error_shifted,spatial_error_shifted
+        return mean_error_shifted,spatial_error_shifted,continuous_error_shifted
 
     
     def run_classifier(self, X, y, kfolds=3):
@@ -281,155 +294,3 @@ class SpatialPrediction:
         spatial_error_smoothed = smooth.gaussian_smooth_2d(spatial_error, kernel, handle_nans=False)
 
         return spatial_error_smoothed
-
-
-        
-
-'''
-class SpatialPredictionSurrogates(SpatialPrediction):
-    
-    def main(self,calcium_imag,track_timevector,x_coordinates,y_coordinates):
-        
-       
-        if np.all(np.isnan(calcium_imag)):
-            warnings.warn("Signal contains only NaN's")
-            inputdict = np.nan
-        else:
-
-            calcium_imag = np.atleast_2d(calcium_imag)
-            if np.any(np.isnan(calcium_imag)):
-                I_keep = ~np.isnan(calcium_imag)
-                calcium_imag = calcium_imag[:,I_keep]
-                track_timevector = track_timevector[I_keep]
-                x_coordinates = x_coordinates[I_keep]
-                y_coordinates = y_coordinates[I_keep]
-
-    
-            speed = hf.get_speed(x_coordinates, y_coordinates, track_timevector)
-
-            x_grid, y_grid, x_center_bins, y_center_bins, x_center_bins_repeated, y_center_bins_repeated = hf.get_position_grid(x_coordinates, y_coordinates, self.x_bin_size,self.y_bin_size, environment_edges=self.environment_edges)
-
-            position_binned = hf.get_binned_2Dposition(x_coordinates, y_coordinates, x_grid, y_grid)
-
-            visits_bins, new_visits_times = hf.get_visits(x_coordinates, y_coordinates, position_binned,
-                                                            x_center_bins, y_center_bins)
-            time_spent_inside_bins = hf.get_position_time_spent(position_binned, self.mean_video_srate)
-
-            I_keep = self.get_valid_timepoints(calcium_imag, speed, visits_bins, time_spent_inside_bins,
-                                               self.min_speed_threshold, self.min_visits, self.min_time_spent)
-
-            calcium_imag_valid = calcium_imag[:,I_keep].copy()
-            x_coordinates_valid = x_coordinates[I_keep].copy()
-            y_coordinates_valid = y_coordinates[I_keep].copy()
-            track_timevector_valid = track_timevector[I_keep].copy()
-            visits_bins_valid = visits_bins[I_keep].copy()
-            position_binned_valid = position_binned[I_keep].copy()
-
-
-            results = self.parallelize_surrogate(calcium_imag,I_keep, position_binned_valid,x_coordinates_valid,y_coordinates_valid,self.num_of_folds, x_center_bins,y_center_bins,self.x_bin_size,self.y_bin_size,x_center_bins_repeated,y_center_bins_repeated,self.mean_video_srate,self.num_cores,self.num_surrogates,self.shift_time)
-
-            concat_accuracy = []
-            concat_continuous_error = []
-            concat_mean_error = []
-            I_peaks = []
-            spatial_error = []
-            smoothed_spatial_error = []
-            numb_events = []
-            events_amp = []
-            events_x_localization = []
-            events_y_localization = []
-            spatial_error = []
-            smoothed_spatial_error = []
-            all_I_peaks = []
-            events_x_localization = []
-            events_y_localization = []
-            numb_events = []
-            events_amp = []
-            concat_continuous_accuracy = []
-            for surr in range(self.num_surrogates):
-                concat_accuracy.append(results[surr][0])
-                concat_continuous_error.append(results[surr][1])
-                concat_mean_error.append(results[surr][2])
-                spatial_error.append(results[surr][3])
-                smoothed_spatial_error.append(results[surr][4])
-                all_I_peaks.append(results[surr][5])
-                events_x_localization.append(results[surr][6])
-                events_y_localization.append(results[surr][7])
-                numb_events.append(results[surr][8])
-                events_amp.append(results[surr][9])
-                concat_continuous_accuracy.append(results[surr][10])
-
-            inputdict = dict()
-            inputdict['concat_accuracy'] = concat_accuracy
-            inputdict['concat_continuous_error'] = concat_continuous_error
-            inputdict['concat_continuous_accuracy'] = concat_continuous_accuracy
-            inputdict['concat_mean_error'] = concat_mean_error
-            inputdict['spatial_error'] = spatial_error
-            inputdict['spatial_error_smoothed'] = smoothed_spatial_error
-            inputdict['x_grid'] = x_grid
-            inputdict['y_grid'] = y_grid
-            inputdict['x_center_bins'] = x_center_bins
-            inputdict['y_center_bins'] = y_center_bins
-            inputdict['numb_events'] = numb_events
-            inputdict['events_index'] = all_I_peaks
-            inputdict['events_amp'] = events_amp
-            inputdict['events_x_localization'] = events_x_localization
-            inputdict['events_y_localization'] = events_y_localization
-            inputdict['input_parameters'] = self.__dict__['input_parameters']
-
-            filename = hf.filename_constructor(self.saving_string,self.animal_id,self.dataset,self.day,self.neuron,self.trial)
-
-            if self.saving == True:
-                hf.caller_saving(inputdict,filename,self.saving_path)
-            else:
-                print('File not saved!')
-
-        return inputdict
-    
-            
- 
-
-    def parallelize_surrogate(self,calcium_imag,I_keep,position_binned_valid,x_coordinates_valid,y_coordinates_valid,num_of_folds,x_center_bins,y_center_bins,
-        x_bin_size,y_bin_size,x_center_bins_repeated,y_center_bins_repeated,mean_video_srate,num_cores,num_surrogates,shift_time):
-        
-        results = Parallel(n_jobs=num_cores)(delayed(self.shuffle_and_run_all_folds)(calcium_imag,I_keep,position_binned_valid,x_coordinates_valid,y_coordinates_valid,num_of_folds,x_center_bins,y_center_bins,
-        x_bin_size,y_bin_size,x_center_bins_repeated,y_center_bins_repeated,mean_video_srate,shift_time) for permi in range(num_surrogates))
-        
-        return results
-    
-    
-    
-    def shuffle_and_run_all_folds(self,calcium_imag,I_keep,position_binned_valid,x_coordinates_valid,y_coordinates_valid,num_of_folds, x_center_bins,y_center_bins,x_bin_size,y_bin_size,x_center_bins_repeated,y_center_bins_repeated,mean_video_srate,shift_time):
-             
-        calcium_imag_shuffled = self.get_surrogate(calcium_imag,mean_video_srate,shift_time)
-        calcium_imag_shuffled_valid = calcium_imag_shuffled[:,I_keep].copy()
-        
-        Input_Variable_Shuffled,Target_Variable = self.define_input_variables(calcium_imag_shuffled_valid,position_binned_valid,time_bin=1)
-        
-        concat_accuracy,concat_continuous_error,concat_mean_error,concat_continuous_accuracy = self.run_all_folds(Input_Variable_Shuffled,                           Target_Variable,x_coordinates_valid,y_coordinates_valid,self.num_of_folds,x_center_bins_repeated,                                                     y_center_bins_repeated,self.mean_video_srate)
-        
-        spatial_error = self.get_spatial_error(concat_continuous_error,Target_Variable,x_center_bins,y_center_bins)
-        smoothed_spatial_error = self.smooth_spatial_error(spatial_error,spatial_bins=2)
-
-        all_I_peaks = []
-        events_x_localization = []
-        events_y_localization = []
-        numb_events = []
-        events_amp = []
-        for cc in range(calcium_imag_shuffled_valid.shape[0]):
-            I_peaks = dp.detect_peaks(np.squeeze(calcium_imag_shuffled_valid[cc,:]),mpd=0.5*self.mean_video_srate,mph=1.*np.nanstd(np.squeeze(calcium_imag_shuffled_valid[cc,:])))
-
-            events_x_localization.append(x_coordinates_valid[I_peaks])
-            events_y_localization.append(y_coordinates_valid[I_peaks])
-            all_I_peaks.append(I_peaks)
-            numb_events.append(I_peaks.shape[0])
-            events_amp.append(np.squeeze(calcium_imag_shuffled_valid[cc,:][I_peaks]))
-
-        return concat_accuracy,concat_continuous_error,concat_mean_error,spatial_error,smoothed_spatial_error,all_I_peaks,events_x_localization,events_y_localization,numb_events,events_amp,concat_continuous_accuracy
-
-    def get_surrogate(self,input_vector,mean_video_srate,shift_time):
-        input_vector = np.atleast_2d(input_vector)
-        I_break = np.random.choice(np.arange(-shift_time*mean_video_srate,mean_video_srate*shift_time),1)[0].astype(int)
-        input_vector_shuffled = np.concatenate([input_vector[:,I_break:], input_vector[:,0:I_break]],1)
-        return input_vector_shuffled
-'''

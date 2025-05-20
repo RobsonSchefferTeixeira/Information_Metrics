@@ -8,7 +8,7 @@ import warnings
 
 class ProcessData:
 
-    def __init__(self, input_signal, x_coordinates, y_coordinates, time_vector, sampling_rate = None, environment_edges = None, speed = None):
+    def __init__(self, input_signal, x_coordinates, y_coordinates, time_vector, sampling_rate = None, environment_edges = None, speed = None, coordinates_correction = True):
         
         self.input_signal = input_signal
         self.x_coordinates = x_coordinates
@@ -21,8 +21,13 @@ class ProcessData:
             self.sampling_rate = 1 / np.nanmean(np.diff(self.time_vector))
 
         
-        DataValidator.validate_input_data(self)
         DataValidator.validate_environment_edges(self,environment_edges)
+        DataValidator.initial_setup(self) # Initial Setup and Conversion
+        DataValidator.validate_and_correct_shape(self) # Shape Validation and Correction
+        if coordinates_correction:
+            self.x_coordinates, self.y_coordinates = hf.correct_coordinates(self.x_coordinates,self.y_coordinates,environment_edges=self.environment_edges)
+        DataValidator.filter_invalid_values(self) # NaN/Infinite Value Filtering
+
 
 
     def add_speed(self,speed_smoothing_sigma):
@@ -47,20 +52,20 @@ class ProcessData:
 
 
     def add_peaks_detection(self,signal_type):
-            if signal_type == 'binary':
+        if signal_type == 'binary':
 
-                self.peaks_idx = self.input_signal == 1
-                self.peaks_amplitude = self.input_signal[self.peaks_idx]
-                self.peaks_x_location = self.x_coordinates[self.peaks_idx]
-                self.peaks_y_location = self.y_coordinates[self.peaks_idx]
+            self.peaks_idx = self.input_signal == 1
+            self.peaks_amplitude = self.input_signal[self.peaks_idx]
+            self.peaks_x_location = self.x_coordinates[self.peaks_idx]
+            self.peaks_y_location = self.y_coordinates[self.peaks_idx]
 
-            else:
+        else:
 
-                self.peaks_idx = hf.detect_peaks(self.input_signal,mpd=0.5 * self.sampling_rate, mph=1. * np.nanstd(self.input_signal))
-                self.peaks_amplitude = self.input_signal[self.peaks_idx]
-                self.peaks_x_location = self.x_coordinates[self.peaks_idx]
-                self.peaks_y_location = self.y_coordinates[self.peaks_idx]
+            self.peaks_idx = hf.detect_peaks(self.input_signal,mpd=0.5 * self.sampling_rate, mph=1. * np.nanstd(self.input_signal))
+            self.peaks_amplitude = self.input_signal[self.peaks_idx]
+            self.peaks_x_location = self.x_coordinates[self.peaks_idx]
+            self.peaks_y_location = self.y_coordinates[self.peaks_idx]
 
-            # else:
-            #    warnings.warn(f"Unrecognized signal_type '{signal_type}'. Expected 'binary' or 'continuous'.", UserWarning)
+        # else:
+        #    warnings.warn(f"Unrecognized signal_type '{signal_type}'. Expected 'binary' or 'continuous'.", UserWarning)
 

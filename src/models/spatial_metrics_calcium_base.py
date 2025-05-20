@@ -79,10 +79,6 @@ class PlaceCell:
         if DataValidator.is_empty_or_all_nan(signal_data.input_signal) or DataValidator.is_empty_or_all_nan(signal_data.x_coordinates) or DataValidator.is_empty_or_all_nan(signal_data.y_coordinates):
             warnings.warn("Signal contains only NaN's or is empty", UserWarning)
             inputdict = np.nan
-            filename = hf.filename_constructor(self.saving_string, self.animal_id, self.dataset, self.day,
-                                                 self.neuron, self.trial)
-            
-
 
         else:
             signal_data.x_coordinates, signal_data.y_coordinates = hf.correct_coordinates(signal_data.x_coordinates,signal_data.y_coordinates,environment_edges=signal_data.environment_edges)
@@ -214,11 +210,7 @@ class PlaceCell:
                 warnings.warn("No field detection method set", UserWarning)
                 num_of_fields, fields_x_max, fields_y_max, pixels_place_cell_absolute, pixels_place_cell_relative, activity_map_identity = [[] for _ in range(6)]
 
-        
-            
             sparsity = hf.get_sparsity(activity_map, position_occupancy)
-
-    
             
             mutual_info_statistic = be.calculate_p_value(mutual_info_original, mutual_info_shifted, alternative='greater')
             mutual_info_pvalue = mutual_info_statistic.p_value
@@ -235,7 +227,6 @@ class PlaceCell:
             mutual_info_skaggs_statistic = be.calculate_p_value(mutual_info_skaggs_original, mutual_info_skaggs_shifted, alternative='greater')
             mutual_info_skaggs_pvalue = mutual_info_skaggs_statistic.p_value
             
-
             if mutual_info_pvalue > self.alpha:
 
                 activity_map_identity = np.zeros(activity_map.shape)*np.nan

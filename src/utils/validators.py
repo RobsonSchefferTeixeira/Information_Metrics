@@ -181,50 +181,56 @@ class DataValidator:
     def is_empty_or_all_nan(arr):
         return arr.size == 0 or np.isnan(arr).all()
 
+    import numpy as np
+import warnings
+
+class DataValidator:
     @staticmethod
-    def validate_input_data(signal_data):
+    def is_empty_or_all_nan(arr):
+        """Return True if the array is None or all values are NaN."""
+        return arr is None or np.all(np.isnan(arr))
+
+    @staticmethod
+    def initial_setup(signal_data):
         """
-        Comprehensive validation and cleaning of input data that:
-        1. Validates array shapes and dimensions
-        2. Handles optional y_coordinates
-        3. Ensures float dtype
-        4. Automatically transposes 2D input_signal if needed
-        5. Removes NaN and infinite values across all arrays
-        
-        Parameters:
-            signal_data (object): Input data object containing:
-                - input_signal (np.ndarray): 1D [timesteps] or 2D [cells × timesteps]
-                - x_coordinates (np.ndarray): 1D array of x positions
-                - y_coordinates (np.ndarray, optional): 1D array of y positions
-                - time_vector (np.ndarray): 1D array of timestamps
+        Initial Setup and Conversion
+
+        - Validates that required fields are present.
+        - Converts 'input_signal', 'x_coordinates', and 'time_vector' to numpy arrays with float dtype.
+        - If time_vector is empty or all NaN, it creates a linspace based on the input_signal length and sampling_rate.
+        - Handles optional y_coordinates if present.
         """
-        # ======================
-        # 1. Initial Setup and Validation
-        # ======================
-        
-        # Check required fields
         required_fields = ['input_signal', 'x_coordinates', 'time_vector']
         for field in required_fields:
             if not hasattr(signal_data, field):
                 raise AttributeError(f"signal_data is missing required field: {field}")
-        
-        if DataValidator.is_empty_or_all_nan(signal_data.time_vector):
-            signal_data.time_vector = np.linspace(0,len(signal_data.input_signal)/signal_data.sampling_rate,len(signal_data.input_signal))
 
-        # Convert to numpy arrays and ensure float type
+        if DataValidator.is_empty_or_all_nan(signal_data.time_vector):
+            signal_data.time_vector = np.linspace(
+                0,
+                len(signal_data.input_signal) / signal_data.sampling_rate,
+                len(signal_data.input_signal)
+            )
+
+        # Convert to numpy arrays with float type
         signal_data.input_signal = np.asarray(signal_data.input_signal, dtype=float)
         signal_data.x_coordinates = np.asarray(signal_data.x_coordinates, dtype=float)
         signal_data.time_vector = np.asarray(signal_data.time_vector, dtype=float)
-        
+
         # Handle optional y_coordinates
-        has_y_coords = hasattr(signal_data, 'y_coordinates') and signal_data.y_coordinates is not None
-        if has_y_coords:
+        if hasattr(signal_data, 'y_coordinates') and signal_data.y_coordinates is not None:
             signal_data.y_coordinates = np.asarray(signal_data.y_coordinates, dtype=float)
-        
-        # ======================
-        # 2. Shape Validation and Correction
-        # ======================
-        
+
+    @staticmethod
+    def validate_and_correct_shape(signal_data):
+        """
+        Shape Validation and Correction
+
+        - Checks input_signal dimensions and auto-transposes if it is 2D with more cells than timesteps.
+        - Determines the expected number of timesteps.
+        - Validates that coordinate arrays (x_coordinates, time_vector, and optionally y_coordinates)
+        are 1D and have lengths matching the number of timesteps.
+        """
         # Validate input_signal shape and auto-transpose if needed
         if signal_data.input_signal.ndim == 1:
             n_timesteps = len(signal_data.input_signal)
@@ -235,51 +241,61 @@ class DataValidator:
             n_timesteps = signal_data.input_signal.shape[1]
         else:
             raise ValueError("input_signal must be 1D [timesteps] or 2D [cells × timesteps]")
-        
-        # Validate coordinate/time dimensions
-        for name, arr in [('x_coordinates', signal_data.x_coordinates),
-                        ('time_vector', signal_data.time_vector)] + \
-                        ([('y_coordinates', signal_data.y_coordinates)] if has_y_coords else []):
+
+        # Validate coordinate arrays
+        has_y_coords = hasattr(signal_data, 'y_coordinates') and signal_data.y_coordinates is not None
+        fields = [
+            ('x_coordinates', signal_data.x_coordinates),
+            ('time_vector', signal_data.time_vector)
+        ]
+        if has_y_coords:
+            fields.append(('y_coordinates', signal_data.y_coordinates))
+
+        for name, arr in fields:
             if arr.ndim != 1:
-                raise ValueError(f"{name} must be 1D array")
+                raise ValueError(f"{name} must be a 1D array")
             if len(arr) != n_timesteps:
                 raise ValueError(f"{name} length {len(arr)} doesn't match input_signal timesteps {n_timesteps}")
-        
-        # ======================
-        # 3. NaN and Infinite Value Filtering
-        # ======================
-        
+    
+    @staticmethod
+    def filter_invalid_values(signal_data):
+        """
+        NaN and Infinite Value Filtering
 
-        # Create combined validity mask
+        - Creates a combined validity mask from x_coordinates, time_vector, input_signal, and y_coordinates (if present).
+        - Uses the mask to filter out any NaN or infinite values from the data arrays.
+        - Raises a warning if all data points are removed.
+        """
+        has_y_coords = hasattr(signal_data, 'y_coordinates') and signal_data.y_coordinates is not None
+
+        # Create combined mask from x_coordinates and time_vector
         valid_mask = np.isfinite(signal_data.x_coordinates) & np.isfinite(signal_data.time_vector)
-        
-        # Handle input_signal based on dimensionality
+
+        # Update mask based on input_signal values
         if signal_data.input_signal.ndim == 1:
             valid_mask &= np.isfinite(signal_data.input_signal)
         else:
             valid_mask &= np.all(np.isfinite(signal_data.input_signal), axis=0)
-        
-        # Include y_coordinates in mask if present
+
+        # Update mask with y_coordinates if present
         if has_y_coords:
             valid_mask &= np.isfinite(signal_data.y_coordinates)
-        
-        # I need to improve this. Let`s deactivate it for now`
-        # Apply filtering
+
+        # Apply filtering based on the dimensionality of input_signal
         if signal_data.input_signal.ndim == 1:
             signal_data.input_signal = signal_data.input_signal[valid_mask]
         else:
             signal_data.input_signal = signal_data.input_signal[:, valid_mask]
-        
+
         signal_data.x_coordinates = signal_data.x_coordinates[valid_mask]
         signal_data.time_vector = signal_data.time_vector[valid_mask]
-        
+
         if has_y_coords:
             signal_data.y_coordinates = signal_data.y_coordinates[valid_mask]
-        
-        # Final validation check
+
+        # Final validation check: Warn if no data is left.
         if len(signal_data.time_vector) == 0:
             warnings.warn("All data points were removed during validation - check for excessive NaN/inf values")
-
 
 
     @staticmethod

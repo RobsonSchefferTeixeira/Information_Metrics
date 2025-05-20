@@ -112,7 +112,7 @@ def robust_z_score_norm_old(input_matrix, axis=0):
     return robust_z_scored_matrix
 
 
-def z_score_norm(input_matrix, axis=0):
+def z_score_norm(input_matrix, axis=0, ddof=1):
     """
     Perform z-score normalization on an input matrix.
 
@@ -125,7 +125,7 @@ def z_score_norm(input_matrix, axis=0):
     """
     # Calculate the mean and standard deviation along the specified axis, handling NaN values.
     mean = np.nanmean(input_matrix, axis=axis, keepdims=True)
-    std = np.nanstd(input_matrix, axis=axis, keepdims=True)
+    std = np.nanstd(input_matrix, axis=axis,ddof = ddof, keepdims=True)
 
     # Check for cases where all values in std are zero to avoid division by zero.
     all_same_values = np.all(std == 0, axis=axis, keepdims=True)

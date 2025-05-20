@@ -73,8 +73,6 @@ class PlaceCellBinarized:
         self.__dict__['input_parameters'] = kwargs
 
 
-
-    # def main(self, input_signal, time_vector, x_coordinates, y_coordinates=None, speed=None):
     def main(self, signal_data):
         
         warnings.filterwarnings("ignore", category=RuntimeWarning)
@@ -89,12 +87,9 @@ class PlaceCellBinarized:
         if np.all(np.isnan(signal_data.input_signal)):
             warnings.warn("Signal contains only NaN's")
             inputdict = np.nan
-            filename = self.filename_constructor(self.saving_string, self.animal_id, self.dataset, self.day,
-                                                 self.neuron, self.trial)
+
         else:
             
-            signal_data.x_coordinates, signal_data.y_coordinates = hf.correct_coordinates(signal_data.x_coordinates,signal_data.y_coordinates,environment_edges=signal_data.environment_edges)
-
             if signal_data.speed is None:
                 signal_data.add_speed(self.speed_smoothing_sigma)
 
@@ -114,7 +109,6 @@ class PlaceCellBinarized:
             signal_data.add_position_time_spent()
 
             DataValidator.get_valid_timepoints(signal_data, self.min_speed_threshold, self.min_visits, self.min_time_spent)
-
 
             position_occupancy = hf.get_occupancy(signal_data.x_coordinates, signal_data.y_coordinates, x_grid, y_grid, signal_data.sampling_rate)
             
