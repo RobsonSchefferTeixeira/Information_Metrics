@@ -175,7 +175,7 @@ class SpatialPrediction:
             filename = hf.filename_constructor(self.saving_string,self.animal_id,self.dataset,self.day,self.neuron,self.trial)
 
             if self.saving == True:
-                hf.caller_saving(inputdict,filename,self.saving_path)
+                hf.caller_saving(inputdict,filename,self.saving_path, self.overwrite)
             else:
                 print('File not saved!')
 

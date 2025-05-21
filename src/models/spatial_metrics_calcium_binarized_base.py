@@ -287,7 +287,7 @@ class PlaceCellBinarized:
                                         self.neuron,self.trial)
 
         if self.saving == True:
-            hf.caller_saving(inputdict, filename, self.saving_path)
+            hf.caller_saving(inputdict, filename, self.saving_path, self.overwrite)
             print(filename + ' saved')
 
         else:

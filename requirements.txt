@@ -5,4 +5,5 @@ scikit-learn>=1.1.1
 pandas>=1.4
 matplotlib>=3.5.2
 ipympl>=0.9
-
+tqdm_joblib >= 0.0.4
+tqdm >= 4.67.1
