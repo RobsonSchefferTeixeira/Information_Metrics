@@ -8,7 +8,7 @@ import warnings
 
 class ProcessData:
 
-    def __init__(self, input_signal, x_coordinates, y_coordinates, time_vector, sampling_rate = None, environment_edges = None, speed = None, coordinates_correction = True):
+    def __init__(self, input_signal, x_coordinates, y_coordinates, time_vector, sampling_rate = None, environment_edges = None, speed = None, coordinates_correction = False):
         
         self.input_signal = input_signal
         self.x_coordinates = x_coordinates
@@ -51,23 +51,32 @@ class ProcessData:
         self.input_signal_binned = info.get_binned_signal(self.input_signal, nbins_cal)
 
 
-    def add_peaks_detection(self,signal_type):
-        if signal_type == 'binary':
+    def add_peaks_detection(self, signal_type):
+        signal = self.input_signal.copy()
+        signal = np.atleast_2d(signal)  # Ensure 2D shape for uniform handling
 
-            self.peaks_idx = self.input_signal == 1
-            self.peaks_amplitude = self.input_signal[self.peaks_idx]
-            self.peaks_x_location = self.x_coordinates[self.peaks_idx]
-            self.peaks_y_location = self.y_coordinates[self.peaks_idx]
 
-        else:
+        self.peaks_idx = []
+        self.peaks_amplitude = []
+        self.peaks_x_location = []
+        self.peaks_y_location = []
 
-            self.peaks_idx = hf.detect_peaks(self.input_signal,mpd=0.5 * self.sampling_rate, mph=1. * np.nanstd(self.input_signal))
-            self.peaks_amplitude = self.input_signal[self.peaks_idx]
-            self.peaks_x_location = self.x_coordinates[self.peaks_idx]
-            self.peaks_y_location = self.y_coordinates[self.peaks_idx]
+        for row in signal:
+            if signal_type == 'binary':
+                peaks = row == 1
+            else:
+                peaks = hf.detect_peaks(
+                    row,
+                    mpd=0.5 * self.sampling_rate,
+                    mph=1. * np.nanstd(row)
+                )
 
-        # else:
-        #    warnings.warn(f"Unrecognized signal_type '{signal_type}'. Expected 'binary' or 'continuous'.", UserWarning)
+            self.peaks_idx.append(peaks)
+            self.peaks_amplitude.append(row[peaks])
+            self.peaks_x_location.append(self.x_coordinates[peaks])
+            self.peaks_y_location.append(self.y_coordinates[peaks])
+
+
 
 
     @staticmethod
@@ -100,7 +109,11 @@ class ProcessData:
         if track_time_vector[-1] > time_vector[-1]:
             warnings.warn("track_time_vector ends after the last time point in time_vector. Values are extrapolated.")
 
+        input_signal = np.atleast_2d(input_signal)
         # Perform interpolation
-        track_input_signal = np.interp(track_time_vector, time_vector, input_signal)
+        track_input_signal = np.vstack([
+            np.interp(track_time_vector, time_vector, signal)
+            for signal in input_signal
+        ])
 
-        return track_input_signal
+        return np.squeeze(track_input_signal)

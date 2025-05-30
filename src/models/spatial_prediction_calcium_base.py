@@ -77,15 +77,14 @@ class SpatialPrediction:
         if os.path.exists(full_path) and not self.overwrite:
             print(f"File already exists and overwrite is set to False: {full_path}")
             return
-        
-        if np.all(np.isnan(signal_data.input_signal)):
-            warnings.warn("Signal contains only NaN's")
+            
+
+        if DataValidator.is_empty_or_all_nan(signal_data.input_signal) or DataValidator.is_empty_or_all_nan(signal_data.x_coordinates) or DataValidator.is_empty_or_all_nan(signal_data.y_coordinates):
+            warnings.warn("Signal contains only NaN's or is empty", UserWarning)
             inputdict = np.nan
 
         else:
-            signal_data.x_coordinates, signal_data.y_coordinates = hf.correct_coordinates(signal_data.x_coordinates,signal_data.y_coordinates,environment_edges=signal_data.environment_edges)
-
-
+            
             if signal_data.speed is None:
                 signal_data.add_speed(self.speed_smoothing_sigma)
 
@@ -123,7 +122,11 @@ class SpatialPrediction:
                             x_center_bins_repeated, y_center_bins_repeated, signal_data.sampling_rate, self.shift_time,
                             self.num_cores, self.num_surrogates)
 
-            events_error = np.nanmean(continuous_error[signal_data.peaks_idx])
+            
+            events_error = []
+            for peaks in signal_data.peaks_idx:
+                events_error.extend(continuous_error[peaks])
+            events_error = np.nanmean(events_error)
 
             mean_error_shifted = []
             spatial_error_shifted = []
@@ -132,7 +135,13 @@ class SpatialPrediction:
                 mean_error_shifted.append(results[perm][0])
                 spatial_error_shifted.append(results[perm][1])
                 continuous_error_shifted = results[perm][2]
-                events_error_shifted.append(np.nanmean(continuous_error_shifted[signal_data.peaks_idx]))
+
+                events_error_shifted_aux = []
+                for peaks in signal_data.peaks_idx:
+                    events_error_shifted_aux.extend(continuous_error_shifted[peaks])
+                events_error_shifted.append(np.nanmean(events_error_shifted_aux))
+
+
             mean_error_shifted = np.array(mean_error_shifted)
             spatial_error_shifted = np.array(spatial_error_shifted)
             events_error_shifted = np.array(events_error_shifted)

@@ -83,11 +83,12 @@ class PlaceCellBinarized:
         if os.path.exists(full_path) and not self.overwrite:
             print(f"File already exists and overwrite is set to False: {full_path}")
             return
-        
-        if np.all(np.isnan(signal_data.input_signal)):
-            warnings.warn("Signal contains only NaN's")
-            inputdict = np.nan
+            
 
+        if DataValidator.is_empty_or_all_nan(signal_data.input_signal) or DataValidator.is_empty_or_all_nan(signal_data.x_coordinates) or DataValidator.is_empty_or_all_nan(signal_data.y_coordinates):
+            warnings.warn("Signal contains only NaN's or is empty", UserWarning)
+            inputdict = np.nan
+            
         else:
             
             if signal_data.speed is None:
@@ -237,7 +238,7 @@ class PlaceCellBinarized:
             inputdict['x_center_bins'] = x_center_bins
             inputdict['y_center_bins'] = y_center_bins
 
-            inputdict['numb_events'] = signal_data.peaks_idx.shape[0]
+            inputdict['numb_events'] = signal_data.peaks_idx[0].shape[0]
             inputdict['peaks_x_location'] = signal_data.peaks_x_location
             inputdict['peaks_y_location'] = signal_data.peaks_y_location
 

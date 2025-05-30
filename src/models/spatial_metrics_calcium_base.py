@@ -81,8 +81,6 @@ class PlaceCell:
             inputdict = np.nan
 
         else:
-            signal_data.x_coordinates, signal_data.y_coordinates = hf.correct_coordinates(signal_data.x_coordinates,signal_data.y_coordinates,environment_edges=signal_data.environment_edges)
-
 
             if signal_data.speed is None:
                 signal_data.add_speed(self.speed_smoothing_sigma)
@@ -173,8 +171,8 @@ class PlaceCell:
             mutual_info_regression_shifted = np.array(mutual_info_regression_shifted)
             
 
-            mutual_info_zscored, mutual_info_centered = info.get_mutual_information_zscored(mutual_info_original,
-                                                                                            mutual_info_shifted)
+            mutual_info_zscored, mutual_info_centered = info.get_mutual_information_zscored(mutual_info_original, mutual_info_shifted)
+
             mutual_info_kullback_leibler_zscored, mutual_info_kullback_leibler_centered = info.get_mutual_information_zscored(
                 mutual_info_kullback_leibler_original, mutual_info_kullback_leibler_shifted)
 
@@ -260,11 +258,11 @@ class PlaceCell:
             inputdict['x_center_bins'] = x_center_bins
             inputdict['y_center_bins'] = y_center_bins
 
-            inputdict['numb_events'] = signal_data.peaks_idx.shape[0]
+            inputdict['numb_events'] = signal_data.peaks_idx[0].shape[0]
             inputdict['peaks_x_location'] = signal_data.peaks_x_location
             inputdict['peaks_y_location'] = signal_data.peaks_y_location
 
-            inputdict['events_amplitude'] = signal_data.input_signal[signal_data.peaks_idx]
+            inputdict['events_amplitude'] = signal_data.input_signal[signal_data.peaks_idx[0]]
 
             inputdict['activity_map_identity'] = activity_map_identity
             inputdict['num_of_fields'] = num_of_fields

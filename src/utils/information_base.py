@@ -47,14 +47,14 @@ def get_binarized_spatial_info_nkinsky(binarized_signal, position_binned):
     for i, bin_val in enumerate(bin_vector):
         # Indices where the position matches the current bin
         position_idx = position_binned == bin_val
-        occupancy[i] = np.sum(position_idx) / total_time
-        if np.sum(position_idx) > 0:
-            firing_rate[i] = np.sum(binarized_signal[position_idx]) / np.sum(position_idx)
+        occupancy[i] = np.nansum(position_idx) / total_time
+        if np.nansum(position_idx) > 0:
+            firing_rate[i] = np.nansum(binarized_signal[position_idx]) / np.nansum(position_idx)
         else:
             firing_rate[i] = 0.0
 
     # Overall mean firing rate
-    mean_firing_rate = np.sum(binarized_signal) / total_time
+    mean_firing_rate = np.nansum(binarized_signal) / total_time
 
     # Compute information per spike and per second
     info_per_spike = 0.0
@@ -89,8 +89,8 @@ def get_binarized_spatial_info_etter(binarized_signal, position_binned):
     bin_vector = np.unique(position_binned)
 
     # Compute overall probabilities of being active and inactive
-    prob_active = np.sum(binarized_signal == 1) / len(binarized_signal)
-    prob_inactive = np.sum(binarized_signal == 0) / len(binarized_signal)
+    prob_active = np.nansum(binarized_signal == 1) / len(binarized_signal)
+    prob_inactive = np.nansum(binarized_signal == 0) / len(binarized_signal)
 
     # Initialize arrays to store information per position bin and occupancy probabilities
     info_per_bin = np.zeros(bin_vector.shape[0])
@@ -103,11 +103,11 @@ def get_binarized_spatial_info_etter(binarized_signal, position_binned):
 
         if np.any(position_idx):
             # Compute occupancy probability for the current bin
-            prob_in_bin[i] = np.sum(position_idx) / len(position_binned)
+            prob_in_bin[i] = np.nansum(position_idx) / len(position_binned)
 
             # Compute joint probabilities for active and inactive states within the bin
-            joint_active = np.sum((binarized_signal == 1) & position_idx) / len(binarized_signal)
-            joint_inactive = np.sum((binarized_signal == 0) & position_idx) / len(binarized_signal)
+            joint_active = np.nansum((binarized_signal == 1) & position_idx) / len(binarized_signal)
+            joint_inactive = np.nansum((binarized_signal == 0) & position_idx) / len(binarized_signal)
 
             # Compute conditional probabilities
             cond_active = joint_active / prob_in_bin[i] if prob_in_bin[i] > 0 else 0
@@ -255,6 +255,45 @@ def get_binned_signal(calcium_imag, nbins_cal):
         calcium_imag_binned[I_amp] = jj
 
     return calcium_imag_binned
+
+
+def get_binned_signal(calcium_imag, nbins_cal):
+    """
+    Bin calcium signals across time for each cell independently.
+
+    Parameters
+    ----------
+    calcium_imag : np.ndarray
+        Array of shape (n_cells, n_time) or (n_time,) containing calcium signals.
+    nbins_cal : int
+        Number of bins to divide each signal into.
+
+    Returns
+    -------
+    calcium_imag_binned : np.ndarray
+        Binned signal(s) with same shape as input.
+    """
+    calcium_imag = np.atleast_2d(calcium_imag)
+    n_cells, n_time = calcium_imag.shape
+    calcium_imag_binned = np.zeros((n_cells, n_time), dtype=int)
+
+    for i in range(n_cells):
+        signal = calcium_imag[i]
+        min_val, max_val = np.nanmin(signal), np.nanmax(signal)
+        if min_val == max_val:
+            calcium_imag_binned[i] = 0  # all values the same, assign to bin 0
+        else:
+            bins = np.linspace(min_val, max_val, nbins_cal + 1)
+            for jj in range(nbins_cal):
+                I_amp = (signal > bins[jj]) & (signal <= bins[jj + 1])
+                calcium_imag_binned[i, I_amp] = jj
+
+    # Return original shape
+    if calcium_imag.shape[0] == 1:
+        return calcium_imag_binned[0]
+    return calcium_imag_binned
+
+
 
 
 def get_mutual_information_NN(calcium_imag, position_binned):
