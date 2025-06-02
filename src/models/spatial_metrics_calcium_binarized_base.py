@@ -85,7 +85,7 @@ class PlaceCellBinarized:
             return
             
 
-        if DataValidator.is_empty_or_all_nan(signal_data.input_signal) or DataValidator.is_empty_or_all_nan(signal_data.x_coordinates) or DataValidator.is_empty_or_all_nan(signal_data.y_coordinates):
+        if DataValidator.is_empty_or_all_nan(signal_data.input_signal) or DataValidator.is_empty_or_all_nan(signal_data.x_coordinates):
             warnings.warn("Signal contains only NaN's or is empty", UserWarning)
             inputdict = np.nan
             
@@ -122,21 +122,17 @@ class PlaceCellBinarized:
                                                                     signal_data.y_coordinates, x_grid, y_grid,
                                                                     self.map_smoothing_sigma_x,self.map_smoothing_sigma_y)
 
-
+            mutual_info_per_spike_original, mutual_info_per_second_original = info.get_binarized_spatial_info(signal_data.input_signal, signal_data.position_binned)
             info_per_spike_original, info_per_second_original = info.get_binarized_spatial_info_nkinsky(signal_data.input_signal, signal_data.position_binned)
-            mutual_info_original = info.get_binarized_spatial_info_etter(signal_data.input_signal, signal_data.position_binned)
             info_per_spike_map_original, info_per_second_map_original = info.get_spatial_info_from_map(activity_map_smoothed, position_occupancy)
-
-
             results = self.parallelize_surrogate(signal_data.input_signal, signal_data.position_binned, position_occupancy, signal_data.sampling_rate,
                                         self.shift_time, signal_data.x_coordinates,signal_data.y_coordinates,
                                         x_grid, y_grid, self.map_smoothing_sigma_x,self.map_smoothing_sigma_y,
                                         self.num_cores, self.num_surrogates)
             
 
-
-
-            mutual_info_shifted = []
+            mutual_info_per_spike_shifted = []
+            mutual_info_per_second_shifted = []
             info_per_spike_shifted = []
             info_per_second_shifted = []
             info_per_spike_map_shifted = []
@@ -146,16 +142,18 @@ class PlaceCellBinarized:
             activity_map_smoothed_shifted = []
 
             for perm in range(self.num_surrogates):
-                mutual_info_shifted.append(results[perm][0])
-                info_per_spike_shifted.append(results[perm][1])
-                info_per_second_shifted.append(results[perm][2])
-                info_per_spike_map_shifted.append(results[perm][3])
-                info_per_second_map_shifted.append(results[perm][4])
-                activity_map_shifted.append(results[perm][5])
-                activity_map_smoothed_shifted.append(results[perm][6])
+                mutual_info_per_spike_shifted.append(results[perm][0])
+                mutual_info_per_second_shifted.append(results[perm][1])
+                info_per_spike_shifted.append(results[perm][2])
+                info_per_second_shifted.append(results[perm][3])
+                info_per_spike_map_shifted.append(results[perm][4])
+                info_per_second_map_shifted.append(results[perm][5])
+                activity_map_shifted.append(results[perm][6])
+                activity_map_smoothed_shifted.append(results[perm][7])
 
 
-            mutual_info_shifted = np.array(mutual_info_shifted)
+            mutual_info_per_spike_shifted = np.array(mutual_info_per_spike_shifted)
+            mutual_info_per_second_shifted = np.array(mutual_info_per_second_shifted)
             info_per_spike_shifted = np.array(info_per_spike_shifted)
             info_per_second_shifted = np.array(info_per_second_shifted)
             info_per_spike_map_shifted = np.array(info_per_spike_map_shifted)
@@ -163,7 +161,8 @@ class PlaceCellBinarized:
             activity_map_shifted = np.array(activity_map_shifted)
             activity_map_smoothed_shifted = np.array(activity_map_smoothed_shifted)
 
-            mutual_info_zscored, mutual_info_centered = info.get_mutual_information_zscored(mutual_info_original, mutual_info_shifted)
+            mutual_info_per_spike_zscored, mutual_info_per_spike_centered = info.get_mutual_information_zscored(mutual_info_per_spike_original, mutual_info_per_spike_shifted)
+            mutual_info_per_second_zscored, mutual_info_per_second_centered = info.get_mutual_information_zscored(mutual_info_per_second_original, mutual_info_per_second_shifted)
             info_per_spike_zscored, info_per_spike_centered = info.get_mutual_information_zscored(info_per_spike_original, info_per_spike_shifted)
             info_per_second_zscored, info_per_second_centered = info.get_mutual_information_zscored(info_per_second_original, info_per_second_shifted)
             info_per_spike_map_zscored, info_per_spike_map_centered = info.get_mutual_information_zscored(info_per_spike_map_original, info_per_spike_map_shifted)
@@ -196,8 +195,11 @@ class PlaceCellBinarized:
 
             signal_data.add_peaks_detection(self.signal_type)
 
-            mutual_info_statistic = be.calculate_p_value(mutual_info_original, mutual_info_shifted, alternative='greater')
-            mutual_info_pvalue = mutual_info_statistic.p_value
+            mutual_info_per_spike_statistic = be.calculate_p_value(mutual_info_per_spike_original, mutual_info_per_spike_shifted, alternative='greater')
+            mutual_info_per_spike_pvalue = mutual_info_per_spike_statistic.p_value
+
+            mutual_info_per_second_statistic = be.calculate_p_value(mutual_info_per_second_original, mutual_info_per_second_shifted, alternative='greater')
+            mutual_info_per_second_pvalue = mutual_info_per_second_statistic.p_value
 
             info_per_spike_statistic = be.calculate_p_value(info_per_spike_original, info_per_spike_shifted, alternative='greater')
             info_per_spike_pvalue = info_per_spike_statistic.p_value
@@ -212,7 +214,7 @@ class PlaceCellBinarized:
             info_per_second_map_pvalue = info_per_second_map_statistic.p_value
 
 
-            if mutual_info_pvalue > self.alpha and info_per_spike_pvalue > self.alpha and info_per_second_pvalue > self.alpha:
+            if mutual_info_per_second_pvalue > self.alpha:
                 activity_map_identity = np.zeros(activity_map.shape)*np.nan
                 num_of_fields = 0
                 pixels_place_cell_absolute = np.nan
@@ -252,11 +254,17 @@ class PlaceCellBinarized:
 
             inputdict['sparsity'] = sparsity
 
-            inputdict['mutual_info_original'] = mutual_info_original
-            inputdict['mutual_info_shifted'] = mutual_info_shifted
-            inputdict['mutual_info_zscored'] = mutual_info_zscored
-            inputdict['mutual_info_centered'] = mutual_info_centered
-            inputdict['mutual_info_pvalue'] = mutual_info_pvalue
+            inputdict['mutual_info_per_spike_original'] = mutual_info_per_spike_original
+            inputdict['mutual_info_per_spike_shifted'] = mutual_info_per_spike_shifted
+            inputdict['mutual_info_per_spike_zscored'] = mutual_info_per_spike_zscored
+            inputdict['mutual_info_per_spike_centered'] = mutual_info_per_spike_centered
+            inputdict['mutual_info_per_spike_pvalue'] = mutual_info_per_spike_pvalue
+
+            inputdict['mutual_info_per_second_original'] = mutual_info_per_second_original
+            inputdict['mutual_info_per_second_shifted'] = mutual_info_per_second_shifted
+            inputdict['mutual_info_per_second_zscored'] = mutual_info_per_second_zscored
+            inputdict['mutual_info_per_second_centered'] = mutual_info_per_second_centered
+            inputdict['mutual_info_per_second_pvalue'] = mutual_info_per_second_pvalue
 
             inputdict['info_per_spike_original'] = info_per_spike_original
             inputdict['info_per_spike_shifted'] = info_per_spike_shifted
@@ -319,7 +327,7 @@ class PlaceCellBinarized:
         input_signal_shifted = surrogate.get_signal_surrogate(input_signal, sampling_rate, shift_time)
 
         info_per_spike_shifted, info_per_second_shifted = info.get_binarized_spatial_info_nkinsky(input_signal_shifted, position_binned)
-        mutual_info_shifted = info.get_binarized_spatial_info_etter(input_signal_shifted, position_binned)
+        mutual_info_per_spike_shifted, mutual_info_per_second_shifted = info.get_binarized_spatial_info_etter(input_signal_shifted, position_binned)
 
         activity_map_shifted, activity_map_smoothed_shifted = hf.get_2D_activity_map(input_signal_shifted,
                                                                                    x_coordinates,
@@ -328,6 +336,6 @@ class PlaceCellBinarized:
         
         info_per_spike_map_shifted, info_per_second_map_shifted = info.get_spatial_info_from_map(activity_map_smoothed_shifted, position_occupancy)
 
-        return mutual_info_shifted, info_per_spike_shifted, info_per_second_shifted, info_per_spike_map_shifted, info_per_second_map_shifted, activity_map_shifted, activity_map_smoothed_shifted
+        return mutual_info_per_spike_shifted, mutual_info_per_second_shifted, info_per_spike_shifted, info_per_second_shifted, info_per_spike_map_shifted, info_per_second_map_shifted, activity_map_shifted, activity_map_smoothed_shifted
 
     

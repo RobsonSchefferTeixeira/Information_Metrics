@@ -93,7 +93,7 @@ def get_binarized_spatial_info_etter(binarized_signal, position_binned):
     prob_inactive = np.nansum(binarized_signal == 0) / len(binarized_signal)
 
     # Initialize arrays to store information per position bin and occupancy probabilities
-    info_per_bin = np.zeros(bin_vector.shape[0])
+    mutual_info_bin = np.zeros(bin_vector.shape[0])
     prob_in_bin = np.zeros(bin_vector.shape[0])
 
     # Iterate over each position bin to compute mutual information contributions
@@ -114,18 +114,72 @@ def get_binarized_spatial_info_etter(binarized_signal, position_binned):
             cond_inactive = joint_inactive / prob_in_bin[i] if prob_in_bin[i] > 0 else 0
 
             # Calculate mutual information contributions, ensuring no division by zero or log of zero
-            info = 0
+            mutual_info_aux = 0
+           
             if joint_active > 0 and prob_active > 0:
-                info += joint_active * np.log2(cond_active / prob_active)
-            if joint_inactive > 0 and prob_inactive > 0:
-                info += joint_inactive * np.log2(cond_inactive / prob_inactive)
+                mutual_info_aux += joint_active * np.log2(cond_active / prob_active)
 
-            info_per_bin[i] = info
+            if joint_inactive > 0 and prob_inactive > 0:
+                mutual_info_aux += joint_inactive * np.log2(cond_inactive / prob_inactive)
+
+            mutual_info_bin[i] = mutual_info_aux
 
     # Sum contributions from all bins to get total mutual information
-    mutual_info = np.nansum(info_per_bin)
+    # mutual_info = np.nansum(info_per_bin)
+    mutual_info = np.nansum(mutual_info_bin)
 
     return mutual_info
+
+
+def get_binarized_spatial_info(binarized_signal, position_binned):
+    """
+    Compute mutual information between a binarized neural signal and binned positions.
+
+    Returns:
+    - info_per_spike: mutual information in bits/spike
+    - info_per_second: mutual information in bits/second
+    """
+    binarized_signal = np.asarray(binarized_signal)
+    position_binned = np.asarray(position_binned)
+
+    bin_vector = np.unique(position_binned)
+    prob_active = np.nansum(binarized_signal == 1) / len(binarized_signal)
+    prob_inactive = 1.0 - prob_active
+
+    info_per_second_bin = np.zeros(bin_vector.shape[0])
+    info_per_spike_bin = np.zeros(bin_vector.shape[0])
+    prob_in_bin = np.zeros(bin_vector.shape[0])
+
+    for i, bin_val in enumerate(bin_vector):
+        position_idx = position_binned == bin_val
+
+        if np.any(position_idx):
+            prob_in_bin[i] = np.nansum(position_idx) / len(position_binned)
+
+            joint_active = np.nansum((binarized_signal == 1) & position_idx) / len(binarized_signal)
+            joint_inactive = np.nansum((binarized_signal == 0) & position_idx) / len(binarized_signal)
+
+            cond_active = joint_active / prob_in_bin[i] if prob_in_bin[i] > 0 else 0
+            cond_inactive = joint_inactive / prob_in_bin[i] if prob_in_bin[i] > 0 else 0
+
+            info_second = 0
+            info_spike = 0
+
+            if joint_active > 0 and prob_active > 0:
+                info_second += joint_active * np.log2(cond_active / prob_active)
+                info_spike += prob_in_bin[i] * cond_active * np.log2(cond_active / prob_active)
+
+            if joint_inactive > 0 and prob_inactive > 0:
+                info_second += joint_inactive * np.log2(cond_inactive / prob_inactive)
+
+            info_per_second_bin[i] = info_second
+            info_per_spike_bin[i] = info_spike
+
+    info_per_second = np.nansum(info_per_second_bin)
+    info_per_spike = np.nansum(info_per_spike_bin) / prob_active if prob_active > 0 else np.nan
+
+    return info_per_spike, info_per_second
+
 
 
 def get_spatial_info_from_map(activity_map, occupancy):

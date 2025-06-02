@@ -199,9 +199,6 @@ def field_coordinates_using_shifted_1D(activity_map, activity_map_shifted, visit
     return num_of_islands, islands_x_max,pixels_place_cell_absolute,pixels_place_cell_relative,correct_island_identifiers(activity_map_identity)
 
 
-
-
-
 def get_visits_1D( x_coordinates,position_binned, x_center_bins):
     I_x_coord = []
 
@@ -473,8 +470,6 @@ def get_speed(x_coords, y_coords, time_vector, speed_smoothing_sigma=1):
         raw_speed (numpy.ndarray): Array of calculated speeds before smoothing.
         smoothed_speed (numpy.ndarray): Array of speeds after applying Gaussian smoothing.
     """
-    sampling_rate = 1 / np.nanmean(np.diff(time_vector))
-    smoothing_sigma = (speed_smoothing_sigma/1000)*sampling_rate
 
     delta_x = np.diff(x_coords)
     delta_y = np.diff(y_coords)
@@ -488,8 +483,47 @@ def get_speed(x_coords, y_coords, time_vector, speed_smoothing_sigma=1):
     kernel,x_values = smooth.generate_1d_gaussian_kernel(sigma_points, radius=None, truncate=4.0)
     smoothed_speed = smooth.gaussian_smooth_1d(speed, kernel, handle_nans=False)
 
-    
     return speed, smoothed_speed
+
+def get_speed(x_coords, y_coords, time_vector, speed_smoothing_sigma=1):
+    """
+    Calculate instantaneous speed from position coordinates and time vector,
+    handling both 1D and 2D positions. Applies Gaussian smoothing.
+
+    Parameters:
+    - x_coords (array-like): X-coordinate positions (or 1D positions if y_coords is None).
+    - time_vector (array-like): Time stamps corresponding to the positions.
+    - y_coords (array-like or None): Y-coordinate positions. If None, assumes 1D data.
+    - speed_smoothing_sigma (float): Std deviation for Gaussian smoothing. Default is 1.
+
+    Returns:
+    - speed (np.ndarray): Instantaneous speed (not smoothed).
+    - smoothed_speed (np.ndarray): Smoothed speed.
+    """
+    x_coords = np.asarray(x_coords)
+    time_vector = np.asarray(time_vector)
+
+    if y_coords is None:
+        distances = np.abs(np.diff(x_coords))
+    else:
+        y_coords = np.asarray(y_coords)
+        delta_x = np.diff(x_coords)
+        delta_y = np.diff(y_coords)
+        distances = np.sqrt(delta_x**2 + delta_y**2)
+
+    time_intervals = np.diff(time_vector)
+    if np.any(time_intervals <= 0):
+        raise ValueError("Time vector must be strictly increasing.")
+
+    speed = distances / time_intervals
+    speed = np.append(speed, 0)  # Pad to match original array length
+
+    sigma_points = smooth.get_sigma_points(speed_smoothing_sigma, time_vector)
+    kernel, _ = smooth.generate_1d_gaussian_kernel(sigma_points, radius=None, truncate=4.0)
+    smoothed_speed = smooth.gaussian_smooth_1d(speed, kernel, handle_nans=False)
+
+    return speed, smoothed_speed
+
 
 
 def correct_lost_tracking(x_coordinates, y_coordinates, track_timevector, sampling_rate, min_epoch_length=1):
