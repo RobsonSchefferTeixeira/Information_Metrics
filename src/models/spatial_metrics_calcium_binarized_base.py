@@ -115,16 +115,14 @@ class PlaceCellBinarized:
             
             speed_occupancy = hf.get_speed_occupancy(signal_data.speed,signal_data.x_coordinates, signal_data.y_coordinates,x_grid, y_grid)
             
-            visits_occupancy = hf.get_visits_occupancy(signal_data.x_coordinates, signal_data.y_coordinates, signal_data.new_visits_times, x_grid, y_grid)
+            visits_occupancy = hf.get_visits_occupancy(signal_data.x_coordinates, signal_data.new_visits_times, x_grid, signal_data.y_coordinates, y_grid)
 
 
-            activity_map, activity_map_smoothed = hf.get_2D_activity_map(signal_data.input_signal, signal_data.x_coordinates,
-                                                                    signal_data.y_coordinates, x_grid, y_grid,
-                                                                    self.map_smoothing_sigma_x,self.map_smoothing_sigma_y)
+            activity_map, activity_map_smoothed = hf.get_activity_map(signal_data.input_signal, signal_data.x_coordinates, x_grid,
+                                                                    signal_data.y_coordinates, y_grid, self.map_smoothing_sigma_x,self.map_smoothing_sigma_y)
 
             mutual_info_per_spike_original, mutual_info_per_second_original = info.get_binarized_spatial_info(signal_data.input_signal, signal_data.position_binned)
             info_per_spike_original, info_per_second_original = info.get_binarized_spatial_info_nkinsky(signal_data.input_signal, signal_data.position_binned)
-            info_per_spike_map_original, info_per_second_map_original = info.get_spatial_info_from_map(activity_map_smoothed, position_occupancy)
             results = self.parallelize_surrogate(signal_data.input_signal, signal_data.position_binned, position_occupancy, signal_data.sampling_rate,
                                         self.shift_time, signal_data.x_coordinates,signal_data.y_coordinates,
                                         x_grid, y_grid, self.map_smoothing_sigma_x,self.map_smoothing_sigma_y,
@@ -135,9 +133,6 @@ class PlaceCellBinarized:
             mutual_info_per_second_shifted = []
             info_per_spike_shifted = []
             info_per_second_shifted = []
-            info_per_spike_map_shifted = []
-            info_per_second_map_shifted = []
-
             activity_map_shifted = []
             activity_map_smoothed_shifted = []
 
@@ -146,18 +141,13 @@ class PlaceCellBinarized:
                 mutual_info_per_second_shifted.append(results[perm][1])
                 info_per_spike_shifted.append(results[perm][2])
                 info_per_second_shifted.append(results[perm][3])
-                info_per_spike_map_shifted.append(results[perm][4])
-                info_per_second_map_shifted.append(results[perm][5])
-                activity_map_shifted.append(results[perm][6])
-                activity_map_smoothed_shifted.append(results[perm][7])
-
+                activity_map_shifted.append(results[perm][4])
+                activity_map_smoothed_shifted.append(results[perm][5])
 
             mutual_info_per_spike_shifted = np.array(mutual_info_per_spike_shifted)
             mutual_info_per_second_shifted = np.array(mutual_info_per_second_shifted)
             info_per_spike_shifted = np.array(info_per_spike_shifted)
             info_per_second_shifted = np.array(info_per_second_shifted)
-            info_per_spike_map_shifted = np.array(info_per_spike_map_shifted)
-            info_per_second_map_shifted = np.array(info_per_second_map_shifted)
             activity_map_shifted = np.array(activity_map_shifted)
             activity_map_smoothed_shifted = np.array(activity_map_smoothed_shifted)
 
@@ -165,13 +155,11 @@ class PlaceCellBinarized:
             mutual_info_per_second_zscored, mutual_info_per_second_centered = info.get_mutual_information_zscored(mutual_info_per_second_original, mutual_info_per_second_shifted)
             info_per_spike_zscored, info_per_spike_centered = info.get_mutual_information_zscored(info_per_spike_original, info_per_spike_shifted)
             info_per_second_zscored, info_per_second_centered = info.get_mutual_information_zscored(info_per_second_original, info_per_second_shifted)
-            info_per_spike_map_zscored, info_per_spike_map_centered = info.get_mutual_information_zscored(info_per_spike_map_original, info_per_spike_map_shifted)
-            info_per_second_map_zscored, info_per_second_map_centered = info.get_mutual_information_zscored(info_per_second_map_original, info_per_second_map_shifted)
          
             if self.field_detection_method == 'random_fields':
 
                 num_of_fields, fields_x_max, fields_y_max,pixels_place_cell_absolute,pixels_place_cell_relative,activity_map_identity = \
-                hf.field_coordinates_using_shifted(activity_map,activity_map_shifted,visits_occupancy,x_center_bins, y_center_bins,
+                hf.field_coordinates_using_shifted(activity_map,activity_map_shifted,visits_occupancy, (x_center_bins, y_center_bins),
                                                     percentile_threshold=self.percentile_threshold,
                                                     min_num_of_bins = self.min_num_of_bins,
                                                     sigma_x=self.detection_smoothing_sigma_x, 
@@ -180,7 +168,7 @@ class PlaceCellBinarized:
 
             elif self.field_detection_method == 'std_from_field':
                 num_of_fields, fields_x_max, fields_y_max,pixels_place_cell_absolute,pixels_place_cell_relative,activity_map_identity = \
-                hf.field_coordinates_using_threshold(activity_map, visits_occupancy,x_center_bins, y_center_bins,                                                        
+                hf.field_coordinates_using_threshold(activity_map, visits_occupancy, (x_center_bins, y_center_bins),                                                        
                                                     field_threshold=self.detection_threshold, min_num_of_bins=self.min_num_of_bins,
                                                     sigma_x = self.detection_smoothing_sigma_x, 
                                                     sigma_y=self.detection_smoothing_sigma_y)
@@ -206,12 +194,6 @@ class PlaceCellBinarized:
             
             info_per_second_statistic = be.calculate_p_value(info_per_second_original, info_per_second_shifted, alternative='greater')
             info_per_second_pvalue = info_per_second_statistic.p_value
-
-            info_per_spike_map_statistic = be.calculate_p_value(info_per_spike_map_original, info_per_spike_map_shifted, alternative='greater')
-            info_per_spike_map_pvalue = info_per_spike_map_statistic.p_value
-            
-            info_per_second_map_statistic = be.calculate_p_value(info_per_second_map_original, info_per_second_map_shifted, alternative='greater')
-            info_per_second_map_pvalue = info_per_second_map_statistic.p_value
 
 
             if mutual_info_per_second_pvalue > self.alpha:
@@ -278,18 +260,6 @@ class PlaceCellBinarized:
             inputdict['info_per_second_centered'] = info_per_second_centered
             inputdict['info_per_second_pvalue'] = info_per_second_pvalue
 
-            inputdict['info_per_spike_map_original'] = info_per_spike_map_original
-            inputdict['info_per_spike_map_shifted'] = info_per_spike_map_shifted
-            inputdict['info_per_spike_map_zscored'] = info_per_spike_map_zscored
-            inputdict['info_per_spike_map_centered'] = info_per_spike_map_centered
-            inputdict['info_per_spike_map_pvalue'] = info_per_spike_map_pvalue
-
-            inputdict['info_per_second_map_original'] = info_per_second_map_original
-            inputdict['info_per_second_map_shifted'] = info_per_second_map_shifted
-            inputdict['info_per_second_map_zscored'] = info_per_second_map_zscored
-            inputdict['info_per_second_map_centered'] = info_per_second_map_centered
-            inputdict['info_per_second_map_pvalue'] = info_per_second_map_pvalue
-
             inputdict['input_parameters'] = self.__dict__['input_parameters']
 
             filename = hf.filename_constructor(self.saving_string, self.animal_id, self.dataset, self.day, 
@@ -327,15 +297,18 @@ class PlaceCellBinarized:
         input_signal_shifted = surrogate.get_signal_surrogate(input_signal, sampling_rate, shift_time)
 
         info_per_spike_shifted, info_per_second_shifted = info.get_binarized_spatial_info_nkinsky(input_signal_shifted, position_binned)
-        mutual_info_per_spike_shifted, mutual_info_per_second_shifted = info.get_binarized_spatial_info_etter(input_signal_shifted, position_binned)
+        mutual_info_per_spike_shifted, mutual_info_per_second_shifted = info.get_binarized_spatial_info(input_signal_shifted, position_binned)
 
-        activity_map_shifted, activity_map_smoothed_shifted = hf.get_2D_activity_map(input_signal_shifted,
-                                                                                   x_coordinates,
-                                                                                   y_coordinates, x_grid, y_grid,
+        activity_map_shifted, activity_map_smoothed_shifted = hf.get_activity_map(input_signal_shifted,
+                                                                                   x_coordinates, x_grid,
+                                                                                   y_coordinates, y_grid,
                                                                                    map_smoothing_sigma_x,map_smoothing_sigma_y)
         
-        info_per_spike_map_shifted, info_per_second_map_shifted = info.get_spatial_info_from_map(activity_map_smoothed_shifted, position_occupancy)
 
-        return mutual_info_per_spike_shifted, mutual_info_per_second_shifted, info_per_spike_shifted, info_per_second_shifted, info_per_spike_map_shifted, info_per_second_map_shifted, activity_map_shifted, activity_map_smoothed_shifted
+
+
+
+
+        return mutual_info_per_spike_shifted, mutual_info_per_second_shifted, info_per_spike_shifted, info_per_second_shifted, activity_map_shifted, activity_map_smoothed_shifted
 
     
