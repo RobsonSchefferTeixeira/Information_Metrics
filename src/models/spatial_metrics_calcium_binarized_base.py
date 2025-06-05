@@ -48,18 +48,15 @@ class PlaceCellBinarized:
         kwargs.setdefault('num_cores', 1)
         kwargs.setdefault('num_surrogates', 200)
         kwargs.setdefault('min_num_of_bins', 4)
-        kwargs.setdefault('field_detection_method','std_from_field')
         kwargs.setdefault('threshold',('mean_std',2))
-        kwargs.setdefault('detection_smoothing_sigma_x', 2)
-        kwargs.setdefault('detection_smoothing_sigma_y', 2)
         kwargs.setdefault('alpha',0.05)
 
 
         valid_kwargs = ['signal_type','animal_id', 'day', 'neuron', 'dataset', 'trial',
-                        'min_time_spent', 'min_visits', 'min_speed_threshold','speed_smoothing_sigma','map_smoothing_sigma_x','map_smoothing_sigma_y',
-                        'x_bin_size', 'y_bin_size', 'shift_time', 'num_cores','min_num_of_bins',
-                        'num_surrogates', 'saving_path', 'saving', 'saving_string','x_bin_size_info','y_bin_size_info',
-                        'detection_smoothing_sigma_x','detection_smoothing_sigma_y',
+                        'min_time_spent', 'min_visits', 'min_speed_threshold','speed_smoothing_sigma',
+                        'map_smoothing_sigma_x','map_smoothing_sigma_y','x_bin_size', 'y_bin_size',
+                        'shift_time', 'num_cores','min_num_of_bins','num_surrogates', 
+                        'saving_path', 'saving', 'saving_string','x_bin_size_info','y_bin_size_info',
                         'field_detection_method','alpha','overwrite','threshold']
 
         for k, v in kwargs.items():
@@ -116,7 +113,6 @@ class PlaceCellBinarized:
             
             visits_occupancy = hf.get_visits_occupancy(signal_data.x_coordinates, signal_data.new_visits_times, x_grid, signal_data.y_coordinates, y_grid)
 
-
             activity_map, activity_map_smoothed = hf.get_activity_map(signal_data.input_signal,
                                                                         signal_data.x_coordinates, x_grid, self.map_smoothing_sigma_x,
                                                                         signal_data.y_coordinates, y_grid, self.map_smoothing_sigma_y)
@@ -128,7 +124,6 @@ class PlaceCellBinarized:
                                         x_grid, y_grid, self.map_smoothing_sigma_x,self.map_smoothing_sigma_y,
                                         self.num_cores, self.num_surrogates)
             
-
             mutual_info_per_spike_shifted = []
             mutual_info_per_second_shifted = []
             activity_map_shifted = []
@@ -148,19 +143,15 @@ class PlaceCellBinarized:
             mutual_info_per_spike_zscored, mutual_info_per_spike_centered = info.get_mutual_information_zscored(mutual_info_per_spike_original, mutual_info_per_spike_shifted)
             mutual_info_per_second_zscored, mutual_info_per_second_centered = info.get_mutual_information_zscored(mutual_info_per_second_original, mutual_info_per_second_shifted)
          
-                                
             num_of_fields, fields_x_max, fields_y_max, pixels_place_cell_absolute, pixels_place_cell_relative, activity_map_identity \
                 = hf.detect_place_fields(activity_map, activity_map_shifted,
                                         visits_occupancy,
                                         (x_center_bins, y_center_bins),
-                                        field_detection_method=self.field_detection_method,
                                         threshold=self.threshold,
                                         min_num_of_bins=self.min_num_of_bins,
-                                        detection_smoothing_sigma_x=self.detection_smoothing_sigma_x,
-                                        detection_smoothing_sigma_y=self.detection_smoothing_sigma_y
+                                        sigma_x=self.map_smoothing_sigma_x,
+                                        sigma_y=self.map_smoothing_sigma_y
                                         )
-
-
 
             sparsity = hf.get_sparsity(activity_map, position_occupancy)
 

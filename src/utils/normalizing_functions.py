@@ -112,7 +112,7 @@ def robust_z_score_norm_old(input_matrix, axis=0):
     return robust_z_scored_matrix
 
 
-def z_score_norm(input_matrix, axis=0, ddof=1):
+def z_score_norm(input_matrix, axis=None, ddof=1):
     """
     Perform z-score normalization on an input matrix.
 

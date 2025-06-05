@@ -16,6 +16,7 @@ class ProcessData:
         self.time_vector = time_vector
         self.speed = speed
         self.sampling_rate = sampling_rate
+        self.environment_edges = environment_edges
 
         if self.sampling_rate is None:
             self.sampling_rate = 1 / np.nanmean(np.diff(self.time_vector))

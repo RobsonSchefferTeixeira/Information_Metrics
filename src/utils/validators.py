@@ -174,16 +174,6 @@ class ParameterValidator:
 
 
 
-
-class DataValidator:
-
-    @staticmethod
-    def is_empty_or_all_nan(arr):
-        return arr.size == 0 or np.isnan(arr).all()
-
-    import numpy as np
-import warnings
-
 class DataValidator:
     @staticmethod
     def is_empty_or_all_nan(arr):
@@ -260,6 +250,48 @@ class DataValidator:
         if np.diff(signal_data.time_vector).min() <= 0:
             warnings.warn("time_vector is not strictly increasing",UserWarning)
 
+    @staticmethod
+    def parse_environment_edges(value):
+        if value is None:
+            return None
+
+        if not isinstance(value, list):
+            raise ValueError("environment_edges must be a list or list of lists.")
+
+        # Check for 1D: [min, max]
+        if len(value) == 2 and all(isinstance(v, (int, float)) for v in value):
+            min_val, max_val = value
+            if min_val >= max_val:
+                raise ValueError("In 1D environment_edges, min must be less than max.")
+            return [min_val, max_val]  # return normalized 1D case
+
+        # Check for 2D: list of lists
+        if all(isinstance(v, list) for v in value):
+            if not (1 <= len(value) <= 2):
+                raise ValueError("2D environment_edges must be a list with one or two sublists.")
+
+            result = []
+            for sublist in value:
+                if not sublist:  # empty sublist means missing axis
+                    result.append(None)
+                    continue
+                if len(sublist) != 2:
+                    raise ValueError("Each sublist in 2D environment_edges must have exactly two numbers.")
+                min_val, max_val = sublist
+                if not all(isinstance(i, (int, float)) for i in sublist):
+                    raise ValueError("Each value in a sublist must be a number.")
+                if min_val >= max_val:
+                    raise ValueError("In a sublist, min must be less than max.")
+                result.append([min_val, max_val])
+
+            # Fill in missing axis if only one sublist provided
+            while len(result) < 2:
+                result.append(None)
+
+            return result  # return normalized 2D case
+
+        raise ValueError("Invalid format for environment_edges.")
+
 
     @staticmethod
     def filter_invalid_values(signal_data):
@@ -331,11 +363,11 @@ class DataValidator:
                 raise ValueError("environment_edges must be a list.")
 
 
-    def validate_environment_edges(signal_data,environment_edges):
+    def validate_environment_edges(signal_data):
+        DataValidator.parse_environment_edges(signal_data.environment_edges)
+        # DataValidator.validate_environment_edges_format(signal_data.environment_edges)
 
-        DataValidator.validate_environment_edges_format(environment_edges)
-
-        if environment_edges is None:
+        if signal_data.environment_edges is None:
                 
             if signal_data.y_coordinates is None:
                 # 1D tracking
@@ -351,8 +383,7 @@ class DataValidator:
                 y_min = np.nanmin(signal_data.y_coordinates)
                 y_max = np.nanmax(signal_data.y_coordinates)
                 signal_data.environment_edges = [[x_min, x_max], [y_min, y_max]]
-        else:
-            signal_data.environment_edges = environment_edges
+  
 
     
 

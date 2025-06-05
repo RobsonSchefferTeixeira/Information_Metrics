@@ -7,14 +7,7 @@ from scipy import signal as sig
 import math
 import warnings
 import src.utils.smoothing_functions as smooth
-
-
-
-
-
-
-
-
+import src.utils.normalizing_functions as norm
 
 
 
@@ -1114,7 +1107,7 @@ def detect_islands_and_com(binary_map, activity_map_smoothed, visits_map, center
             activity_map_identity[island_mask] = np.nan
 
     if not islands_id:
-        return 0, np.array([np.nan]), np.array([np.nan]), np.nan, np.nan, np.full_like(activity_map_identity, np.nan)
+        return 0, np.array([np.nan]), np.array([np.nan]), np.nan, np.nan, activity_map_identity
 
     total_visited_pixels = np.nansum(visits_map != 0)
     pixels_total = activity_map_smoothed.size
@@ -1155,13 +1148,12 @@ def smooth_field_detection_map(activity_map, center_bins, sigma_x=2, sigma_y=Non
 
 def detect_place_fields(activity_map,
                         activity_map_shifted,
-                        visits_occupancy,
+                        visits_map,
                         center_bins,
-                        field_detection_method,
-                        threshold,
+                        threshold = ('mean_std', 2),
                         min_num_of_bins=4,
-                        detection_smoothing_sigma_x=1.0,
-                        detection_smoothing_sigma_y=1.0):
+                        sigma_x=1.0,
+                        sigma_y=None):
     
     """
     Wrapper to detect place fields based on the specified detection method and threshold.
@@ -1196,84 +1188,25 @@ def detect_place_fields(activity_map,
     pixels_place_cell_relative : np.ndarray
     activity_map_identity : np.ndarray
     """
-    import warnings
-
-    threshold_type, threshold_value = threshold
-
-    if field_detection_method == 'random_fields':
-        return field_coordinates(
-            activity_map,
-            activity_map_shifted,
-            visits_occupancy,
-            center_bins,
-            threshold_type=threshold_type,
-            threshold_value=threshold_value,
-            use_shifted=True,
-            min_num_of_bins=min_num_of_bins,
-            sigma_x=detection_smoothing_sigma_x,
-            sigma_y=detection_smoothing_sigma_y
-        )
-
-    elif field_detection_method == 'std_from_field':
-        return field_coordinates(
-            activity_map,
-            None,
-            visits_occupancy,
-            center_bins,
-            threshold_type=threshold_type,
-            threshold_value=threshold_value,
-            use_shifted=False,
-            min_num_of_bins=min_num_of_bins,
-            sigma_x=detection_smoothing_sigma_x,
-            sigma_y=detection_smoothing_sigma_y
-        )
     
+    threshold_type,threshold_value = threshold
+
+    activity_map_zscored = (activity_map - np.nanmean(activity_map_shifted,0))/np.nanstd(activity_map_shifted,0)
+    activity_map_zscored_smoothed = smooth_field_detection_map(activity_map_zscored, center_bins, sigma_x, sigma_y, handle_nans=False)
+    activity_map_norm = norm.min_max_norm(activity_map_zscored_smoothed,custom_min = 0, custom_max=1)
+
+    if threshold_type == "mean_std":
+        I_threshold = np.nanmean(activity_map_norm) + threshold_value * np.nanstd(activity_map_norm)
+
+    elif threshold_type == "percentile":
+        I_threshold = np.nanpercentile(activity_map_norm, threshold_value)
     else:
-        warnings.warn("No valid field detection method set", UserWarning)
-        return 0, np.array([]), np.array([]), np.array([]), np.array([]), np.full_like(activity_map, np.nan)
+        raise ValueError("Invalid threshold_type")
 
-
-def field_coordinates(activity_map, activity_map_shifted, visits_map, center_bins, threshold_type, threshold_value, use_shifted=False, min_num_of_bins=4, sigma_x=2, sigma_y=None):
-    activity_map_smoothed = smooth_field_detection_map(activity_map, center_bins, sigma_x, sigma_y, handle_nans=False)
-
-    shifted_smoothed = None
-    if use_shifted and activity_map_shifted is not None:
-        if activity_map.ndim == 1:
-            shifted_smoothed = np.array([
-                smooth_field_detection_map(m, center_bins, sigma_x, handle_nans=True) for m in activity_map_shifted
-            ])
-        else:
-            shifted_smoothed = np.array([
-                smooth_field_detection_map(m, center_bins, sigma_x, sigma_y, handle_nans=True) for m in activity_map_shifted
-            ])
-
-    binary_map = apply_threshold(
-        activity_map_smoothed,
-        threshold_type=threshold_type,
-        threshold_value=threshold_value,
-        shifted_maps=shifted_smoothed
-    )
+    binary_map = np.where(activity_map_norm > I_threshold, 1, 0).astype(float)
 
     binary_map[np.isnan(activity_map)] = np.nan
-    return detect_islands_and_com(binary_map, activity_map_smoothed, visits_map, center_bins, min_num_of_bins)
+
+    return detect_islands_and_com(binary_map, activity_map_norm, visits_map, center_bins, min_num_of_bins)
 
 
-def apply_threshold(activity_map_smoothed, threshold_type="mean_std", threshold_value=2, shifted_maps=None):
-    
-    if threshold_type == "mean_std" and shifted_maps is None:
-        I_threshold = np.nanmean(activity_map_smoothed) + threshold_value * np.nanstd(activity_map_smoothed)
-
-    elif threshold_type == "percentile" and shifted_maps is None:
-        I_threshold = np.nanpercentile(activity_map_smoothed[np.isfinite(activity_map_smoothed)], threshold_value)
-
-    elif threshold_type == "percentile" and shifted_maps is not None:
-        I_threshold = np.nanpercentile(shifted_maps, threshold_value, axis=0)
-
-    elif threshold_type == "mean_std" and shifted_maps is not None:
-        I_threshold = np.nanmean(shifted_maps, axis=0) + threshold_value * np.nanstd(shifted_maps, axis=0)
-
-    else:
-        raise ValueError("Invalid threshold_type or missing shifted_maps")
-
-    binary_map = np.where(activity_map_smoothed > I_threshold, 1, 0).astype(float)
-    return binary_map

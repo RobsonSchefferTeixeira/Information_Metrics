@@ -2,6 +2,127 @@ import numpy as np
 import scipy.signal as sig
 import math
 
+
+def nanconvolve1d(signal, kernel, mode='same'):
+    """
+    Perform 1D convolution while ignoring NaN values.
+    This matches scipy.signal.convolve behavior (kernel is flipped).
+
+    Parameters:
+        signal (np.ndarray): 1D input array, may contain NaNs.
+        kernel (np.ndarray): 1D kernel array, may contain NaNs.
+        mode (str): 'full', 'same', or 'valid'. Default is 'same'.
+
+    Returns:
+        np.ndarray: Convolved output.
+    """
+    if signal.ndim != 1 or kernel.ndim != 1:
+        raise ValueError("Only 1D arrays are supported.")
+
+    # Convert to float to allow np.nan usage
+    signal = signal.astype(float)
+    kernel = kernel.astype(float)
+
+    # Flip kernel to match scipy.signal.convolve
+    kernel = kernel[::-1]
+
+    s_len = signal.size
+    k_len = kernel.size
+
+    if mode == 'full':
+        padded_signal = np.pad(signal, (k_len - 1, k_len - 1), constant_values=np.nan)
+        output_len = s_len + k_len - 1
+    elif mode == 'same':
+        pad_left = k_len // 2
+        pad_right = k_len - 1 - pad_left
+        padded_signal = np.pad(signal, (pad_left, pad_right), constant_values=np.nan)
+        output_len = s_len
+    elif mode == 'valid':
+        padded_signal = signal
+        output_len = s_len - k_len + 1
+        if output_len < 1:
+            return np.array([])
+    else:
+        raise ValueError("mode must be 'full', 'same', or 'valid'")
+
+    result = np.full(output_len, np.nan)
+
+    for i in range(output_len):
+        window = padded_signal[i:i + k_len]
+        valid_mask = ~np.isnan(window) & ~np.isnan(kernel)
+        if np.any(valid_mask):
+            result[i] = np.sum(window[valid_mask] * kernel[valid_mask])
+
+    return result
+
+
+
+def nanconvolve2d(signal, kernel, mode='same'):
+    """
+    Perform 2D convolution while ignoring NaN values.
+    Matches scipy.signal.convolve2d behavior (kernel is flipped).
+
+    Parameters:
+        signal (np.ndarray): 2D input array, may contain NaNs.
+        kernel (np.ndarray): 2D kernel array, may contain NaNs.
+        mode (str): 'full', 'same', or 'valid'. Default is 'same'.
+
+    Returns:
+        np.ndarray: Convolved output.
+    """
+    if signal.ndim != 2 or kernel.ndim != 2:
+        raise ValueError("Only 2D arrays are supported.")
+
+    # Convert to float to allow np.nan
+    signal = signal.astype(float)
+    kernel = kernel.astype(float)
+
+    # Flip the kernel to perform true convolution
+    kernel = np.flip(kernel)
+
+    s_rows, s_cols = signal.shape
+    k_rows, k_cols = kernel.shape
+
+    if mode == 'full':
+        pad_top = k_rows - 1
+        pad_bottom = k_rows - 1
+        pad_left = k_cols - 1
+        pad_right = k_cols - 1
+        output_shape = (s_rows + k_rows - 1, s_cols + k_cols - 1)
+    elif mode == 'same':
+        pad_top = k_rows // 2
+        pad_bottom = k_rows - 1 - pad_top
+        pad_left = k_cols // 2
+        pad_right = k_cols - 1 - pad_left
+        output_shape = (s_rows, s_cols)
+    elif mode == 'valid':
+        pad_top = pad_bottom = pad_left = pad_right = 0
+        output_shape = (s_rows - k_rows + 1, s_cols - k_cols + 1)
+        if output_shape[0] < 1 or output_shape[1] < 1:
+            return np.array([])
+    else:
+        raise ValueError("mode must be 'full', 'same', or 'valid'")
+
+    # Pad signal with NaNs
+    padded_signal = np.pad(
+        signal,
+        ((pad_top, pad_bottom), (pad_left, pad_right)),
+        mode='constant',
+        constant_values=np.nan
+    )
+
+    result = np.full(output_shape, np.nan)
+
+    for i in range(output_shape[0]):
+        for j in range(output_shape[1]):
+            window = padded_signal[i:i + k_rows, j:j + k_cols]
+            valid_mask = ~np.isnan(window) & ~np.isnan(kernel)
+            if np.any(valid_mask):
+                result[i, j] = np.nansum(window[valid_mask] * kernel[valid_mask])
+
+    return result
+
+
 def smooth(x, window_len=11, window='hanning'):
     """
     Smooth the data using a window with the requested size.
@@ -51,7 +172,7 @@ def smooth(x, window_len=11, window='hanning'):
     else:
         w = getattr(np, window)(window_len)  # Using getattr to retrieve window function by name
 
-    y = np.convolve(w / w.sum(), s, mode='valid')
+    y = nanconvolve1d(w / w.sum(), s, mode='valid')
 
     return y[int(window_len / 2 - 1):-int(window_len / 2)]
 
@@ -96,7 +217,6 @@ def generate_1d_gaussian_kernel(sigma, radius=None, truncate=4.0):
     if radius is None:
         radius = math.ceil(truncate * sigma)
 
-
     x_values = np.arange(-radius, radius + 1)
     dt = 1 # just making this more explicit
     constant = dt / (np.sqrt(2 * math.pi) * sigma)
@@ -118,37 +238,32 @@ def gaussian_smooth_1d(input_data, kernel, handle_nans=False):
     Parameters:
         input_data (ndarray): 1D input array (may contain NaNs)
         kernel (ndarray): 1D Gaussian kernel (must be normalized to sum=1)
-        handle_nans (bool): Whether to handle NaN values (default: True)
+        handle_nans (bool): Whether to handle NaN values by setting it to zero (default: True)
     
     Returns:
         ndarray: Smoothed data with original NaNs preserved
     """
 
     input_data = np.copy(input_data)
+    nan_mask = np.isnan(input_data)
     if input_data.ndim != 1:
         raise ValueError("Input must be 1D array")
     
     if not handle_nans:
         nan_mask = np.isnan(input_data)
         input_data[nan_mask] = 0
-        result = sig.convolve(input_data, kernel, mode='same', method='direct')
-        # result[nan_mask] = np.nan
-        return 
-    
-    # Create mask of valid numbers
-    mask = ~np.isnan(input_data)
-    data_clean = np.where(mask, input_data, 0)
+
+    # result = sig.convolve(input_data, kernel, mode='same', method='direct')
+    smoothed = nanconvolve1d(input_data, kernel, mode='same')
     
     # Convolve both data and mask
-    smoothed = sig.convolve(data_clean, kernel, mode='same', method='auto')
-    norm_factor = sig.convolve(mask.astype(float), kernel, mode='same', method='auto')
-    
+    # smoothed = sig.convolve(data_clean, kernel, mode='same', method='auto')
+    # norm_factor = sig.convolve(mask.astype(float), kernel, mode='same', method='auto')
+    # norm_factor = nanconvolve1d(mask.astype(float), kernel, mode='same')
     # Normalize and restore NaNs
-    result = np.divide(smoothed, norm_factor, 
-                      out=np.full_like(smoothed, np.nan), 
-                      where=norm_factor > 1e-8)
-    
-    return result
+    # result = np.divide(smoothed, norm_factor, out=np.full_like(smoothed, np.nan),where=norm_factor > 1e-8)
+    smoothed[nan_mask] = np.nan
+    return smoothed
 
 
 def generate_2d_gaussian_kernel(sigma_x, sigma_y=None, radius_x=None, radius_y=None, truncate=4.0):
@@ -202,31 +317,21 @@ def gaussian_smooth_2d(matrix, kernel, handle_nans=False):
     Returns:
         ndarray: Convolved matrix (same shape as input) with NaNs preserved
     """
+
     matrix = np.copy(matrix)
+    nan_mask = np.isnan(matrix)
     if handle_nans:
         # Create mask of valid numbers
-        nan_mask = np.isnan(matrix)
-        mask = ~nan_mask
-        matrix_clean = np.nan_to_num(matrix)
-        
-        # Convolve both data and mask
-        convolved = sig.convolve2d(matrix_clean, kernel, mode='same', boundary='fill')
-        kernel_mask = sig.convolve2d(mask.astype(float), kernel, mode='same', boundary='fill')
-        
-        # Normalize and restore NaNs
-        result = np.divide(convolved, kernel_mask, 
-                         out=np.full_like(convolved, np.nan), 
-                         where=kernel_mask > 1e-8)
-        
-        # result[nan_mask] = np.nan
-        return result
-    else:
-        nan_mask = np.isnan(matrix)
-        matrix[nan_mask] = 0
-        result = sig.convolve2d(matrix, kernel, mode='same', boundary='fill')
-        # result[nan_mask] = np.nan
+        # nan_mask = np.isnan(matrix)
+        # mask = ~nan_mask
+        # matrix_clean = np.nan_to_num(matrix)
+        matrix[np.isnan(matrix)] = 0
 
-        return result
+    # Convolve both data and mask
+    smoothed = nanconvolve2d(matrix, kernel, mode='same')
+    # kernel_mask = sig.convolve2d(mask.astype(float), kernel, mode='same', boundary='fill')
+    smoothed[nan_mask]= np.nan
+    return smoothed
 
 
 '''
@@ -312,69 +417,3 @@ def generate_2d_gaussian_kernel(sigma):
     return gaussian_kernel
 '''
 
-
-
-# This is a 2d deconvolution from scratch. I'm not using it.
-
-def apply_mirror_padding(matrix, pad_width):
-    """
-    Apply mirror/symmetric padding to a 2D matrix.
-    """
-    padded = np.pad(matrix, pad_width, mode='symmetric')
-    return padded
-
-def convolve2d_mirror_nan(matrix, kernel, handle_nans=True):
-    """
-    Full 2D convolution with mirror padding and NaN handling implemented from scratch.
-    
-    Parameters:
-        matrix: 2D input array (may contain NaNs)
-        kernel: 2D convolution kernel (must be square, odd dimensions, and normalized)
-        handle_nans: If True, properly handles NaN values
-    
-    Returns:
-        Convolved matrix with same shape as input, preserving NaNs
-    """
-    # Validate kernel
-    if kernel.shape[0] != kernel.shape[1]:
-        raise ValueError("Kernel must be square")
-    if kernel.shape[0] % 2 == 0:
-        raise ValueError("Kernel must have odd dimensions")
-    
-    h, w = matrix.shape
-    k_size = kernel.shape[0]
-    pad = k_size // 2
-    
-    # Apply mirror padding
-    padded = apply_mirror_padding(matrix, pad)
-    
-    # Initialize output
-    output = np.zeros_like(matrix)
-    
-    if handle_nans:
-        # Create masked array
-        mask = ~np.isnan(padded)
-        matrix_clean = np.where(mask, padded, 0)
-        
-        # Initialize normalization array
-        norm = np.zeros_like(matrix)
-        
-        for i in range(h):
-            for j in range(w):
-                # Extract region of interest
-                region = matrix_clean[i:i+k_size, j:j+k_size]
-                k_region = kernel * mask[i:i+k_size, j:j+k_size]
-                
-                # Compute weighted sum
-                output[i,j] = np.sum(region * kernel)
-                norm[i,j] = np.sum(k_region)
-        
-        # Normalize and restore NaNs
-        output = np.divide(output, norm, out=np.full_like(output, np.nan), where=norm>1e-8)
-    else:
-        # Simple convolution without NaN handling
-        for i in range(h):
-            for j in range(w):
-                output[i,j] = np.sum(padded[i:i+k_size, j:j+k_size] * kernel)
-    
-    return output
