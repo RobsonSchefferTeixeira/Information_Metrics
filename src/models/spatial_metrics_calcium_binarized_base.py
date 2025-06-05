@@ -142,9 +142,21 @@ class PlaceCellBinarized:
 
             mutual_info_per_spike_zscored, mutual_info_per_spike_centered = info.get_mutual_information_zscored(mutual_info_per_spike_original, mutual_info_per_spike_shifted)
             mutual_info_per_second_zscored, mutual_info_per_second_centered = info.get_mutual_information_zscored(mutual_info_per_second_original, mutual_info_per_second_shifted)
-         
+
+            '''
             num_of_fields, fields_x_max, fields_y_max, pixels_place_cell_absolute, pixels_place_cell_relative, activity_map_identity \
                 = hf.detect_place_fields(activity_map, activity_map_shifted,
+                                        visits_occupancy,
+                                        (x_center_bins, y_center_bins),
+                                        threshold=self.threshold,
+                                        min_num_of_bins=self.min_num_of_bins,
+                                        sigma_x=self.map_smoothing_sigma_x,
+                                        sigma_y=self.map_smoothing_sigma_y
+                                        )
+            '''
+
+            num_of_fields, fields_x_max, fields_y_max, fields_id, pixels_place_cell_absolute, pixels_place_cell_relative, activity_map_identity \
+                = hf.detect_place_fields(activity_map_smoothed, activity_map_smoothed_shifted,
                                         visits_occupancy,
                                         (x_center_bins, y_center_bins),
                                         threshold=self.threshold,
@@ -190,13 +202,16 @@ class PlaceCellBinarized:
             inputdict['y_center_bins'] = y_center_bins
 
             inputdict['numb_events'] = signal_data.peaks_idx[0].shape[0]
-            inputdict['peaks_x_location'] = signal_data.peaks_x_location
-            inputdict['peaks_y_location'] = signal_data.peaks_y_location
+            inputdict['peaks_x_location'] = signal_data.peaks_x_location[0]
+            inputdict['peaks_y_location'] = signal_data.peaks_y_location[0]
 
             inputdict['activity_map_identity'] = activity_map_identity
             inputdict['num_of_fields'] = num_of_fields
             inputdict['fields_x_max'] = fields_x_max
             inputdict['fields_y_max'] = fields_y_max
+            inputdict['fields_id'] = fields_id
+
+            
 
             inputdict['place_cell_extension_absolute'] = pixels_place_cell_absolute
             inputdict['place_cell_extension_relative'] = pixels_place_cell_relative

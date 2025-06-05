@@ -5,6 +5,8 @@ import math
 import random
 from scipy import interpolate
 from src.utils import helper_functions as hf
+from src.utils import smoothing_functions as smooth
+
 
 def generate_random_walk_old(input_srate = 100.,input_total_Time = 500,rho1  = 1.,sigma = 0.02,mu_e  = 0.,smooth_coeff = 0.5):
 
@@ -47,79 +49,15 @@ def generate_random_walk_old(input_srate = 100.,input_total_Time = 500,rho1  = 1
     speed = np.sqrt(np.diff(x_coordinates)**2 + np.diff(y_coordinates)**2) / dt
     speed = np.hstack([speed,0])
     
-
-
     return x_coordinates,y_coordinates,speed,timevector
 
 def round_up_to_even(f):
     return math.ceil(f / 2.) * 2
 
-def smooth(x,window_len=11,window='hanning'):
-    
-    """smooth the data using a window with requested size.
-    
-    This method is based on the convolution of a scaled window with the signal.
-    The signal is prepared by introducing reflected copies of the signal 
-    (with the window size) in both ends so that transient parts are minimized
-    in the begining and end part of the output signal.
-    
-    input:
-        x: the input signal 
-        window_len: the dimension of the smoothing window; should be an odd integer
-        window: the type of window from 'flat', 'hanning', 'hamming', 'bartlett', 'blackman'
-            flat window will produce a moving average smoothing.
-
-    output:
-        the smoothed signal
-        
-    example:
-
-    t=linspace(-2,2,0.1)
-    x=sin(t)+randn(len(t))*0.1
-    y=smooth(x)
-    
-    see also: 
-    
-    numpy.hanning, numpy.hamming, numpy.bartlett, numpy.blackman, numpy.convolve
-    scipy.signal.lfilter
- 
-    TODO: the window parameter could be the window itself if an array instead of a string
-    NOTE: length(output) != length(input), to correct this: return y[(window_len/2-1):-(window_len/2)] instead of just y.
-    """
-
-    if x.ndim != 1:
-        raise ValueError("smooth only accepts 1 dimension arrays.")
-
-    if x.size < window_len:
-        raise ValueError("Input vector needs to be bigger than window size.")
-
-
-    if window_len<3:
-        return x
-
-
-    if not window in ['flat', 'hanning', 'hamming', 'bartlett', 'blackman']:
-        raise ValueError("Window is on of 'flat', 'hanning', 'hamming', 'bartlett', 'blackman'")
-
-
-    s=np.r_[x[window_len-1:0:-1],x,x[-2:-window_len-1:-1]]
-    #print(len(s))
-    if window == 'flat': #moving average
-        w=np.ones(window_len,'d')
-    else:
-        w=eval('np.'+window+'(window_len)')
-
-    y=np.convolve(w/w.sum(),s,mode='valid')
-    return y[int(window_len/2-1):-int(window_len/2)]
-
-
-
 
 def generate_random_walk(input_srate=100., input_total_Time=500, head_direction_srate=10.,
-                         speed_srate=5., rho1=1., sigma=0.02, mu_e=0., smooth_points=0.1, **kwargs):
+                         speed_srate=5., rho1=1., sigma=0.02, mu_e=0., sigma_x=0.1, sigma_y = 0.1, **kwargs):
 
-    if smooth_points == 0:
-        smooth_points = 1
 
     environment_edges = kwargs.get('environment_edges', [[0, 100], [0, 100]])
 
@@ -168,18 +106,23 @@ def generate_random_walk(input_srate=100., input_total_Time=500, head_direction_
             
             y_coordinates[t] = y_coordinates[t-1] + speeds_new[t] * np.sin(head_direction_new[t])
             x_coordinates[t] = x_coordinates[t-1] + speeds_new[t] * np.cos(head_direction_new[t])
-    
-    
-    x_coordinates = hf.gaussian_smooth_1d(x_coordinates.squeeze(), smooth_points)
-    y_coordinates = hf.gaussian_smooth_1d(y_coordinates.squeeze(), smooth_points)
-    
+
+    time_vector = np.linspace(0, total_Time, total_points)
+
+    sigma_x_points = smooth.get_sigma_points(sigma_x, time_vector)
+    kernel, x_mesh = smooth.generate_1d_gaussian_kernel(sigma_x_points, truncate=4.0)
+    x_coordinates = smooth.gaussian_smooth_1d(x_coordinates.squeeze(), kernel, handle_nans=False)
+
+    sigma_y_points = smooth.get_sigma_points(sigma_y, time_vector)
+    kernel, y_mesh = smooth.generate_1d_gaussian_kernel(sigma_y_points, truncate=4.0)
+    y_coordinates = smooth.gaussian_smooth_1d(y_coordinates.squeeze(), kernel, handle_nans=False)
+
     np.clip(x_coordinates, *environment_edges[0], out=x_coordinates)
     np.clip(y_coordinates, *environment_edges[1], out=y_coordinates)
 
-    time_vector = np.linspace(0, total_Time, total_points)
-    speed, speed_smoothed = hf.get_speed(x_coordinates, y_coordinates, time_vector, sigma_points=smooth_points)
+    speed, smoothed_speed = hf.get_speed(x_coordinates, y_coordinates, time_vector, speed_smoothing_sigma = sigma_x_points)
 
-    return x_coordinates, y_coordinates, speed, speed_smoothed, time_vector
+    return x_coordinates, y_coordinates, speed, smoothed_speed, time_vector
 
 
 

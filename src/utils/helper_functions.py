@@ -1000,127 +1000,14 @@ def correct_island_identifiers(island_ids):
     unique_ids = np.unique(island_ids[~np.isnan(island_ids)])
     corrected_ids = np.full_like(island_ids, np.nan, dtype=float)
 
+    fields_id = []
     for new_id, old_id in enumerate(unique_ids):
         corrected_ids[island_ids == old_id] = new_id
+        if new_id > 0:
+            fields_id.append(int(new_id))
 
-    return corrected_ids
+    return corrected_ids,fields_id
 
-
-def center_of_mass(island_mask, activity_map_smoothed, center_bins):
-    """
-    Calculate the center of mass for a given region (island), in 1D or 2D.
-
-    Parameters
-    ----------
-    island_mask : numpy.ndarray
-        Binary mask indicating pixels in the region.
-    activity_map_smoothed : numpy.ndarray
-        Smoothed activity map (1D or 2D).
-    center_bins : numpy.ndarray or tuple of arrays
-        Bin centers corresponding to the place field grid.
-
-    Returns
-    -------
-    com : float or tuple
-        Center of mass coordinates.
-    """
-    island_values = activity_map_smoothed[island_mask]
-
-    if island_mask.ndim == 1:
-        coords = np.where(island_mask)[0]
-        total_weight = np.nansum(island_values)
-        if total_weight > 0:
-            com = np.nansum(center_bins[coords] * island_values) / total_weight
-        else:
-            com = np.nanmean(center_bins[coords])
-        return com
-
-    elif island_mask.ndim == 2:
-        y_coords, x_coords = np.where(island_mask)
-        x_centers, y_centers = center_bins
-        total_weight = np.nansum(island_values)
-        if total_weight > 0:
-            x_com = np.nansum(x_centers[x_coords] * island_values) / total_weight
-            y_com = np.nansum(y_centers[y_coords] * island_values) / total_weight
-        else:
-            x_com = np.nanmean(x_centers[x_coords])
-            y_com = np.nanmean(y_centers[y_coords])
-        return x_com, y_com
-
-
-def detect_islands_and_com(binary_map, activity_map_smoothed, visits_map, center_bins, min_num_of_bins=4):
-    """
-    Detects contiguous active regions (islands) in a thresholded binary map and computes their centers of mass.
-
-    Parameters
-    ----------
-    binary_map : numpy.ndarray
-        Binary map (1D or 2D) where islands are defined by contiguous True values.
-    activity_map_smoothed : numpy.ndarray
-        Smoothed activity map corresponding to the binary map.
-    visits_map : numpy.ndarray
-        Map indicating where activity was observed.
-    center_bins : numpy.ndarray or tuple of arrays
-        Bin centers used to compute center of mass.
-    min_num_of_bins : int, optional
-        Minimum number of bins required for an island to be considered valid.
-
-    Returns
-    -------
-    n_islands : int
-        Number of detected islands.
-    x_coms : np.ndarray
-        Array of center of mass x-coordinates (or values for 1D).
-    y_coms : np.ndarray or float
-        Array of center of mass y-coordinates for 2D or np.nan for 1D.
-    pixels_absolute : np.ndarray
-        Fraction of the entire grid each island occupies.
-    pixels_relative : np.ndarray
-        Fraction of visited grid each island occupies.
-    corrected_ids : np.ndarray
-        Island map with corrected sequential identifiers.
-    activity_map_identity : np.ndarray
-        Original island ID map (NaNs for discarded islands).
-    """
-    import sys
-    sys.setrecursionlimit(10000000)
-
-    if binary_map.ndim == 1 or binary_map.ndim == 2:
-        activity_map_identity = identify_islands(np.copy(binary_map))
-    else:
-        raise ValueError("Input array must be 1D or 2D.")
-
-    unique_islands = np.unique(activity_map_identity[~np.isnan(activity_map_identity)])[1:]
-
-    islands_id = []
-    islands_com = []
-    pixels_above = []
-
-    for ii in unique_islands:
-        island_mask = (activity_map_identity == ii)
-        if np.nansum(island_mask) > min_num_of_bins:
-            com = center_of_mass(island_mask, activity_map_smoothed, center_bins)
-            islands_id.append(ii)
-            islands_com.append(com)
-            pixels_above.append(np.nansum(island_mask))
-        else:
-            activity_map_identity[island_mask] = np.nan
-
-    if not islands_id:
-        return 0, np.array([np.nan]), np.array([np.nan]), np.nan, np.nan, activity_map_identity
-
-    total_visited_pixels = np.nansum(visits_map != 0)
-    pixels_total = activity_map_smoothed.size
-
-    pixels_relative = np.array(pixels_above) / total_visited_pixels
-    pixels_absolute = np.array(pixels_above) / pixels_total
-
-    if binary_map.ndim == 1:
-        return len(islands_id), np.array(islands_com), np.array([np.nan] * len(islands_com)), pixels_absolute, pixels_relative, correct_island_identifiers(activity_map_identity)
-    else:
-        x_coms = [c[0] for c in islands_com]
-        y_coms = [c[1] for c in islands_com]
-        return len(islands_id), np.array(x_coms), np.array(y_coms), pixels_absolute, pixels_relative, correct_island_identifiers(activity_map_identity)
 
 
 def smooth_field_detection_map(activity_map, center_bins, sigma_x=2, sigma_y=None, handle_nans=False):
@@ -1188,9 +1075,10 @@ def detect_place_fields(activity_map,
     pixels_place_cell_relative : np.ndarray
     activity_map_identity : np.ndarray
     """
+
     
     threshold_type,threshold_value = threshold
-
+    '''
     activity_map_zscored = (activity_map - np.nanmean(activity_map_shifted,0))/np.nanstd(activity_map_shifted,0)
     activity_map_zscored_smoothed = smooth_field_detection_map(activity_map_zscored, center_bins, sigma_x, sigma_y, handle_nans=False)
     activity_map_norm = norm.min_max_norm(activity_map_zscored_smoothed,custom_min = 0, custom_max=1)
@@ -1206,7 +1094,208 @@ def detect_place_fields(activity_map,
     binary_map = np.where(activity_map_norm > I_threshold, 1, 0).astype(float)
 
     binary_map[np.isnan(activity_map)] = np.nan
+    '''
 
-    return detect_islands_and_com(binary_map, activity_map_norm, visits_map, center_bins, min_num_of_bins)
+    if threshold_type == "mean_std":
+        I_threshold = np.nanmean(activity_map_shifted) + threshold_value * np.nanstd(activity_map_shifted)
+
+    elif threshold_type == "percentile":
+        I_threshold = np.nanpercentile(activity_map_shifted, threshold_value)
+    else:
+        raise ValueError("Invalid threshold_type")
+
+    binary_map = np.where(activity_map > I_threshold, 1, 0).astype(float)
+    binary_map[np.isnan(activity_map)] = np.nan
+
+    activity_map_identity = detect_islands(binary_map, min_num_of_bins)
+
+    activity_map_identity,fields_id = correct_island_identifiers(activity_map_identity)
+
+    num_of_fields, fields_x_max, fields_y_max, pixels_place_cell_absolute, pixels_place_cell_relative = compute_island_centers_of_mass(activity_map_identity, fields_id, activity_map, visits_map, center_bins)
+
+    return num_of_fields, fields_x_max, fields_y_max, fields_id, pixels_place_cell_absolute, pixels_place_cell_relative, activity_map_identity
 
 
+def detect_islands(binary_map, min_num_of_bins=4):
+    """
+    Detects contiguous active regions (islands) in a thresholded binary map.
+
+    Parameters
+    ----------
+    binary_map : numpy.ndarray
+        Binary map (1D or 2D) where islands are defined by contiguous True values.
+    min_num_of_bins : int, optional
+        Minimum number of bins required for an island to be considered valid.
+
+    Returns
+    -------
+    activity_map_identity : np.ndarray
+        Labeled island map (NaNs for discarded islands).
+    valid_island_ids : list
+        List of valid island identifiers after filtering.
+    """
+    if binary_map.ndim not in (1, 2):
+        raise ValueError("Input array must be 1D or 2D.")
+
+    activity_map_identity = identify_islands(np.copy(binary_map))
+    unique_islands = np.unique(activity_map_identity[~np.isnan(activity_map_identity)])[1:]
+
+    for ii in unique_islands:
+        island_mask = (activity_map_identity == ii)
+        if not np.nansum(island_mask) >= min_num_of_bins:  
+            activity_map_identity[island_mask] = np.nan
+
+    return activity_map_identity
+
+
+def compute_island_centers_of_mass(activity_map_identity, fields_id, activity_map, visits_map, center_bins):
+    """
+    Computes the centers of mass for valid islands and occupancy statistics.
+
+    Parameters
+    ----------
+    activity_map_identity : np.ndarray
+        Island map with valid island identifiers.
+    valid_island_ids : list
+        List of valid island IDs.
+    activity_map : np.ndarray
+        Smoothed activity map corresponding to the binary map.
+    visits_map : np.ndarray
+        Map indicating where activity was observed.
+    center_bins : numpy.ndarray or tuple of arrays
+        Bin centers used to compute center of mass.
+
+    Returns
+    -------
+    n_islands : int
+        Number of valid islands.
+    x_coms : np.ndarray
+        X-coordinates of island centers (or 1D values).
+    y_coms : np.ndarray or float
+        Y-coordinates of island centers (or np.nan if 1D).
+    pixels_absolute : np.ndarray
+        Fraction of the entire grid each island occupies.
+    pixels_relative : np.ndarray
+        Fraction of visited grid each island occupies.
+    corrected_ids : np.ndarray
+        Island map with corrected sequential identifiers.
+    """
+    if len(fields_id) == 0:
+        return 0, np.array([np.nan]), np.array([np.nan]), np.nan, np.nan, activity_map_identity
+
+
+    islands_com = []
+    pixels_above = []
+    for ii in fields_id:
+        island_mask = (activity_map_identity == ii)
+        com = center_of_mass(island_mask, activity_map, center_bins)
+        islands_com.append(com)
+        pixels_above.append(np.nansum(island_mask))
+
+    total_visited_pixels = np.nansum(visits_map != 0)
+    pixels_total = activity_map.size
+
+    pixels_place_cell_relative = np.array(pixels_above) / total_visited_pixels
+    pixels_place_cell_absolute = np.array(pixels_above) / pixels_total
+
+    fields_x_max = np.array([c[0] for c in islands_com])
+    fields_y_max = np.array([c[1] for c in islands_com])
+
+    num_of_fields = len(fields_id)
+
+    return num_of_fields, fields_x_max, fields_y_max, pixels_place_cell_absolute, pixels_place_cell_relative
+
+
+
+
+def center_of_mass(island_mask, activity_map_smoothed, center_bins):
+    """
+    Calculate the center of mass for a given region (island), in 1D or 2D.
+
+    Parameters
+    ----------
+    island_mask : numpy.ndarray
+        Binary mask indicating pixels in the region.
+    activity_map_smoothed : numpy.ndarray
+        Smoothed activity map (1D or 2D).
+    center_bins : numpy.ndarray or tuple of arrays
+        Bin centers corresponding to the place field grid.
+
+    Returns
+    -------
+    com : float or tuple
+        Center of mass coordinates.
+    """
+    island_values = activity_map_smoothed[island_mask]
+
+    if island_mask.ndim == 1:
+        coords = np.where(island_mask)[0]
+        x_centers, y_centers = center_bins
+        total_weight = np.nansum(island_values)
+        if total_weight > 0:
+            x_com = np.nansum(x_centers[coords] * island_values) / total_weight
+        else:
+            x_com = np.nanmean(x_centers[coords])
+        y_com = np.nan
+
+    elif island_mask.ndim == 2:
+        y_coords, x_coords = np.where(island_mask)
+        x_centers, y_centers = center_bins
+        total_weight = np.nansum(island_values)
+        if total_weight > 0:
+            x_com = np.nansum(x_centers[x_coords] * island_values) / total_weight
+            y_com = np.nansum(y_centers[y_coords] * island_values) / total_weight
+        else:
+            x_com = np.nanmean(x_centers[x_coords])
+            y_com = np.nanmean(y_centers[y_coords])
+    else:
+        raise ValueError("island_mask must be 1D or 2D.")
+    
+    return x_com, y_com
+
+
+def refine_place_fields_by_peak_threshold(activity_map, activity_map_identity, fields_id, threshold_ratio=0.5, min_num_of_bins=4):
+    """
+    Refine place fields by keeping only connected bins exceeding a fraction of the field's peak value.
+
+    Parameters
+    ----------
+    activity_map : np.ndarray
+        Original activity map.
+    activity_map_identity : np.ndarray
+        Island-labeled map.
+    fields_id : list or np.ndarray
+        Identifiers of valid fields (from `correct_island_identifiers`).
+    threshold_ratio : float
+        Fraction of the peak value to use as the threshold (e.g. 0.5 for 50%).
+    min_num_of_bins : int
+        Minimum number of bins to keep a refined island.
+
+    Returns
+    -------
+    refined_map : np.ndarray
+        Map of same shape with NaNs outside fields, and labeled islands within.
+    """
+    from scipy.ndimage import label
+
+    refined_map = np.full_like(activity_map_identity, np.nan)
+    new_id = 1
+
+    for fid in fields_id:
+        field_mask = (activity_map_identity == fid)
+        field_values = activity_map[field_mask]
+        peak_value = np.nanmax(field_values)
+
+        threshold = threshold_ratio * peak_value
+        above_thresh_mask = (activity_map >= threshold) & field_mask
+
+        # label contiguous parts
+        labeled_field, num = label(above_thresh_mask.astype(int), structure=np.ones((3, 3)) if activity_map.ndim == 2 else [1, 1, 1])
+        
+        for island_idx in range(1, num + 1):
+            this_island = (labeled_field == island_idx)
+            if np.nansum(this_island) >= min_num_of_bins:
+                refined_map[this_island] = new_id
+                new_id += 1
+
+    return refined_map

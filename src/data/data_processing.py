@@ -22,7 +22,7 @@ class ProcessData:
             self.sampling_rate = 1 / np.nanmean(np.diff(self.time_vector))
 
         
-        DataValidator.validate_environment_edges(self,environment_edges)
+        DataValidator.validate_environment_edges(self)
         DataValidator.initial_setup(self) # Initial Setup and Conversion
         DataValidator.validate_and_correct_shape(self) # Shape Validation and Correction
         self.x_coordinates, self.y_coordinates = hf.correct_coordinates(self.x_coordinates,self.y_coordinates,environment_edges=self.environment_edges)
@@ -75,10 +75,19 @@ class ProcessData:
                     mph=1. * np.nanstd(row)
                 )
 
-            self.peaks_idx.append(peaks)
-            self.peaks_amplitude.append(row[peaks])
-            self.peaks_x_location.append(self.x_coordinates[peaks])
-            self.peaks_y_location.append(self.y_coordinates[peaks])
+            if peaks.size > 0:
+                self.peaks_idx.append(peaks)
+                self.peaks_amplitude.append(row[peaks])
+                self.peaks_x_location.append(self.x_coordinates[peaks])
+                if self.y_coordinates is None:
+                    self.peaks_y_location.append(np.zeros(peaks.shape[0])+np.nan)
+                else:
+                    self.peaks_y_location.append(self.y_coordinates[peaks])
+            else:
+                self.peaks_idx.append([])
+                self.peaks_amplitude.append([])
+                self.peaks_x_location.append([])
+                self.peaks_y_location.append([])
 
 
 
