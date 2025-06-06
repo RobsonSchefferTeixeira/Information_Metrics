@@ -1272,7 +1272,10 @@ def refine_place_fields_by_peak_connectivity(activity_map, activity_map_identity
             - 0 for background ("sea")
             - positive ints (1, 2, 3, ...) for valid islands
     threshold_fraction : float
-        Fraction of peak activity to include (e.g., 0.5 = 50%)
+        Defines the extent of a place field by setting a minimum activity threshold
+        as a fraction of the peak activity within each field. All connected bins whose
+        smoothed activity exceeds this fraction of the peak value will be retained.
+        For example, setting it to 0.5 includes bins with at least 50% of the peak activity.
 
     Returns
     -------
