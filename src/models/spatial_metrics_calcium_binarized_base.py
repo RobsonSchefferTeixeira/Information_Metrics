@@ -155,14 +155,12 @@ class PlaceCellBinarized:
                                         )
             '''
 
-            num_of_fields, fields_x_max, fields_y_max, fields_id, pixels_place_cell_absolute, pixels_place_cell_relative, activity_map_identity \
+            num_of_fields, fields_x_max, fields_y_max, field_ids, pixels_place_cell_absolute, pixels_place_cell_relative, activity_map_identity \
                 = hf.detect_place_fields(activity_map_smoothed, activity_map_smoothed_shifted,
                                         visits_occupancy,
                                         (x_center_bins, y_center_bins),
                                         threshold=self.threshold,
-                                        min_num_of_bins=self.min_num_of_bins,
-                                        sigma_x=self.map_smoothing_sigma_x,
-                                        sigma_y=self.map_smoothing_sigma_y
+                                        min_num_of_bins=self.min_num_of_bins
                                         )
 
             sparsity = hf.get_sparsity(activity_map, position_occupancy)
@@ -209,9 +207,7 @@ class PlaceCellBinarized:
             inputdict['num_of_fields'] = num_of_fields
             inputdict['fields_x_max'] = fields_x_max
             inputdict['fields_y_max'] = fields_y_max
-            inputdict['fields_id'] = fields_id
-
-            
+            inputdict['field_ids'] = field_ids
 
             inputdict['place_cell_extension_absolute'] = pixels_place_cell_absolute
             inputdict['place_cell_extension_relative'] = pixels_place_cell_relative

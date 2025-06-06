@@ -1000,13 +1000,13 @@ def correct_island_identifiers(island_ids):
     unique_ids = np.unique(island_ids[~np.isnan(island_ids)])
     corrected_ids = np.full_like(island_ids, np.nan, dtype=float)
 
-    fields_id = []
+    field_ids = []
     for new_id, old_id in enumerate(unique_ids):
         corrected_ids[island_ids == old_id] = new_id
         if new_id > 0:
-            fields_id.append(int(new_id))
+            field_ids.append(int(new_id))
 
-    return corrected_ids,fields_id
+    return corrected_ids,field_ids
 
 
 
@@ -1039,8 +1039,7 @@ def detect_place_fields(activity_map,
                         center_bins,
                         threshold = ('mean_std', 2),
                         min_num_of_bins=4,
-                        sigma_x=1.0,
-                        sigma_y=None):
+                        ):
     
     """
     Wrapper to detect place fields based on the specified detection method and threshold.
@@ -1109,11 +1108,13 @@ def detect_place_fields(activity_map,
 
     activity_map_identity = detect_islands(binary_map, min_num_of_bins)
 
-    activity_map_identity,fields_id = correct_island_identifiers(activity_map_identity)
+    activity_map_identity, field_ids = correct_island_identifiers(activity_map_identity)
 
-    num_of_fields, fields_x_max, fields_y_max, pixels_place_cell_absolute, pixels_place_cell_relative = compute_island_centers_of_mass(activity_map_identity, fields_id, activity_map, visits_map, center_bins)
+    activity_map_identity = refine_place_fields_by_peak_connectivity(activity_map, activity_map_identity, field_ids, threshold_fraction=0.5)
 
-    return num_of_fields, fields_x_max, fields_y_max, fields_id, pixels_place_cell_absolute, pixels_place_cell_relative, activity_map_identity
+    num_of_fields, fields_x_max, fields_y_max, pixels_place_cell_absolute, pixels_place_cell_relative = compute_island_centers_of_mass(activity_map_identity, field_ids, activity_map, visits_map, center_bins)
+
+    return num_of_fields, fields_x_max, fields_y_max, field_ids, pixels_place_cell_absolute, pixels_place_cell_relative, activity_map_identity
 
 
 def detect_islands(binary_map, min_num_of_bins=4):
@@ -1254,48 +1255,86 @@ def center_of_mass(island_mask, activity_map_smoothed, center_bins):
     return x_com, y_com
 
 
-def refine_place_fields_by_peak_threshold(activity_map, activity_map_identity, fields_id, threshold_ratio=0.5, min_num_of_bins=4):
+def refine_place_fields_by_peak_connectivity(activity_map, activity_map_identity, field_ids, threshold_fraction=0.5):
     """
-    Refine place fields by keeping only connected bins exceeding a fraction of the field's peak value.
+    Keeps only bins within each island that are:
+    - Connected to the peak bin (8-connected in 2D, adjacent in 1D)
+    - Above threshold_fraction * peak value
+    - In the original island (id > 0)
 
     Parameters
     ----------
     activity_map : np.ndarray
-        Original activity map.
+        The smoothed activity map. Can be 1D or 2D.
     activity_map_identity : np.ndarray
-        Island-labeled map.
-    fields_id : list or np.ndarray
-        Identifiers of valid fields (from `correct_island_identifiers`).
-    threshold_ratio : float
-        Fraction of the peak value to use as the threshold (e.g. 0.5 for 50%).
-    min_num_of_bins : int
-        Minimum number of bins to keep a refined island.
+        Array with labeled islands. Use:
+            - NaN for ignored bins
+            - 0 for background ("sea")
+            - positive ints (1, 2, 3, ...) for valid islands
+    threshold_fraction : float
+        Fraction of peak activity to include (e.g., 0.5 = 50%)
 
     Returns
     -------
-    refined_map : np.ndarray
-        Map of same shape with NaNs outside fields, and labeled islands within.
+    refined_identity : np.ndarray
+        Same shape, with cleaned island maps (same IDs, no relabeling).
     """
-    from scipy.ndimage import label
+    refined_identity = np.full_like(activity_map_identity, 0)
+    refined_identity[np.isnan(activity_map_identity)] = np.nan
 
-    refined_map = np.full_like(activity_map_identity, np.nan)
-    new_id = 1
+    is_1d = activity_map.ndim == 1
 
-    for fid in fields_id:
-        field_mask = (activity_map_identity == fid)
-        field_values = activity_map[field_mask]
-        peak_value = np.nanmax(field_values)
+    for field_id in field_ids:
+        field_mask = activity_map_identity == field_id
+        field_activity = np.where(field_mask, activity_map, np.nan)
 
-        threshold = threshold_ratio * peak_value
-        above_thresh_mask = (activity_map >= threshold) & field_mask
+        peak_idx_flat = np.nanargmax(field_activity)
+        peak_value = activity_map.flat[peak_idx_flat]
+        threshold = threshold_fraction * peak_value
 
-        # label contiguous parts
-        labeled_field, num = label(above_thresh_mask.astype(int), structure=np.ones((3, 3)) if activity_map.ndim == 2 else [1, 1, 1])
-        
-        for island_idx in range(1, num + 1):
-            this_island = (labeled_field == island_idx)
-            if np.nansum(this_island) >= min_num_of_bins:
-                refined_map[this_island] = new_id
-                new_id += 1
+        visited = set()
 
-    return refined_map
+        if is_1d:
+            to_visit = [peak_idx_flat]
+            while to_visit:
+                i = to_visit.pop()
+                if i in visited:
+                    continue
+                visited.add(i)
+
+                if not field_mask[i] or activity_map[i] < threshold:
+                    continue
+
+                refined_identity[i] = field_id
+
+                for ni in [i - 1, i + 1]:
+                    if 0 <= ni < activity_map.shape[0] and ni not in visited:
+                        if field_mask[ni] and activity_map[ni] >= threshold:
+                            to_visit.append(ni)
+
+        else:
+            peak_coords = np.unravel_index(peak_idx_flat, activity_map.shape)
+            to_visit = [peak_coords]
+
+            while to_visit:
+                x, y = to_visit.pop()
+                if (x, y) in visited:
+                    continue
+                visited.add((x, y))
+
+                if not field_mask[x, y] or activity_map[x, y] < threshold:
+                    continue
+
+                refined_identity[x, y] = field_id
+
+                for dx in [-1, 0, 1]:
+                    for dy in [-1, 0, 1]:
+                        if dx == 0 and dy == 0:
+                            continue
+                        nx, ny = x + dx, y + dy
+                        if 0 <= nx < activity_map.shape[0] and 0 <= ny < activity_map.shape[1]:
+                            if (nx, ny) not in visited:
+                                if field_mask[nx, ny] and activity_map[nx, ny] >= threshold:
+                                    to_visit.append((nx, ny))
+
+    return refined_identity
