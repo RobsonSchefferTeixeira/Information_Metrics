@@ -14,7 +14,15 @@ def preprocess_signal(input_signal, sampling_rate, signal_type, z_threshold=2):
         The sampling rate of the input signal.
     - signal_type: str
         The type of signal to output. Options are 'raw', 'filtered', 'diff', or 'binary'.
-    - z_threshold: float, optional
+        -- 'raw' - Return the original, unprocessed signal.
+        -- 'filtered' - Apply a low-pass filter (cutoff at 2 Hz) to extract the slow components of the signal.
+        -- 'diff' - Compute the first derivative (rate of change) of the low-pass filtered signal.
+        -- 'diff_truncated' - Compute the first derivative of the filtered signal and truncate all negative values (i.e., keep only rising edges).
+        -- 'binary' - Apply low-pass filtering and z-score normalization, then binarize the signal (0`s and 1`s) by thresholding and 
+        detecting positive-going changes. This version highlights periods of rising activity above a z-threshold.
+
+
+     - z_threshold: float, optional
         Z-score threshold for binarization (default is 2).
 
     Returns:
