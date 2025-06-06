@@ -1039,6 +1039,7 @@ def detect_place_fields(activity_map,
                         center_bins,
                         threshold = ('mean_std', 2),
                         min_num_of_bins=4,
+                        threshold_fraction=0.5
                         ):
     
     """
@@ -1110,7 +1111,7 @@ def detect_place_fields(activity_map,
 
     activity_map_identity, field_ids = correct_island_identifiers(activity_map_identity)
 
-    activity_map_identity = refine_place_fields_by_peak_connectivity(activity_map, activity_map_identity, field_ids, threshold_fraction=0.5)
+    activity_map_identity = refine_place_fields_by_peak_connectivity(activity_map, activity_map_identity, field_ids, threshold_fraction)
 
     num_of_fields, fields_x_max, fields_y_max, pixels_place_cell_absolute, pixels_place_cell_relative = compute_island_centers_of_mass(activity_map_identity, field_ids, activity_map, visits_map, center_bins)
 

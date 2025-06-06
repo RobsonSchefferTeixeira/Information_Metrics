@@ -49,6 +49,7 @@ class PlaceCellBinarized:
         kwargs.setdefault('num_surrogates', 200)
         kwargs.setdefault('min_num_of_bins', 4)
         kwargs.setdefault('threshold',('mean_std',2))
+        kwargs.setdefault('threshold_fraction',0.5)
         kwargs.setdefault('alpha',0.05)
 
 
@@ -57,7 +58,7 @@ class PlaceCellBinarized:
                         'map_smoothing_sigma_x','map_smoothing_sigma_y','x_bin_size', 'y_bin_size',
                         'shift_time', 'num_cores','min_num_of_bins','num_surrogates', 
                         'saving_path', 'saving', 'saving_string','x_bin_size_info','y_bin_size_info',
-                        'field_detection_method','alpha','overwrite','threshold']
+                        'field_detection_method','alpha','overwrite','threshold','threshold_fraction']
 
         for k, v in kwargs.items():
             if k not in valid_kwargs:
@@ -160,7 +161,8 @@ class PlaceCellBinarized:
                                         visits_occupancy,
                                         (x_center_bins, y_center_bins),
                                         threshold=self.threshold,
-                                        min_num_of_bins=self.min_num_of_bins
+                                        min_num_of_bins=self.min_num_of_bins,
+                                        threshold_fraction = self.threshold_fraction
                                         )
 
             sparsity = hf.get_sparsity(activity_map, position_occupancy)
