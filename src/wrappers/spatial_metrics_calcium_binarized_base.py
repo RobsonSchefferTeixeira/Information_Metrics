@@ -95,7 +95,6 @@ class PlaceCellBinarized:
                 signal_data.x_coordinates, signal_data.y_coordinates, self.x_bin_size, self.y_bin_size,
                 environment_edges=signal_data.environment_edges)
 
-
             x_grid_info, y_grid_info, _, _, _, _ = hf.get_position_grid(
                 signal_data.x_coordinates, signal_data.y_coordinates, self.x_bin_size_info, self.y_bin_size_info,
                 environment_edges=signal_data.environment_edges)
@@ -105,6 +104,8 @@ class PlaceCellBinarized:
             signal_data.add_visits(x_center_bins, y_center_bins)
 
             signal_data.add_position_time_spent()
+
+            signal_data.add_peaks_detection(self.signal_type)
 
             DataValidator.get_valid_timepoints(signal_data, self.min_speed_threshold, self.min_visits, self.min_time_spent)
 
@@ -167,8 +168,6 @@ class PlaceCellBinarized:
 
             sparsity = hf.get_sparsity(activity_map, position_occupancy)
 
-            signal_data.add_peaks_detection(self.signal_type)
-
             mutual_info_per_spike_statistic = be.calculate_p_value(mutual_info_per_spike_original, mutual_info_per_spike_shifted, alternative='greater')
             mutual_info_per_spike_pvalue = mutual_info_per_spike_statistic.p_value
 
@@ -181,8 +180,10 @@ class PlaceCellBinarized:
                 pixels_place_cell_absolute = np.nan
                 fields_x_max = np.nan
                 fields_y_max = np.nan
+                field_ids = np.nan
                 pixels_place_cell_absolute = np.nan
                 pixels_place_cell_relative = np.nan
+                
 
 
             inputdict = dict()
