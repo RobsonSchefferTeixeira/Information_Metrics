@@ -3,7 +3,7 @@ import scipy.signal as sig
 import warnings
 import src.utils.normalizing_functions as nf
 
-def preprocess_signal(input_signal, sampling_rate, signal_type, z_threshold=2):
+def preprocess_signal(input_signal, sampling_rate, signal_type, z_threshold=2, low_cut=0, high_cut=2, order=3):  
     """
     Preprocess a signal based on the specified signal type.
 
@@ -40,18 +40,18 @@ def preprocess_signal(input_signal, sampling_rate, signal_type, z_threshold=2):
     elif signal_type == 'filtered':
         # Return the lowpass filtered signal
         # Filter the input signal with a lowpass filter (cutoff at 2 Hz)
-        filtered_signal = eegfilt(input_signal, sampling_rate, 0, 2, order=3)
+        filtered_signal = eegfilt(input_signal, sampling_rate, low_cut, high_cut, order)
         return filtered_signal
     
     elif signal_type == 'diff':
         # Compute the first derivative of the filtered signal
-        filtered_signal = eegfilt(input_signal, sampling_rate, 0, 2, order=3)
+        filtered_signal = eegfilt(input_signal, sampling_rate, low_cut, high_cut, order)
         diff_signal = np.hstack([np.diff(filtered_signal), 0])
         return diff_signal
 
     elif signal_type == 'diff_truncated':
         # Return the positive part of the first derivative of the filtered signal
-        filtered_signal = eegfilt(input_signal, sampling_rate, 0, 2, order=3)
+        filtered_signal = eegfilt(input_signal, sampling_rate, low_cut, high_cut, order)
         diff_signal = np.hstack([np.diff(filtered_signal), 0])
         diff_signal_truncated = np.copy(diff_signal)
         diff_signal_truncated[diff_signal < 0] = 0
@@ -59,7 +59,7 @@ def preprocess_signal(input_signal, sampling_rate, signal_type, z_threshold=2):
 
     elif signal_type == 'binary':
         # Binarize the signal based on z-score threshold and positive derivative
-        filtered_signal = eegfilt(input_signal, sampling_rate, 0, 2, order=3)
+        filtered_signal = eegfilt(input_signal, sampling_rate, low_cut, high_cut, order)
         diff_signal = np.hstack([np.diff(filtered_signal),0])
         norm_signal = nf.z_score_norm(filtered_signal)
         # norm_signal = input_signal / np.nanstd(input_signal)

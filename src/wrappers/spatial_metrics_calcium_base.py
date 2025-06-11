@@ -105,7 +105,6 @@ class PlaceCell:
             
             visits_occupancy = hf.get_visits_occupancy(signal_data.x_coordinates, signal_data.new_visits_times, x_grid, signal_data.y_coordinates, y_grid)
 
-            
             activity_map, activity_map_smoothed = hf.get_activity_map(signal_data.input_signal,
                                                                         signal_data.x_coordinates, x_grid, self.map_smoothing_sigma_x,
                                                                         signal_data.y_coordinates, y_grid, self.map_smoothing_sigma_y)
@@ -114,22 +113,20 @@ class PlaceCell:
             
             signal_data.add_binned_input_signal(self.nbins_cal)
 
-            if np.isnan(y_grid_info):
+            if np.all(np.isnan(y_grid_info)):
                 nbins_pos = (x_grid_info.shape[0] - 1)
             else:
                 nbins_pos = (x_grid_info.shape[0] - 1) * (y_grid_info.shape[0] - 1)
 
-
             mutual_info_original = info.get_mutual_information_binned(signal_data.input_signal_binned,self.nbins_cal,signal_data.position_binned,nbins_pos)
 
-            mutual_info_kullback_leibler_original = info.get_kullback_leibler_normalized(signal_data.input_signal,signal_data.position_binned)
-
-            mutual_info_NN_original = info.get_mutual_information_NN(signal_data.input_signal,signal_data.position_binned)
+            mutual_info_classif_original = info.get_mutual_information_classif(signal_data.input_signal,signal_data.position_binned)
             
             mutual_info_regression_original = info.get_mutual_information_regression(signal_data.input_signal,signal_data.position_binned)
 
             mutual_info_skaggs_original = info.get_mutual_info_skaggs(signal_data.input_signal,signal_data.position_binned)
             
+            mutual_info_kullback_leibler_original = info.get_kullback_leibler_normalized(signal_data.input_signal,signal_data.position_binned)
 
             results = self.parallelize_surrogate(signal_data.input_signal,signal_data.position_binned, signal_data.sampling_rate,
                                                  self.shift_time, self.nbins_cal, nbins_pos, 
@@ -137,7 +134,7 @@ class PlaceCell:
                                                  self.map_smoothing_sigma_x, self.map_smoothing_sigma_y, self.num_cores, self.num_surrogates)
 
             mutual_info_shifted = []
-            mutual_info_NN_shifted = []
+            mutual_info_classif_shifted = []
             mutual_info_kullback_leibler_shifted = []
             mutual_info_skaggs_shifted = []
             mutual_info_regression_shifted = []
@@ -147,13 +144,13 @@ class PlaceCell:
             for perm in range(self.num_surrogates):
                 mutual_info_shifted.append(results[perm][0])
                 mutual_info_kullback_leibler_shifted.append(results[perm][1])
-                mutual_info_NN_shifted.append(results[perm][2])
+                mutual_info_classif_shifted.append(results[perm][2])
                 mutual_info_skaggs_shifted.append(results[perm][3])
                 mutual_info_regression_shifted.append(results[perm][4])
                 activity_map_shifted.append(results[perm][5])
                 activity_map_smoothed_shifted.append(results[perm][6])
                 
-            mutual_info_NN_shifted = np.array(mutual_info_NN_shifted)
+            mutual_info_classif_shifted = np.array(mutual_info_classif_shifted)
             mutual_info_shifted = np.array(mutual_info_shifted)
             mutual_info_kullback_leibler_shifted = np.array(mutual_info_kullback_leibler_shifted)
             mutual_info_skaggs_shifted = np.array(mutual_info_skaggs_shifted)
@@ -164,18 +161,17 @@ class PlaceCell:
 
             mutual_info_zscored, mutual_info_centered = info.get_mutual_information_zscored(mutual_info_original, mutual_info_shifted)
 
-            mutual_info_kullback_leibler_zscored, mutual_info_kullback_leibler_centered = info.get_mutual_information_zscored(
-                mutual_info_kullback_leibler_original, mutual_info_kullback_leibler_shifted)
-
-            mutual_info_NN_zscored, mutual_info_NN_centered = info.get_mutual_information_zscored(
-                mutual_info_NN_original, mutual_info_NN_shifted)
-
-            mutual_info_skaggs_zscored, mutual_info_skaggs_centered = info.get_mutual_information_zscored(
-                mutual_info_skaggs_original, mutual_info_skaggs_shifted)
+            mutual_info_classif_zscored, mutual_info_classif_centered = info.get_mutual_information_zscored(
+                mutual_info_classif_original, mutual_info_classif_shifted)
 
             mutual_info_regression_zscored, mutual_info_regression_centered = info.get_mutual_information_zscored(
                 mutual_info_regression_original, mutual_info_regression_shifted)
 
+            mutual_info_skaggs_zscored, mutual_info_skaggs_centered = info.get_mutual_information_zscored(
+                mutual_info_skaggs_original, mutual_info_skaggs_shifted)
+
+            mutual_info_kullback_leibler_zscored, mutual_info_kullback_leibler_centered = info.get_mutual_information_zscored(
+                mutual_info_kullback_leibler_original, mutual_info_kullback_leibler_shifted)
 
             num_of_fields, fields_x_max, fields_y_max, field_ids, pixels_place_cell_absolute, pixels_place_cell_relative, activity_map_identity \
                 = hf.detect_place_fields(activity_map_smoothed, activity_map_smoothed_shifted,
@@ -194,8 +190,8 @@ class PlaceCell:
             mutual_info_kullback_leibler_statistic = be.calculate_p_value(mutual_info_kullback_leibler_original, mutual_info_kullback_leibler_shifted, alternative='greater')
             mutual_info_kullback_leibler_pvalue = mutual_info_kullback_leibler_statistic.p_value
             
-            mutual_info_NN_statistic = be.calculate_p_value(mutual_info_NN_original, mutual_info_NN_shifted, alternative='greater')
-            mutual_info_NN_pvalue = mutual_info_NN_statistic.p_value
+            mutual_info_classif_statistic = be.calculate_p_value(mutual_info_classif_original, mutual_info_classif_shifted, alternative='greater')
+            mutual_info_classif_pvalue = mutual_info_classif_statistic.p_value
 
             mutual_info_regression_statistic = be.calculate_p_value(mutual_info_regression_original, mutual_info_regression_shifted, alternative='greater')
             mutual_info_regression_pvalue = mutual_info_regression_statistic.p_value
@@ -254,17 +250,11 @@ class PlaceCell:
             inputdict['mutual_info_centered'] = mutual_info_centered
             inputdict['mutual_info_pvalue'] = mutual_info_pvalue
 
-            inputdict['mutual_info_kullback_leibler_original'] = mutual_info_kullback_leibler_original
-            inputdict['mutual_info_kullback_leibler_shifted'] = mutual_info_kullback_leibler_shifted
-            inputdict['mutual_info_kullback_leibler_zscored'] = mutual_info_kullback_leibler_zscored
-            inputdict['mutual_info_kullback_leibler_centered'] = mutual_info_kullback_leibler_centered
-            inputdict['mutual_info_kullback_leibler_pvalue'] = mutual_info_kullback_leibler_pvalue
-
-            inputdict['mutual_info_NN_original'] = mutual_info_NN_original
-            inputdict['mutual_info_NN_shifted'] = mutual_info_NN_shifted
-            inputdict['mutual_info_NN_zscored'] = mutual_info_NN_zscored
-            inputdict['mutual_info_NN_centered'] = mutual_info_NN_centered
-            inputdict['mutual_info_NN_pvalue'] = mutual_info_NN_pvalue
+            inputdict['mutual_info_classif_original'] = mutual_info_classif_original
+            inputdict['mutual_info_classif_shifted'] = mutual_info_classif_shifted
+            inputdict['mutual_info_classif_zscored'] = mutual_info_classif_zscored
+            inputdict['mutual_info_classif_centered'] = mutual_info_classif_centered
+            inputdict['mutual_info_classif_pvalue'] = mutual_info_classif_pvalue
 
             inputdict['mutual_info_regression_original'] = mutual_info_regression_original
             inputdict['mutual_info_regression_shifted'] = mutual_info_regression_shifted
@@ -272,11 +262,17 @@ class PlaceCell:
             inputdict['mutual_info_regression_centered'] = mutual_info_regression_centered
             inputdict['mutual_info_regression_pvalue'] = mutual_info_regression_pvalue
 
-            inputdict['mutual_info_skaggs_original'] = mutual_info_skaggs_original
-            inputdict['mutual_info_skaggs_shifted'] = mutual_info_skaggs_shifted
-            inputdict['mutual_info_skaggs_zscored'] = mutual_info_skaggs_zscored
-            inputdict['mutual_info_skaggs_centered'] = mutual_info_skaggs_centered
-            inputdict['mutual_info_skaggs_pvalue'] = mutual_info_skaggs_pvalue
+            # inputdict['mutual_info_kullback_leibler_original'] = mutual_info_kullback_leibler_original
+            # inputdict['mutual_info_kullback_leibler_shifted'] = mutual_info_kullback_leibler_shifted
+            # inputdict['mutual_info_kullback_leibler_zscored'] = mutual_info_kullback_leibler_zscored
+            # inputdict['mutual_info_kullback_leibler_centered'] = mutual_info_kullback_leibler_centered
+            # inputdict['mutual_info_kullback_leibler_pvalue'] = mutual_info_kullback_leibler_pvalue
+
+            # inputdict['mutual_info_skaggs_original'] = mutual_info_skaggs_original
+            # inputdict['mutual_info_skaggs_shifted'] = mutual_info_skaggs_shifted
+            # inputdict['mutual_info_skaggs_zscored'] = mutual_info_skaggs_zscored
+            # inputdict['mutual_info_skaggs_centered'] = mutual_info_skaggs_centered
+            # inputdict['mutual_info_skaggs_pvalue'] = mutual_info_skaggs_pvalue
 
             inputdict['input_parameters'] = self.__dict__['input_parameters']
 
@@ -321,7 +317,7 @@ class PlaceCell:
         mutual_info_shifted = info.get_mutual_information_binned(input_signal_shifted_binned,nbins_cal, 
                                                                  position_binned,nbins_pos)
 
-        mutual_info_shifted_NN = info.get_mutual_information_NN(input_signal_shifted, position_binned)
+        mutual_info_shifted_classif = info.get_mutual_information_classif(input_signal_shifted, position_binned)
 
         mutual_info_shifted_regression = info.get_mutual_information_regression(input_signal_shifted, position_binned)
 
@@ -334,7 +330,7 @@ class PlaceCell:
                                                                                    y_coordinates, y_grid, map_smoothing_sigma_y)
     
 
-        return mutual_info_shifted, modulation_index_shifted, mutual_info_shifted_NN, mutual_info_skaggs_shifted,\
+        return mutual_info_shifted, modulation_index_shifted, mutual_info_shifted_classif, mutual_info_skaggs_shifted,\
                mutual_info_shifted_regression, activity_map_shifted, activity_map_smoothed_shifted
 
 

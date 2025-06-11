@@ -1111,7 +1111,9 @@ def detect_place_fields(activity_map,
 
     activity_map_identity, field_ids = correct_island_identifiers(activity_map_identity)
 
-    activity_map_identity = refine_place_fields_by_peak_connectivity(activity_map, activity_map_identity, field_ids, threshold_fraction)
+    activity_map_identity = refine_place_fields_by_peak_connectivity(activity_map, activity_map_identity, field_ids, threshold_fraction, min_num_of_bins)
+
+    activity_map_identity, field_ids = correct_island_identifiers(activity_map_identity)
 
     num_of_fields, fields_x_max, fields_y_max, pixels_place_cell_absolute, pixels_place_cell_relative = compute_island_centers_of_mass(activity_map_identity, field_ids, activity_map, visits_map, center_bins)
 
@@ -1145,7 +1147,7 @@ def detect_islands(binary_map, min_num_of_bins=4):
     for ii in unique_islands:
         island_mask = (activity_map_identity == ii)
         if not np.nansum(island_mask) >= min_num_of_bins:  
-            activity_map_identity[island_mask] = np.nan
+            activity_map_identity[island_mask] = 0
 
     return activity_map_identity
 
@@ -1256,7 +1258,7 @@ def center_of_mass(island_mask, activity_map_smoothed, center_bins):
     return x_com, y_com
 
 
-def refine_place_fields_by_peak_connectivity(activity_map, activity_map_identity, field_ids, threshold_fraction=0.5):
+def refine_place_fields_by_peak_connectivity_bkp(activity_map, activity_map_identity, field_ids, threshold_fraction=0.5):
     """
     Keeps only bins within each island that are:
     - Connected to the peak bin (8-connected in 2D, adjacent in 1D)
@@ -1341,4 +1343,125 @@ def refine_place_fields_by_peak_connectivity(activity_map, activity_map_identity
                                 if field_mask[nx, ny] and activity_map[nx, ny] >= threshold:
                                     to_visit.append((nx, ny))
 
+    return refined_identity
+
+def refine_place_fields_by_peak_connectivity(activity_map, activity_map_identity, field_ids,threshold_fraction=0.5, min_num_of_bins=1):
+    """
+    Keeps only bins within each island that are:
+    - Connected to the peak bin (8-connected in 2D, adjacent in 1D)
+    - Above threshold_fraction * peak value
+    - In the original island (id > 0)
+    Also removes islands that end up smaller than min_num_of_bins.
+
+    Parameters
+    ----------
+    activity_map : np.ndarray
+        The smoothed activity map. Can be 1D or 2D.
+    activity_map_identity : np.ndarray
+        Array with labeled islands. Use:
+            - NaN for ignored bins
+            - 0 for background ("sea")
+            - positive ints (1, 2, 3, ...) for valid islands
+    field_ids : list or array-like
+        List of island IDs to refine.
+    threshold_fraction : float, optional
+        Fraction of peak activity to keep bins. Default is 0.5.
+    min_num_of_bins : int, optional
+        Minimum number of bins required to keep an island after refinement.
+        Islands smaller than this are removed. Default is 1.
+
+    Returns
+    -------
+    refined_identity : np.ndarray
+        Same shape, with cleaned island maps (same IDs, no relabeling).
+    """
+
+    # Initialize the output array with zeros (background)
+    refined_identity = np.full_like(activity_map_identity, 0)
+    # Preserve NaNs for ignored bins
+    refined_identity[np.isnan(activity_map_identity)] = np.nan
+
+    # Detect if the input activity map is 1D or 2D
+    is_1d = activity_map.ndim == 1
+
+    # Process each island ID separately
+    for field_id in field_ids:
+        # Create a mask selecting bins belonging to current island
+        field_mask = activity_map_identity == field_id
+        # Extract activity values within this island; others set to NaN
+        field_activity = np.where(field_mask, activity_map, np.nan)
+
+        # Find index of peak bin (highest activity) within the island
+        peak_idx_flat = np.nanargmax(field_activity)
+        peak_value = activity_map.flat[peak_idx_flat]
+        # Define activity threshold for keeping bins
+        threshold = threshold_fraction * peak_value
+
+        # Track visited bins during traversal to avoid repeats
+        visited = set()
+
+        if is_1d:
+            # For 1D arrays:
+            # Mark peak bin as kept immediately
+            refined_identity[peak_idx_flat] = field_id
+            visited.add(peak_idx_flat)
+
+            # Initialize stack for DFS/BFS starting from peak bin
+            to_visit = [peak_idx_flat]
+
+            while to_visit:
+                i = to_visit.pop()
+
+                # Explore neighbors: left (i-1) and right (i+1)
+                for ni in [i - 1, i + 1]:
+                    # Check bounds and if neighbor not visited
+                    if 0 <= ni < activity_map.shape[0] and ni not in visited:
+                        # Check if neighbor is in original island and above threshold
+                        if field_mask[ni] and activity_map[ni] >= threshold:
+                            # Mark neighbor as kept and add to stack
+                            refined_identity[ni] = field_id
+                            visited.add(ni)
+                            to_visit.append(ni)
+
+        else:
+            # For 2D arrays:
+            # Convert flat peak index to coordinates
+            peak_coords = np.unravel_index(peak_idx_flat, activity_map.shape)
+            # Mark peak bin as kept immediately
+            refined_identity[peak_coords] = field_id
+            visited.add(peak_coords)
+
+            # Initialize stack for DFS/BFS starting from peak bin
+            to_visit = [peak_coords]
+
+            while to_visit:
+                x, y = to_visit.pop()
+
+                # Explore 8-connected neighbors
+                for dx in [-1, 0, 1]:
+                    for dy in [-1, 0, 1]:
+                        # Skip the current bin itself
+                        if dx == 0 and dy == 0:
+                            continue
+                        nx, ny = x + dx, y + dy
+                        # Check bounds and if neighbor not visited
+                        if 0 <= nx < activity_map.shape[0] and 0 <= ny < activity_map.shape[1]:
+                            if (nx, ny) not in visited:
+                                # Check if neighbor is in original island and above threshold
+                                if field_mask[nx, ny] and activity_map[nx, ny] >= threshold:
+                                    # Mark neighbor as kept and add to stack
+                                    refined_identity[nx, ny] = field_id
+                                    visited.add((nx, ny))
+                                    to_visit.append((nx, ny))
+
+        # After collecting bins connected to the peak and above threshold:
+        # Check how many bins remain in the refined island
+        island_mask = refined_identity == field_id
+        # Count number of bins (ignoring NaNs)
+        num_bins = np.nansum(island_mask)
+
+        # If island is smaller than minimum required, remove it by setting bins to 0
+        if num_bins < min_num_of_bins:
+            refined_identity[island_mask] = 0
+        
     return refined_identity

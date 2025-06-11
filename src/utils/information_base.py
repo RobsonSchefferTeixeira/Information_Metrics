@@ -350,15 +350,15 @@ def get_binned_signal(calcium_imag, nbins_cal):
 
 
 
-def get_mutual_information_NN(calcium_imag, position_binned):
-    mutual_info_NN_original = \
-    mutual_info_classif(calcium_imag.reshape(-1, 1), position_binned, discrete_features=False)[0]
+def get_mutual_information_classif(calcium_imag, position_binned):
+    mutual_info_classif_original = \
+    mutual_info_classif(calcium_imag.reshape(-1, 1), position_binned, discrete_features='auto')[0]
 
-    return mutual_info_NN_original
+    return mutual_info_classif_original
 
 def get_mutual_information_regression(calcium_imag, position_binned):
     mutual_info_regression_original = \
-    mutual_info_regression(calcium_imag.reshape(-1, 1), position_binned, discrete_features=False)[0]
+    mutual_info_regression(calcium_imag.reshape(-1, 1), position_binned, discrete_features='auto')[0]
 
     return mutual_info_regression_original
 
@@ -685,4 +685,191 @@ def calculate_spatial_info_nkinsky(FT, x, y, speed, cmperbin):
             INFO[this_neuron] = np.nansum(info_terms)
 
     return INFO, p_i, lambda_, lambda_i
+
+
+
+
+import numpy as np
+from scipy.special import digamma
+from sklearn.neighbors import NearestNeighbors, KDTree, BallTree
+from sklearn.preprocessing import MinMaxScaler
+from joblib import Parallel, delayed
+
+def mutual_info_regression_scratch(X, y, n_neighbors=3, random_state=None, n_jobs=1, tree_method='auto'):
+    """
+    Estimate mutual information between each feature in X and the continuous target y
+    using the Kraskov kNN method.
+
+    Parameters:
+    - X: ndarray of shape (n_samples, n_features)
+    - y: ndarray of shape (n_samples,)
+    - n_neighbors: int, number of nearest neighbors (default 3)
+    - random_state: int or None, for reproducible neighbor tie-breaking
+    - n_jobs: int, number of parallel jobs (default 1)
+    - tree_method: str, one of {'auto', 'kd_tree', 'ball_tree', 'brute'} (default 'auto')
+
+    Returns:
+    - mi: ndarray of shape (n_features,), estimated mutual information values
+    """
+    X = np.asarray(X, dtype=float)
+    y = np.asarray(y, dtype=float).reshape(-1, 1)
+    n_samples, n_features = X.shape
+
+    # MinMax scaling to [0, 1], like sklearn does internally
+    scaler_x = MinMaxScaler()
+    X = scaler_x.fit_transform(X)
+    scaler_y = MinMaxScaler()
+    y = scaler_y.fit_transform(y)
+
+    # Shuffle to break ties similarly to sklearn
+    if random_state is not None:
+        rng = np.random.default_rng(seed=random_state)
+        indices = rng.permutation(n_samples)
+        X = X[indices]
+        y = y[indices]
+
+    eps_machine = np.finfo(float).eps
+
+    def get_tree(X_data, method):
+        if method == 'kd_tree':
+            return KDTree(X_data, metric='chebyshev')
+        elif method == 'ball_tree':
+            return BallTree(X_data, metric='chebyshev')
+        else:
+            return NearestNeighbors(metric='chebyshev').fit(X_data)
+
+    def compute_mi_feature(x):
+        x = x.reshape(-1, 1)
+        xy = np.hstack((x, y))
+
+        if tree_method in ['kd_tree', 'ball_tree']:
+            tree_xy = get_tree(xy, tree_method)
+            eps = tree_xy.query(xy, k=n_neighbors + 1, return_distance=True)[0][:, -1]
+        else:
+            nn_xy = NearestNeighbors(n_neighbors=n_neighbors + 1, metric='chebyshev')
+            nn_xy.fit(xy)
+            distances, _ = nn_xy.kneighbors(xy)
+            eps = distances[:, -1]
+
+        tree_x = get_tree(x, tree_method)
+        tree_y = get_tree(y, tree_method)
+
+        nx = np.empty(n_samples, dtype=int)
+        ny = np.empty(n_samples, dtype=int)
+        for i in range(n_samples):
+            radius = eps[i] - eps_machine
+            if tree_method in ['kd_tree', 'ball_tree']:
+                nx[i] = len(tree_x.query_radius([x[i]], r=radius, count_only=False)[0]) - 1
+                ny[i] = len(tree_y.query_radius([y[i]], r=radius, count_only=False)[0]) - 1
+            else:
+                nx[i] = len(tree_x.radius_neighbors([x[i]], radius=radius, return_distance=False)[0]) - 1
+                ny[i] = len(tree_y.radius_neighbors([y[i]], radius=radius, return_distance=False)[0]) - 1
+
+        return digamma(n_neighbors) + digamma(n_samples) - np.nanmean(digamma(nx + 1) + digamma(ny + 1))
+
+    mi = Parallel(n_jobs=n_jobs)(delayed(compute_mi_feature)(X[:, j]) for j in range(n_features))
+
+    return np.array(mi)
+
+
+import numpy as np
+from scipy.special import digamma
+from sklearn.neighbors import NearestNeighbors, KDTree, BallTree
+from sklearn.preprocessing import MinMaxScaler
+
+def mutual_info_regression_multivariate(X, y, n_neighbors=3, random_state=None, tree_method='auto'):
+    """
+    Estimate mutual information between the multivariate X (all features together)
+    and continuous target y using Kraskov kNN method.
+
+    Parameters:
+    - X: ndarray of shape (n_samples, n_features)
+    - y: ndarray of shape (n_samples,)
+    - n_neighbors: int, number of nearest neighbors
+    - random_state: int or None, for reproducible tie-breaking
+    - tree_method: one of {'auto', 'kd_tree', 'ball_tree'}
+
+    Returns:
+    - mi: scalar, estimated mutual information between X and y
+    """
+    X = np.asarray(X, dtype=float)
+    y = np.asarray(y, dtype=float).reshape(-1, 1)
+    n_samples, n_features = X.shape
+
+    # Scale X and y to [0,1]
+    scaler_x = MinMaxScaler()
+    X_scaled = scaler_x.fit_transform(X)
+    scaler_y = MinMaxScaler()
+    y_scaled = scaler_y.fit_transform(y)
+
+    # Shuffle to break ties
+    if random_state is not None:
+        rng = np.random.default_rng(seed=random_state)
+        indices = rng.permutation(n_samples)
+        X_scaled = X_scaled[indices]
+        y_scaled = y_scaled[indices]
+
+    eps_machine = np.finfo(float).eps
+
+    # Helper to get tree object
+    def get_tree(data):
+        if tree_method == 'kd_tree':
+            return KDTree(data, metric='chebyshev')
+        elif tree_method == 'ball_tree':
+            return BallTree(data, metric='chebyshev')
+        else:
+            return NearestNeighbors(metric='chebyshev').fit(data)
+
+    # Build joint space (X + y)
+    xy = np.hstack((X_scaled, y_scaled))
+
+    # Build neighbor structures
+    if tree_method in ['kd_tree', 'ball_tree']:
+        tree_xy = get_tree(xy)
+        distances, _ = tree_xy.query(xy, k=n_neighbors + 1, return_distance=True)
+        eps = distances[:, -1]
+    else:
+        nn_xy = NearestNeighbors(n_neighbors=n_neighbors + 1, metric='chebyshev')
+        nn_xy.fit(xy)
+        distances, _ = nn_xy.kneighbors(xy)
+        eps = distances[:, -1]
+
+    tree_x = get_tree(X_scaled)
+    tree_y = get_tree(y_scaled)
+
+    nx = np.empty(n_samples, dtype=int)
+    ny = np.empty(n_samples, dtype=int)
+    for i in range(n_samples):
+        radius = eps[i] - eps_machine
+        if tree_method in ['kd_tree', 'ball_tree']:
+            nx[i] = len(tree_x.query_radius([X_scaled[i]], r=radius, count_only=False)[0]) - 1
+            ny[i] = len(tree_y.query_radius([y_scaled[i]], r=radius, count_only=False)[0]) - 1
+        else:
+            nx[i] = len(tree_x.radius_neighbors([X_scaled[i]], radius=radius, return_distance=False)[0]) - 1
+            ny[i] = len(tree_y.radius_neighbors([y_scaled[i]], radius=radius, return_distance=False)[0]) - 1
+
+    mi = digamma(n_neighbors) + digamma(n_samples) - np.nanmean(digamma(nx + 1) + digamma(ny + 1))
+    return mi
+
+def estimate_optimal_k(n_samples):
+    """
+    Estimate a reasonable number of neighbors (k) for kNN-based mutual information estimation.
+    This is heuristic and based on Kraskov et al. (2004).
+
+    Parameters:
+    - n_samples: int, number of data samples
+
+    Returns:
+    - k: int, suggested number of neighbors
+    """
+    if n_samples < 20:
+        return 2  # Very small dataset
+    elif n_samples < 100:
+        return 3
+    elif n_samples < 500:
+        return 5
+    elif n_samples < 1000:
+        return 10
+    else:
+        return min(20, int(np.log(n_samples)))
 

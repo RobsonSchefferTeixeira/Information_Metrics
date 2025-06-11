@@ -8,7 +8,6 @@ from scipy.io import loadmat
 import numpy as np
 
 from pathlib import Path
-
 from IPython.display import display, HTML
 from pathlib import Path
 
@@ -167,43 +166,40 @@ class LoadData:
 
 
 
+
+
     def show_jupyter_tree(self):
-        """Display interactive folder tree in JupyterLab"""
-        html = ["<div style='font-family: monospace;'>"]
-        
+        """Display retro-style folder tree in JupyterLab"""
+        html = ["<div style='font-family: monospace; white-space: pre;'>"]
+
         match self.dataset_name:
             case 'kinsky':
-                html.append("<strong>Dataset: kinsky</strong>")
+                html.append("Dataset: kinsky")
                 for mouse in sorted(self.data_path.glob('mouse_*')):
                     mouse_id = mouse.name.split('_')[1]
-                    html.append(f"<details open><summary>🐭 Mouse {mouse_id}</summary>")
+                    html.append(f"+ Mouse {mouse_id}")
                     
                     for day in sorted(mouse.glob('day_*')):
                         day_num = day.name.split('_')[1]
-                        html.append(f"<div style='margin-left: 20px;'><details><summary>📅 Day {day_num}</summary>")
+                        html.append(f"|  + Day {day_num}")
                         
                         sessions = list(sorted(day.glob('session_*')))
                         if sessions:
                             for session in sessions:
                                 sess_num = session.name.split('_')[1]
-                                html.append(f"<div style='margin-left: 40px;'><details><summary>🎬 Session {sess_num}</summary>")
+                                html.append(f"|  |  + Session {sess_num}")
                                 
                                 files = list(sorted(session.glob('*')))
                                 if files:
                                     for f in files:
                                         if f.is_file():
-                                            html.append(f"<div style='margin-left: 60px;'>📄 {f.name}</div>")
+                                            html.append(f"|  |  |  - {f.name}")
                                 else:
-                                    html.append("<div style='margin-left: 60px; color: gray;'>(no files)</div>")
-                                    
-                                html.append("</details></div>")
+                                    html.append(f"|  |  |  (no files)")
                         else:
-                            html.append("<div style='margin-left: 40px; color: gray;'>(no sessions)</div>")
-                        
-                        html.append("</details></div>")
-                    html.append("</details>")
+                            html.append(f"|  |  (no sessions)")
             case _:
                 html.append("No tree available for this dataset type")
         
         html.append("</div>")
-        display(HTML(''.join(html)))
+        display(HTML('\n'.join(html)))
