@@ -300,15 +300,6 @@ def get_mutual_information_zscored(mutual_info_original, mutual_info_shifted):
 
     return mutual_info_zscored, mutual_info_centered
 
-def get_binned_signal(calcium_imag, nbins_cal):
-
-    calcium_imag_bins = np.linspace(np.nanmin(calcium_imag), np.nanmax(calcium_imag), nbins_cal + 1)
-    calcium_imag_binned = np.zeros(calcium_imag.shape[0])
-    for jj in range(calcium_imag_bins.shape[0] - 1):
-        I_amp = (calcium_imag > calcium_imag_bins[jj]) & (calcium_imag <= calcium_imag_bins[jj + 1])
-        calcium_imag_binned[I_amp] = jj
-
-    return calcium_imag_binned
 
 
 def get_binned_signal(calcium_imag, nbins_cal):

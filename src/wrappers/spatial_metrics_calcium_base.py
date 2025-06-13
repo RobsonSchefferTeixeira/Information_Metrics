@@ -111,7 +111,7 @@ class PlaceCell:
 
             signal_data.add_peaks_detection(self.signal_type)
             
-            signal_data.add_binned_input_signal(self.nbins_cal)
+            signal_data.add_binned_input_signal(self.nbins_cal,self.signal_type)
 
             if np.all(np.isnan(y_grid_info)):
                 nbins_pos = (x_grid_info.shape[0] - 1)

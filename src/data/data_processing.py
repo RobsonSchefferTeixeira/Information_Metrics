@@ -51,8 +51,11 @@ class ProcessData:
     def add_position_time_spent(self):
         self.time_spent_inside_bins = hf.get_position_time_spent(self.position_binned, self.sampling_rate)
 
-    def add_binned_input_signal(self,nbins_cal):
-        self.input_signal_binned = info.get_binned_signal(self.input_signal, nbins_cal)
+    def add_binned_input_signal(self,nbins_cal, signal_type='raw'):
+        if signal_type == 'binary':
+            self.input_signal_binned = self.input_signal.copy()
+        else:
+            self.input_signal_binned = info.get_binned_signal(self.input_signal, nbins_cal)
 
 
     def add_peaks_detection(self, signal_type):

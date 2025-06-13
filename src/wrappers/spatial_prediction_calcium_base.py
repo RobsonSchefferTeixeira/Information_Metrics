@@ -1,4 +1,3 @@
-
 import numpy as np
 import os
 import warnings
@@ -10,8 +9,8 @@ from src.utils import smoothing_functions as smooth
 
 from src.utils.validators import ParameterValidator,DataValidator
 import src.utils.bootstrapped_estimation as be
-import src.utils.decoding_model_helper_functions as decoding
-
+import src.utils.decoding_model_helper_functions as decoder_helper
+import src.utils.decoders as decoder
 
 from tqdm.auto import tqdm
 from tqdm_joblib import tqdm_joblib
@@ -22,7 +21,7 @@ class SpatialPrediction:
     def __init__(self,**kwargs):
            
         kwargs.setdefault('num_of_folds', 10)
-        kwargs.setdefault('classifier', 'GaussianBayes')
+        kwargs.setdefault('classifier_parameters',{'naive_bayes': {'priors': 'uniform'}})
 
         kwargs.setdefault('signal_type',None)
         kwargs.setdefault('animal_id', None)
@@ -51,7 +50,7 @@ class SpatialPrediction:
         kwargs.setdefault('nbins_cal', 10)
 
 
-        valid_kwargs = ['num_of_folds','classifier','signal_type','animal_id', 'day', 'neuron', 'dataset', 'trial',
+        valid_kwargs = ['num_of_folds','classifier_parameters','signal_type','animal_id', 'day', 'neuron', 'dataset', 'trial',
                         'min_time_spent', 'min_visits', 'min_speed_threshold', 'speed_smoothing_sigma',
                         'x_bin_size', 'y_bin_size', 'shift_time', 'map_smoothing_sigma_x','map_smoothing_sigma_y','num_cores',
                         'num_surrogates', 'saving_path', 'saving', 'saving_string', 'environment_edges', 'nbins_cal','overwrite']
@@ -70,7 +69,7 @@ class SpatialPrediction:
     def main(self, signal_data):
 
         warnings.filterwarnings("ignore", category=RuntimeWarning)
-        
+
         filename = hf.filename_constructor(self.saving_string, self.animal_id, self.dataset, self.day, self.neuron, self.trial)
         full_path = f"{self.saving_path}/{filename}"
         # Check if the file exists and handle based on the overwrite flag
@@ -79,7 +78,7 @@ class SpatialPrediction:
             return
             
 
-        if DataValidator.is_empty_or_all_nan(signal_data.input_signal) or DataValidator.is_empty_or_all_nan(signal_data.x_coordinates) or DataValidator.is_empty_or_all_nan(signal_data.y_coordinates):
+        if DataValidator.is_empty_or_all_nan(signal_data.input_signal) or DataValidator.is_empty_or_all_nan(signal_data.x_coordinates):
             warnings.warn("Signal contains only NaN's or is empty", UserWarning)
             inputdict = np.nan
 
@@ -102,13 +101,18 @@ class SpatialPrediction:
 
             signal_data.add_peaks_detection(self.signal_type)
             
-            signal_data.add_binned_input_signal(self.nbins_cal)
+            signal_data.add_binned_input_signal(self.nbins_cal,self.signal_type)
 
             X = signal_data.input_signal_binned.copy().reshape(-1,1)
 
             y = signal_data.position_binned.copy()
 
-            y_pred = self.run_classifier(X,y,kfolds = self.num_of_folds)
+            classifier_name, classifier_kwargs = next(iter(self.classifier_parameters.items()))
+
+            dl = decoder.DecoderLearner(scale_data=True)
+
+            y_pred = dl.run_classifier(X, y, kfolds = self.num_of_folds, decoder=classifier_name, classifier_params = classifier_kwargs)
+
 
             continuous_error,mean_error = self.get_continuous_error(y_pred,signal_data.x_coordinates,signal_data.y_coordinates,
                             x_center_bins_repeated,y_center_bins_repeated)
@@ -118,7 +122,7 @@ class SpatialPrediction:
             spatial_error_smoothed = self.get_smoothed_spatial_error(spatial_error,x_center_bins,y_center_bins, self.map_smoothing_sigma_x, self.map_smoothing_sigma_y)
 
 
-            results = self.parallelize_surrogate(X,y,self.num_of_folds,signal_data.x_coordinates,signal_data.y_coordinates,x_center_bins, y_center_bins,
+            results = self.parallelize_surrogate(X,y,self.num_of_folds,self.classifier_parameters,signal_data.x_coordinates,signal_data.y_coordinates,x_center_bins, y_center_bins,
                             x_center_bins_repeated, y_center_bins_repeated, signal_data.sampling_rate, self.shift_time,
                             self.num_cores, self.num_surrogates)
 
@@ -192,7 +196,7 @@ class SpatialPrediction:
         
     
 
-    def parallelize_surrogate(self,X,y,kfolds,x_coordinates,y_coordinates,x_center_bins, y_center_bins,
+    def parallelize_surrogate(self,X,y,kfolds,classifier_parameters, x_coordinates,y_coordinates,x_center_bins, y_center_bins,
                             x_center_bins_repeated, y_center_bins_repeated, sampling_rate, shift_time,
                             num_cores, num_surrogates):
         
@@ -201,7 +205,7 @@ class SpatialPrediction:
             results = Parallel(n_jobs=num_cores)(
                 delayed(self.run_classifier_surrogate)
                 (
-                    X, y, kfolds, x_coordinates,y_coordinates, x_center_bins, y_center_bins, 
+                    X, y, kfolds, classifier_parameters, x_coordinates,y_coordinates, x_center_bins, y_center_bins, 
                     x_center_bins_repeated, y_center_bins_repeated, sampling_rate, shift_time
                 )
                 for _ in range(num_surrogates)
@@ -209,11 +213,17 @@ class SpatialPrediction:
         return results
 
 
-    def run_classifier_surrogate(self, X, y, kfolds, x_coordinates,y_coordinates, x_center_bins, y_center_bins, 
+    def run_classifier_surrogate(self, X, y, kfolds, classifier_parameters, x_coordinates,y_coordinates, x_center_bins, y_center_bins, 
                                 x_center_bins_repeated, y_center_bins_repeated, sampling_rate, shift_time):
         
+        classifier_name, classifier_kwargs = next(iter(classifier_parameters.items()))
+
+        dl = decoder.DecoderLearner(scale_data=True)
+
         X_shifted = surrogate.get_signal_surrogate(X, sampling_rate, shift_time, axis=0)
-        y_pred_shifted = self.run_classifier(X_shifted, y, kfolds)
+
+        y_pred_shifted = dl.run_classifier(X_shifted, y, kfolds, decoder=classifier_name, classifier_params = classifier_kwargs)
+
 
         continuous_error_shifted,mean_error_shifted = self.get_continuous_error(y_pred_shifted,x_coordinates,y_coordinates,
                                                                         x_center_bins_repeated,y_center_bins_repeated)
@@ -222,128 +232,50 @@ class SpatialPrediction:
 
         return mean_error_shifted,spatial_error_shifted,continuous_error_shifted
 
-    ''' 
-    def run_classifier(self, X, y, kfolds=3):
-        
-        from sklearn.naive_bayes import GaussianNB
-
-        def random_argmax(probabilities):
-            """
-            Selects a class index randomly among those with the highest probability.
-            
-            Parameters:
-            probabilities (array-like): Array of class probabilities for a single sample.
-            
-            Returns:
-            int: Index of the selected class.
-            """
-            max_prob = np.nanmax(probabilities)
-            candidates = np.flatnonzero(probabilities == max_prob)
-            return np.random.choice(candidates)
 
 
-        folds_samples = decoding.kfold_split_continuous(y, kfolds)
-        y_pred = []
+    def get_continuous_error(self, y_pred, x_coordinates, y_coordinates,
+                            x_center_bins_repeated, y_center_bins_repeated):
+        """
+        Compute the Euclidean distance error between predicted positions and actual coordinates.
 
-        for test_fold in range(kfolds):
-            X_train, X_test, y_train, y_test = decoding.kfold_run(X, y, folds_samples, test_fold)
+        This function calculates the continuous error as the Euclidean distance between the predicted 
+        positions (`y_pred`) and the actual coordinates (`x_coordinates`, `y_coordinates`). If 
+        `y_coordinates` is None, the function computes the error using only the x-dimension.
 
-            priors_in = np.ones(np.unique(y_train).shape[0]) / np.unique(y_train).shape[0]
+        Parameters
+        ----------
+        y_pred : array-like of int
+            Indices representing predicted bin positions.
+        x_coordinates : array-like
+            Actual x-coordinates corresponding to predictions.
+        y_coordinates : array-like or None
+            Actual y-coordinates corresponding to predictions. If None, only x-dimension is used.
+        x_center_bins_repeated : array-like
+            x-coordinates of the centers of bins, repeated to align with predictions.
+        y_center_bins_repeated : array-like
+            y-coordinates of the centers of bins, repeated to align with predictions.
 
-            gnb = GaussianNB(priors=priors_in)
-            gnb.fit(X_train, y_train)
-            predict_probability = gnb.predict_proba(X_test)
+        Returns
+        -------
+        continuous_error : np.ndarray
+            Array of Euclidean distance errors for each prediction.
+        mean_error : float
+            Mean of the Euclidean distance errors, ignoring NaNs.
+        """
+        diffx = (x_center_bins_repeated[y_pred] - x_coordinates) ** 2
 
-            y_pred_fold = []
-            for probs in predict_probability:
-                selected_class_index = random_argmax(probs)
-                y_pred_fold.append(gnb.classes_[selected_class_index])
-
-            y_pred.append(np.array(y_pred_fold).astype(int))
-
-        y_pred = np.concatenate(y_pred)
-        return y_pred
-        '''
-
-    def run_classifier(self, X, y, kfolds=3):
-
-        from sklearn.naive_bayes import GaussianNB
-
-
-        def random_argmax(probabilities, epsilon=np.finfo(float).eps):
-            """
-            Adds small random noise to the probabilities and returns the index of the maximum value.
-            
-            Parameters:
-            probabilities (array-like): Array of class probabilities for a single sample.
-            epsilon (float): Standard deviation of the Gaussian noise to add.
-            
-            Returns:
-            int: Index of the selected class.
-            """
-            noise = np.random.normal(loc=0.0, scale=epsilon, size=probabilities.shape)
-            noisy_probs = probabilities + noise
-            return np.argmax(noisy_probs)
-
-            '''
-            def random_argmax(probabilities):
-                """
-                Selects a class index randomly among those with the highest probability.
-                """
-                max_prob = np.nanmax(probabilities)
-                candidates = np.flatnonzero(probabilities == max_prob)
-                return np.random.choice(candidates)
-            '''
-            
-        # Step 1: Generate a random label mapping
-        unique_labels = np.unique(y)
-        shuffled_labels = np.random.permutation(unique_labels)
-        label_mapping = dict(zip(unique_labels, shuffled_labels))
-        inverse_label_mapping = {v: k for k, v in label_mapping.items()}
-
-        # Step 2: Apply the mapping to y
-        y_mapped = np.vectorize(label_mapping.get)(y)
-
-        # Step 3: Proceed with training and prediction using y_mapped
-        folds_samples = decoding.kfold_split_continuous(y_mapped, kfolds)
-        y_pred = []
-
-        for test_fold in range(kfolds):
-            X_train, X_test, y_train, y_test = decoding.kfold_run(X, y_mapped, folds_samples, test_fold)
-
-            unique_classes = np.unique(y_train)
-            priors_in = np.ones(len(unique_classes)) / len(unique_classes)
-            gnb = GaussianNB(priors=priors_in)
-            gnb.fit(X_train, y_train)
-            predict_probability = gnb.predict_proba(X_test)
-
-            y_pred_fold = []
-            for probs in predict_probability:
-                selected_class_index = random_argmax(probs)
-                y_pred_fold.append(gnb.classes_[selected_class_index])
-
-            y_pred.append(y_pred_fold)
-
-        # Concatenate predictions from all folds
-        y_pred = np.concatenate(y_pred)
-
-        # Step 4: Restore original labels in predictions
-        y_pred_restored = np.vectorize(inverse_label_mapping.get)(y_pred)
-
-        return y_pred_restored.astype(int)
-
-
-
-    def get_continuous_error(self,y_pred,x_coordinates,y_coordinates,
-                            x_center_bins_repeated,y_center_bins_repeated):
-
-        diffx = (x_center_bins_repeated[y_pred]-x_coordinates)**2
-        diffy = (y_center_bins_repeated[y_pred]-y_coordinates)**2
+        if y_coordinates is not None:
+            diffy = (y_center_bins_repeated[y_pred] - y_coordinates) ** 2
+        else:
+            diffy = 0  # Only x-dimension error
 
         continuous_error = np.sqrt(diffx + diffy)
         continuous_error = np.array(continuous_error)
         mean_error = np.nanmean(continuous_error)
-        return continuous_error,mean_error
+        
+        return continuous_error, mean_error
+
 
 
     def get_spatial_error(self,continuous_error,y,x_center_bins,y_center_bins):

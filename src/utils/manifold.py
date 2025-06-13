@@ -261,7 +261,7 @@ class ManifoldLearner:
                         **params
                     )
                 except Exception as e:
-                    print(f"⚠️ Failed {method}: {str(e)}")
+                    print(f"Failed {method}: {str(e)}")
                     embeddings[method] = None
         
         return embeddings
