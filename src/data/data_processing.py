@@ -3,6 +3,7 @@ import numpy as np
 from src.utils import helper_functions as hf
 from src.utils.validators import DataValidator
 from src.utils import information_base as info
+from src.utils import pre_processing_functions as pre_process
 
 import warnings
 
@@ -41,7 +42,6 @@ class ProcessData:
         else:
             _,self.speed_smoothed = hf.get_speed(self.x_coordinates, self.y_coordinates, self.time_vector, speed_smoothing_sigma)
 
-
     def add_position_binned(self,x_grid, y_grid):
         self.position_binned, self.bin_coordinates = hf.get_binned_position(self.x_coordinates, x_grid, self.y_coordinates, y_grid)
 
@@ -57,11 +57,9 @@ class ProcessData:
         else:
             self.input_signal_binned = info.get_binned_signal(self.input_signal, nbins_cal)
 
-
     def add_peaks_detection(self, signal_type):
         signal = self.input_signal.copy()
         signal = np.atleast_2d(signal)  # Ensure 2D shape for uniform handling
-
 
         self.peaks_idx = []
         self.peaks_amplitude = []
@@ -69,14 +67,13 @@ class ProcessData:
         self.peaks_y_location = []
 
         for row in signal:
-            if signal_type == 'binary':
+            if signal_type is 'binary':
                 peaks = row == 1
             else:
-                peaks = hf.detect_peaks(
-                    row,
-                    mpd=0.5 * self.sampling_rate,
-                    mph=1. * np.nanstd(row)
-                )
+                
+                row_binary = pre_process.preprocess_signal(row, self.sampling_rate, signal_type='binary', z_threshold=1, low_cut=0, high_cut=10, order=3) 
+                # peaks = hf.detect_peaks(row,mpd=0.5 * self.sampling_rate,mph=1. * np.nanstd(row))
+                peaks = row_binary == 1
 
             if peaks.size > 0:
                 self.peaks_idx.append(peaks)
