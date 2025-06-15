@@ -2,7 +2,7 @@ import numpy as np
 import os
 import warnings
 
-from src.utils import helper_functions as hf
+from src.utils import helper_functions as helper
 from src.utils import surrogate_functions as surrogate
 from src.utils import information_base as info
 from src.utils import smoothing_functions as smooth
@@ -21,7 +21,7 @@ class SpatialPrediction:
     def __init__(self,**kwargs):
            
         kwargs.setdefault('num_of_folds', 10)
-        kwargs.setdefault('classifier_parameters',{'naive_bayes': {'priors': 'uniform'}})
+        kwargs.setdefault('classifier_parameters',{'gaussian_nb': {'priors': 'uniform'}})
 
         kwargs.setdefault('signal_type',None)
         kwargs.setdefault('animal_id', None)
@@ -70,7 +70,7 @@ class SpatialPrediction:
 
         warnings.filterwarnings("ignore", category=RuntimeWarning)
 
-        filename = hf.filename_constructor(self.saving_string, self.animal_id, self.dataset, self.day, self.neuron, self.trial)
+        filename = helper.filename_constructor(self.saving_string, self.animal_id, self.dataset, self.day, self.neuron, self.trial)
         full_path = f"{self.saving_path}/{filename}"
         # Check if the file exists and handle based on the overwrite flag
         if os.path.exists(full_path) and not self.overwrite:
@@ -87,7 +87,7 @@ class SpatialPrediction:
             if signal_data.speed is None:
                 signal_data.add_speed(self.speed_smoothing_sigma)
 
-            x_grid, y_grid, x_center_bins, y_center_bins, x_center_bins_repeated, y_center_bins_repeated = hf.get_position_grid(
+            x_grid, y_grid, x_center_bins, y_center_bins, x_center_bins_repeated, y_center_bins_repeated = helper.get_position_grid(
                 signal_data.x_coordinates, signal_data.y_coordinates, self.x_bin_size, self.y_bin_size,
                 environment_edges=signal_data.environment_edges)
 
@@ -103,8 +103,8 @@ class SpatialPrediction:
             
             signal_data.add_binned_input_signal(self.nbins_cal,self.signal_type)
 
-            X = signal_data.input_signal_binned.copy().reshape(-1,1)
-
+            X = helper.ensure_2d_row(signal_data.input_signal.copy()).T
+            
             y = signal_data.position_binned.copy()
 
             classifier_name, classifier_kwargs = next(iter(self.classifier_parameters.items()))
@@ -112,7 +112,6 @@ class SpatialPrediction:
             dl = decoder.DecoderLearner(scale_data=True)
 
             y_pred = dl.run_classifier(X, y, kfolds = self.num_of_folds, decoder=classifier_name, classifier_params = classifier_kwargs)
-
 
             continuous_error,mean_error = self.get_continuous_error(y_pred,signal_data.x_coordinates,signal_data.y_coordinates,
                             x_center_bins_repeated,y_center_bins_repeated)
@@ -126,37 +125,44 @@ class SpatialPrediction:
                             x_center_bins_repeated, y_center_bins_repeated, signal_data.sampling_rate, self.shift_time,
                             self.num_cores, self.num_surrogates)
 
-            
+            '''
             events_error = []
             for peaks in signal_data.peaks_idx:
                 events_error.extend(continuous_error[peaks])
-            events_error = np.nanmean(events_error)
+            events_error = np.array(events_error)
+            mean_events_error = np.nanmean(events_error)
+            '''
+            
+            events_error = []
+            for peaks in signal_data.peaks_idx:
+                events_error.append(continuous_error[peaks])
+            mean_events_error = np.nanmean(np.concatenate(events_error))
+            
 
             mean_error_shifted = []
             spatial_error_shifted = []
-            events_error_shifted = []
+            mean_events_error_shifted = []
             for perm in range(self.num_surrogates):
                 mean_error_shifted.append(results[perm][0])
                 spatial_error_shifted.append(results[perm][1])
                 continuous_error_shifted = results[perm][2]
 
-                events_error_shifted_aux = []
+                mean_events_error_shifted_aux = []
                 for peaks in signal_data.peaks_idx:
-                    events_error_shifted_aux.extend(continuous_error_shifted[peaks])
-                events_error_shifted.append(np.nanmean(events_error_shifted_aux))
-
+                    mean_events_error_shifted_aux.append(continuous_error_shifted[peaks])
+                mean_events_error_shifted.append(np.nanmean(np.concatenate(mean_events_error_shifted_aux)))
 
             mean_error_shifted = np.array(mean_error_shifted)
             spatial_error_shifted = np.array(spatial_error_shifted)
-            events_error_shifted = np.array(events_error_shifted)
+            mean_events_error_shifted = np.array(mean_events_error_shifted)
 
             mean_error_zscored, mean_error_centered = info.get_mutual_information_zscored(mean_error, mean_error_shifted)
             mean_error_statistic = be.calculate_p_value(mean_error, mean_error_shifted, alternative='less')
             mean_error_pvalue = mean_error_statistic.p_value
 
-            events_error_zscored, events_error_centered = info.get_mutual_information_zscored(events_error, events_error_shifted)
-            events_error_statistic = be.calculate_p_value(events_error, events_error_shifted, alternative='less')
-            events_error_pvalue = events_error_statistic.p_value
+            mean_events_error_zscored, mean_events_error_centered = info.get_mutual_information_zscored(mean_events_error, mean_events_error_shifted)
+            mean_events_error_statistic = be.calculate_p_value(mean_events_error, mean_events_error_shifted, alternative='less')
+            mean_events_error_pvalue = mean_events_error_statistic.p_value
 
 
             inputdict = dict()
@@ -168,11 +174,13 @@ class SpatialPrediction:
             inputdict['mean_error_shifted'] = mean_error_shifted     
             inputdict['mean_error_pvalue'] = mean_error_pvalue     
  
-            inputdict['events_error'] = events_error     
-            inputdict['events_error_zscored'] = events_error_zscored     
-            inputdict['events_error_centered'] = events_error_centered  
-            inputdict['events_error_shifted'] = events_error_shifted    
-            inputdict['events_error_pvalue'] = events_error_pvalue     
+            inputdict['events_error'] = events_error
+
+            inputdict['mean_events_error'] = mean_events_error
+            inputdict['mean_events_error_zscored'] = mean_events_error_zscored     
+            inputdict['mean_events_error_centered'] = mean_events_error_centered  
+            inputdict['mean_events_error_shifted'] = mean_events_error_shifted    
+            inputdict['mean_events_error_pvalue'] = mean_events_error_pvalue     
 
             inputdict['spatial_error'] = spatial_error
             inputdict['spatial_error_shifted'] = spatial_error_shifted
@@ -185,10 +193,10 @@ class SpatialPrediction:
 
             inputdict['input_parameters'] = self.__dict__['input_parameters']
 
-            filename = hf.filename_constructor(self.saving_string,self.animal_id,self.dataset,self.day,self.neuron,self.trial)
+            filename = helper.filename_constructor(self.saving_string,self.animal_id,self.dataset,self.day,self.neuron,self.trial)
 
             if self.saving == True:
-                hf.caller_saving(inputdict,filename,self.saving_path, self.overwrite)
+                helper.caller_saving(inputdict,filename,self.saving_path, self.overwrite)
             else:
                 print('File not saved!')
 

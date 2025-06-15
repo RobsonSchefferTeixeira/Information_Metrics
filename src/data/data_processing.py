@@ -1,6 +1,6 @@
 
 import numpy as np
-from src.utils import helper_functions as hf
+from src.utils import helper_functions as helper
 from src.utils.validators import DataValidator
 from src.utils import information_base as info
 from src.utils import pre_processing_functions as pre_process
@@ -26,10 +26,10 @@ class ProcessData:
         DataValidator.validate_environment_edges(self)
         DataValidator.initial_setup(self) # Initial Setup and Conversion
         DataValidator.validate_and_correct_shape(self) # Shape Validation and Correction
-        self.x_coordinates, self.y_coordinates = hf.correct_coordinates(self.x_coordinates,self.y_coordinates,environment_edges=self.environment_edges)
+        self.x_coordinates, self.y_coordinates = helper.correct_coordinates(self.x_coordinates,self.y_coordinates,environment_edges=self.environment_edges)
 
         if coordinates_interpolation:
-            self.x_coordinates, self.y_coordinates = hf.correct_lost_tracking(self.x_coordinates, self.y_coordinates, self.time_vector, self.sampling_rate, min_epoch_length=0.5)
+            self.x_coordinates, self.y_coordinates = helper.correct_lost_tracking(self.x_coordinates, self.y_coordinates, self.time_vector, self.sampling_rate, min_epoch_length=0.5)
         
         DataValidator.filter_invalid_values(self) # NaN/Infinite Value Filtering
 
@@ -38,18 +38,18 @@ class ProcessData:
     def add_speed(self,speed_smoothing_sigma):
 
         if self.speed is None:
-            self.speed,self.speed_smoothed = hf.get_speed(self.x_coordinates, self.y_coordinates, self.time_vector, speed_smoothing_sigma)
+            self.speed,self.speed_smoothed = helper.get_speed(self.x_coordinates, self.y_coordinates, self.time_vector, speed_smoothing_sigma)
         else:
-            _,self.speed_smoothed = hf.get_speed(self.x_coordinates, self.y_coordinates, self.time_vector, speed_smoothing_sigma)
+            _,self.speed_smoothed = helper.get_speed(self.x_coordinates, self.y_coordinates, self.time_vector, speed_smoothing_sigma)
 
     def add_position_binned(self,x_grid, y_grid):
-        self.position_binned, self.bin_coordinates = hf.get_binned_position(self.x_coordinates, x_grid, self.y_coordinates, y_grid)
+        self.position_binned, self.bin_coordinates = helper.get_binned_position(self.x_coordinates, x_grid, self.y_coordinates, y_grid)
 
     def add_visits(self, x_center_bins, y_center_bins):
-        self.visits_bins, self.new_visits_times = hf.get_visits(self.x_coordinates, self.position_binned, x_center_bins, self.y_coordinates, y_center_bins)
+        self.visits_bins, self.new_visits_times = helper.get_visits(self.x_coordinates, self.position_binned, x_center_bins, self.y_coordinates, y_center_bins)
 
     def add_position_time_spent(self):
-        self.time_spent_inside_bins = hf.get_position_time_spent(self.position_binned, self.sampling_rate)
+        self.time_spent_inside_bins = helper.get_position_time_spent(self.position_binned, self.sampling_rate)
 
     def add_binned_input_signal(self,nbins_cal, signal_type='raw'):
         if signal_type == 'binary':
@@ -72,10 +72,10 @@ class ProcessData:
             else:
                 
                 row_binary = pre_process.preprocess_signal(row, self.sampling_rate, signal_type='binary', z_threshold=1, low_cut=0, high_cut=10, order=3) 
-                # peaks = hf.detect_peaks(row,mpd=0.5 * self.sampling_rate,mph=1. * np.nanstd(row))
+                # peaks = helper.detect_peaks(row,mpd=0.5 * self.sampling_rate,mph=1. * np.nanstd(row))
                 peaks = row_binary == 1
 
-            if peaks.size > 0:
+            if np.nansum(peaks) > 0:
                 self.peaks_idx.append(peaks)
                 self.peaks_amplitude.append(row[peaks])
                 self.peaks_x_location.append(self.x_coordinates[peaks])

@@ -301,7 +301,6 @@ def get_mutual_information_zscored(mutual_info_original, mutual_info_shifted):
     return mutual_info_zscored, mutual_info_centered
 
 
-
 def get_binned_signal(calcium_imag, nbins_cal):
     """
     Bin calcium signals across time for each cell independently.

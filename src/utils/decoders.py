@@ -3,7 +3,6 @@ from typing import Dict, Optional, Union, List
 import numpy as np
 from sklearn.model_selection import StratifiedKFold, cross_val_score
 from sklearn.preprocessing import StandardScaler
-from sklearn.naive_bayes import GaussianNB
 from src.utils import decoding_model_helper_functions as decoder_helper
 
 class DecoderLearner:
@@ -45,32 +44,57 @@ class DecoderLearner:
             return None
 
     def _get_decoder_model(self, decoder: str, **kwargs):
-        if decoder == 'naive_bayes':
+        if decoder == 'gaussian_nb':
+            GaussianNB = self._import_sklearn_classifier('naive_bayes', 'GaussianNB')
             return GaussianNB(**kwargs)
+        
+        elif decoder == 'bernoulli_nb':
+            BernoulliNB = self._import_sklearn_classifier('naive_bayes', 'BernoulliNB')
+            return BernoulliNB(**kwargs)
+        
+        elif decoder == 'multinomial_nb':
+            MultinomialNB = self._import_sklearn_classifier('naive_bayes', 'MultinomialNB')
+            return MultinomialNB(**kwargs)
+        
+        elif decoder == 'complement_nb':
+            ComplementNB = self._import_sklearn_classifier('naive_bayes', 'ComplementNB')
+            return ComplementNB(**kwargs)
+        
+        elif decoder == 'categorical_nb':
+            CategoricalNB = self._import_sklearn_classifier('naive_bayes', 'CategoricalNB')
+            return CategoricalNB(**kwargs)
+        
         elif decoder == 'svc':
             SVC = self._import_sklearn_classifier('svm', 'SVC')
             return SVC(**kwargs)
+        
         elif decoder == 'logreg':
             LogisticRegression = self._import_sklearn_classifier('linear_model', 'LogisticRegression')
             return LogisticRegression(**kwargs)
+        
         elif decoder == 'random_forest':
             RF = self._import_sklearn_classifier('ensemble', 'RandomForestClassifier')
             return RF(**kwargs)
+        
         elif decoder == 'qda':
             QDA = self._import_sklearn_classifier('discriminant_analysis', 'QuadraticDiscriminantAnalysis')
             return QDA(**kwargs)
+        
         elif decoder == 'lda':
             LDA = self._import_sklearn_classifier('discriminant_analysis', 'LinearDiscriminantAnalysis')
             return LDA(**kwargs)
+        
         elif decoder == 'xgboost':
             xgb = self._try_import_external('xgboost', 'XGBClassifier')
             if xgb is None:
                 raise ImportError("XGBoost not installed. Install with: pip install xgboost")
             return xgb(**kwargs)
+        
         else:
             raise ValueError(f"Unknown decoder: {decoder}")
 
-    def run_classifier(self, X, y, kfolds=3, decoder='naive_bayes',
+
+    def run_classifier(self, X, y, kfolds=3, decoder='gaussian_nb',
                    classifier_params: Optional[Dict[str, Dict]] = None, **kwargs):
         """
         Run a single decoder with K-fold cross-validation.
@@ -84,6 +108,8 @@ class DecoderLearner:
         label_mapping = dict(zip(unique_labels, shuffled_labels))
         inverse_label_mapping = {v: k for k, v in label_mapping.items()}
         y_mapped = np.vectorize(label_mapping.get)(y)
+
+        nb_decoders = ['gaussian_nb','bernoulli_nb','multinomial_nb','complement_nb','categorical_nb']
 
         # Step 2: Prepare k-fold samples
         folds_samples = decoder_helper.kfold_split_continuous(y_mapped, kfolds)
@@ -99,7 +125,7 @@ class DecoderLearner:
                 decoder_kwargs.update(classifier_params)
 
             # Check for 'uniform' before modifying
-            if decoder == 'naive_bayes' and decoder_kwargs.get("priors") == "uniform":
+            if decoder in nb_decoders and decoder_kwargs.get("priors") == "uniform":
                 classes = np.unique(y_train)
                 decoder_kwargs["priors"] = np.ones(len(classes)) / len(classes)
 

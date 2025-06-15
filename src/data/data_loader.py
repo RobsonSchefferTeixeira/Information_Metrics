@@ -1,15 +1,17 @@
 import os
 import warnings
-from pathlib import Path
-from typing import Union, Dict, Optional
+import numpy as np
 import h5py
 import mat73
 from scipy.io import loadmat
-import numpy as np
+
+from src.utils import helper_functions as helper
+from src.data.data_processing import ProcessData
+from src.utils import pre_processing_functions as pre_process
 
 from pathlib import Path
 from IPython.display import display, HTML
-from pathlib import Path
+from typing import Union, Dict, Optional
 
 class LoadData:
     def __init__(self, dataset_name: str):
@@ -41,7 +43,79 @@ class LoadData:
         
         current_file = Path(__file__).absolute()
         project_root = current_file.parent.parent.parent  # Adjust based on your structure
-        return project_root / 'data' / self.dataset_name
+        return f'{project_root}/data/{self.dataset_name}'
+
+
+
+    def load_etter(self,experiment):
+        """
+        Load Etter dataset for specific experiment.
+        
+        Args:
+            experiment (str): linear_track for 1D or open_field for 2D experiments
+            
+        Returns:
+            Dictionary containing all data components
+        """
+        mat_file = f'{self.data_path}/{experiment}/behav_time.mat'
+        mat_dict = loadmat(mat_file, simplify_cells=True)
+        behav_time = mat_dict['behav_time']
+
+
+        mat_file = f'{self.data_path}/{experiment}/behav_vec.mat'
+        mat_dict = loadmat(mat_file, simplify_cells=True)
+        behav_vec = mat_dict['behav_vec']
+
+        mat_file = f'{self.data_path}/{experiment}/ca_data.mat'
+        mat_dict = loadmat(mat_file, simplify_cells=True)
+        ca_data = mat_dict['ca_data'].T
+        
+        mat_file = f'{self.data_path}/{experiment}/ca_time.mat'
+        mat_dict = loadmat(mat_file, simplify_cells=True)
+        ca_time = mat_dict['ca_time']
+        
+        mat_file = f'{self.data_path}/{experiment}/ca_trace.mat'
+        mat_dict = loadmat(mat_file, simplify_cells=True)
+        ca_trace = mat_dict['ca_trace'] # this is just one selected cell they used in their figures, let`s ignore it
+
+        raw = ProcessData.sync_imaging_to_video(ca_data, ca_time, behav_time)
+        sampling_rate = 1/np.nanmedian(np.diff(behav_time))
+
+        signal_type = 'filtered'
+        filtered_signal = pre_process.preprocess_signal(raw, sampling_rate, signal_type, z_threshold = 2)
+
+        signal_type = 'diff'
+        diff_signal = pre_process.preprocess_signal(raw, sampling_rate, signal_type, z_threshold = 2)
+        
+        signal_type = 'binary'
+        binary_signal = pre_process.preprocess_signal(raw, sampling_rate, signal_type, z_threshold = 2)
+
+        x_coordinates = behav_vec if experiment == 'linear_track' else behav_vec[:,0]
+        y_coordinates = None if experiment == 'linear_track' else behav_vec[:,1]
+        speed, smoothed_speed = helper.get_speed(x_coordinates, y_coordinates, behav_time, speed_smoothing_sigma=1)
+
+        if experiment == 'linear_track':
+            environment_edges = [[0,100],[]]
+        elif experiment == 'open_field':
+            environment_edges = [[0,50],[0,45]]
+            
+        return {
+            'position': {
+                'x': x_coordinates,
+                'y': y_coordinates,
+                'time': behav_time
+            },
+            'traces': {
+                'raw': raw,
+                'filtered': filtered_signal,
+                'diff': diff_signal,
+                'binary': binary_signal
+            },
+            
+            'speed': speed,
+            'sampling_rate': sampling_rate,
+            'environment_edges': environment_edges
+        }
 
     def load_hanna(self):
 
@@ -81,8 +155,8 @@ class LoadData:
             Dictionary containing all data components
         """
         
-        data_dir = self.data_path / f'mouse_{mouse_id}' / f'day_{day}' / f'session_{session}'
-        mat_file = data_dir / 'Pos_align.mat'
+        data_dir = f'{self.data_path}/mouse_{mouse_id}/day_{day}session_{session}'
+        mat_file = f'{data_dir}/Pos_align.mat'
         
         if not mat_file.exists():
             raise FileNotFoundError(f"MAT file not found at {mat_file}")
@@ -127,6 +201,9 @@ class LoadData:
         
         elif self.dataset_name == 'hanna':
             return self.load_hanna()
+
+        elif self.dataset_name == 'etter':
+            return self.load_etter(**kwargs)
         
         else:
             warnings.warn(f"No loader implemented for dataset: {self.dataset_name}")

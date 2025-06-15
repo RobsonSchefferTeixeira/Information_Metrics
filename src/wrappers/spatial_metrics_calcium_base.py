@@ -310,7 +310,7 @@ class PlaceCell:
                                   nbins_cal, nbins_pos, x_coordinates, y_coordinates, x_grid, y_grid,
                                   map_smoothing_sigma_x,map_smoothing_sigma_y):
 
-        input_signal_shifted = surrogate.get_signal_surrogate(input_signal, sampling_rate, shift_time)
+        input_signal_shifted = surrogate.get_signal_surrogate(input_signal, sampling_rate, shift_time, axis = 0)
         
         input_signal_shifted_binned = info.get_binned_signal(input_signal_shifted, nbins_cal)
 

@@ -1465,3 +1465,17 @@ def refine_place_fields_by_peak_connectivity(activity_map, activity_map_identity
             refined_identity[island_mask] = 0
         
     return refined_identity
+
+
+def ensure_2d_row(input_array):
+    """
+    Ensure the input is a 2D array with shape (1, timestamps) if originally 1D.
+    If already 2D, return as is.
+    """
+    input_array = np.asarray(input_array)
+    if input_array.ndim == 1:
+        return input_array[np.newaxis, :]  # shape becomes (1, timestamps)
+    elif input_array.ndim == 2:
+        return input_array
+    else:
+        raise ValueError("Input array must be 1D or 2D.")

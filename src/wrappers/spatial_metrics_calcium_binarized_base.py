@@ -263,7 +263,7 @@ class PlaceCellBinarized:
     def get_mutual_info_surrogate(self, input_signal, position_binned, sampling_rate, shift_time,
                                   x_coordinates, y_coordinates, x_grid, y_grid, map_smoothing_sigma_x,map_smoothing_sigma_y):
 
-        input_signal_shifted = surrogate.get_signal_surrogate(input_signal, sampling_rate, shift_time)
+        input_signal_shifted = surrogate.get_signal_surrogate(input_signal, sampling_rate, shift_time, axis = 0)
 
         mutual_info_per_spike_shifted, mutual_info_per_second_shifted = info.get_binarized_spatial_info(input_signal_shifted, position_binned)
 

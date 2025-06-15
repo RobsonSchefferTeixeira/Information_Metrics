@@ -46,33 +46,58 @@ def preprocess_signal(input_signal, sampling_rate, signal_type, z_threshold=2, l
     elif signal_type == 'diff':
         # Compute the first derivative of the filtered signal
         filtered_signal = eegfilt(input_signal, sampling_rate, low_cut, high_cut, order)
-        diff_signal = np.hstack([np.diff(filtered_signal), 0])
+        if filtered_signal.ndim == 1:
+            # If the signal is 1D, compute the first derivative
+            diff_signal = np.hstack([np.diff(filtered_signal), 0])
+
+        else:
+            # If the signal is 2D, compute the first derivative along the last axis
+            diff_signal = np.diff(filtered_signal, axis=1)
+            # Append a zero at the end of each row to match the original shape
+            diff_signal = np.concatenate([diff_signal, np.zeros((diff_signal.shape[0], 1))], axis=1)
         return diff_signal
 
     elif signal_type == 'diff_truncated':
         # Return the positive part of the first derivative of the filtered signal
         filtered_signal = eegfilt(input_signal, sampling_rate, low_cut, high_cut, order)
-        diff_signal = np.hstack([np.diff(filtered_signal), 0])
+        if filtered_signal.ndim == 1:
+            # If the signal is 1D, compute the first derivative
+            diff_signal = np.hstack([np.diff(filtered_signal), 0])
+        else:
+            # If the signal is 2D, compute the first derivative along the last axis
+            diff_signal = np.diff(filtered_signal, axis=1)
+            # Append a zero at the end of each row to match the original shape
+            diff_signal = np.concatenate([diff_signal, np.zeros((diff_signal.shape[0], 1))], axis=1)
+
         diff_signal_truncated = np.copy(diff_signal)
         diff_signal_truncated[diff_signal < 0] = 0
+        
         return diff_signal_truncated
 
     elif signal_type == 'binary':
         # Binarize the signal based on z-score threshold and positive derivative
         filtered_signal = eegfilt(input_signal, sampling_rate, low_cut, high_cut, order)
-        diff_signal = np.hstack([np.diff(filtered_signal),0])
-        norm_signal = nf.z_score_norm(filtered_signal)
         # norm_signal = input_signal / np.nanstd(input_signal)
+
+        if filtered_signal.ndim == 1:
+            # If the signal is 1D, compute the first derivative
+            diff_signal = np.hstack([np.diff(filtered_signal), 0])
+            norm_signal = nf.z_score_norm(filtered_signal,axis=0)
+
+        else:
+            diff_signal = np.diff(filtered_signal, axis=1)
+            diff_signal = np.concatenate([diff_signal, np.zeros((diff_signal.shape[0], 1))], axis=1)
+            norm_signal = nf.z_score_norm(filtered_signal,axis=1)
+
+        
         binarized_idx = (norm_signal >= z_threshold) & (diff_signal > 0)
-        binarized_signal = np.zeros(diff_signal.shape[0])
+        binarized_signal = np.zeros(diff_signal.shape)
         binarized_signal[binarized_idx] = 1
         return binarized_signal
 
     else:
         # Raise an error for unsupported signal types
         raise NotImplementedError('Signal type unknown')
-
-
 
 
 def eegfilt(signal, fs, lowcut, highcut, order=3, nan_policy='propagate'):
