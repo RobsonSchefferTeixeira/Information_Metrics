@@ -221,25 +221,42 @@ def correct_coordinates(x_coordinates, y_coordinates, environment_edges):
     return x_coordinates, y_coordinates
 
 
-def get_sparsity(activity_map, position_occupancy):
+def get_sparsity(spike_counts,occupancy_times):
     """
-    Calculate the sparsity of a place field with respect to position occupancy.
+    Based on the paper https://onlinelibrary.wiley.com/doi/abs/10.1002/hipo.450040404
+
+    Calculate sparsity of a place field, accounting for position occupancy.
 
     Parameters:
-    - activity_map (numpy.ndarray): A place field map representing spatial preferences.
-    - position_occupancy (numpy.ndarray): Positional occupancy map, typically representing time spent in each spatial bin.
+    - occupancy_times: 1D array of time spent in each spatial bin (T_i)
+    - spike_counts: 1D array of spike counts recorded in each bin
 
     Returns:
-    - sparsity (float): The sparsity measure indicating how selective the place field is with respect to position occupancy.
-
+    - sparsity: float between 0 and 1 (lower = more selective)
     """
-    
-    position_occupancy_norm = np.nansum(position_occupancy / np.nansum(position_occupancy))
-    sparsity = np.nanmean(position_occupancy_norm * activity_map) ** 2 / np.nanmean(
-        position_occupancy_norm * activity_map ** 2)
 
+    occupancy_times = np.asarray(occupancy_times, dtype=float)
+    spike_counts = np.asarray(spike_counts, dtype=float)
+    assert occupancy_times.shape == spike_counts.shape, "Bin arrays must have same length"
+
+    # Occupancy probability per bin (P_i)
+    total_time = np.nansum(occupancy_times)
+    if total_time == 0:
+        raise ValueError("Total occupancy time must be > 0")
+    P = occupancy_times / total_time
+
+    # Firing rate per bin (R_i)
+    R = spike_counts / occupancy_times
+    R = np.nan_to_num(R)  # bins with zero occupancy set to 0
+
+    mean_R = np.nansum(P * R)
+    mean_R2 = np.nansum(P * (R ** 2))
+
+    # Sparsity formula
+    if mean_R2 == 0:
+        return 0.0
+    sparsity = (mean_R ** 2) / mean_R2
     return sparsity
-
 
 
 def get_activity_map(signal, x_coordinates, x_grid, sigma_x=1.0, y_coordinates=None, y_grid=None, sigma_y=None):
@@ -578,7 +595,7 @@ def get_position_grid(x_coordinates, y_coordinates=None, x_bin_size=1, y_bin_siz
         x_grid = np.linspace(environment_edges[0][0], environment_edges[0][1],
                              int((environment_edges[0][1] - environment_edges[0][0]) / x_bin_size) + 1)
         x_center_bins = x_grid[:-1] + x_bin_size / 2
-        x_center_bins_repeated = np.repeat(x_center_bins, len(x_center_bins))
+        x_center_bins_repeated = np.tile(x_center_bins, len(x_center_bins))
 
         y_grid = np.nan
         y_center_bins = np.nan

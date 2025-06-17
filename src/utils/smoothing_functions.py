@@ -51,7 +51,7 @@ def nanconvolve1d(signal, kernel, mode='same'):
         window = padded_signal[i:i + k_len]
         valid_mask = ~np.isnan(window) & ~np.isnan(kernel)
         if np.any(valid_mask):
-            result[i] = np.sum(window[valid_mask] * kernel[valid_mask])
+            result[i] = np.nansum(window[valid_mask] * kernel[valid_mask])
 
     return result
 
@@ -249,8 +249,7 @@ def gaussian_smooth_1d(input_data, kernel, handle_nans=False):
     if input_data.ndim != 1:
         raise ValueError("Input must be 1D array")
     
-    if not handle_nans:
-        nan_mask = np.isnan(input_data)
+    if handle_nans:
         input_data[nan_mask] = 0
 
     # result = sig.convolve(input_data, kernel, mode='same', method='direct')
@@ -263,6 +262,7 @@ def gaussian_smooth_1d(input_data, kernel, handle_nans=False):
     # Normalize and restore NaNs
     # result = np.divide(smoothed, norm_factor, out=np.full_like(smoothed, np.nan),where=norm_factor > 1e-8)
     smoothed[nan_mask] = np.nan
+
     return smoothed
 
 

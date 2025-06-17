@@ -56,6 +56,7 @@ class ProcessData:
             self.input_signal_binned = self.input_signal.copy()
         else:
             self.input_signal_binned = info.get_binned_signal(self.input_signal, nbins_cal)
+            
 
     def add_peaks_detection(self, signal_type):
         signal = self.input_signal.copy()
@@ -71,7 +72,7 @@ class ProcessData:
                 peaks = row == 1
             else:
                 
-                row_binary = pre_process.preprocess_signal(row, self.sampling_rate, signal_type='binary', z_threshold=1, low_cut=0, high_cut=10, order=3) 
+                row_binary = pre_process.preprocess_signal(row, self.sampling_rate, signal_type='binary', z_threshold=1, low_cut=0, high_cut=2, order=3) 
                 # peaks = helper.detect_peaks(row,mpd=0.5 * self.sampling_rate,mph=1. * np.nanstd(row))
                 peaks = row_binary == 1
 

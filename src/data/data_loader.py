@@ -12,6 +12,7 @@ from src.utils import pre_processing_functions as pre_process
 from pathlib import Path
 from IPython.display import display, HTML
 from typing import Union, Dict, Optional
+import glob as glob
 
 class LoadData:
     def __init__(self, dataset_name: str):
@@ -38,13 +39,12 @@ class LoadData:
         return None
     
 
+
     def _resolve_data_path(self) -> Path:
         """Resolve the absolute path to the dataset directory."""
-        
         current_file = Path(__file__).absolute()
         project_root = current_file.parent.parent.parent  # Adjust based on your structure
-        return f'{project_root}/data/{self.dataset_name}'
-
+        return project_root / 'data' / self.dataset_name
 
 
     def load_etter(self,experiment):
@@ -155,8 +155,9 @@ class LoadData:
             Dictionary containing all data components
         """
         
-        data_dir = f'{self.data_path}/mouse_{mouse_id}/day_{day}session_{session}'
-        mat_file = f'{data_dir}/Pos_align.mat'
+        data_dir = self.data_path / f'mouse_{mouse_id}' / f'day_{day}' / f'session_{session}'
+        mat_file = data_dir / 'Pos_align.mat'
+
         
         if not mat_file.exists():
             raise FileNotFoundError(f"MAT file not found at {mat_file}")

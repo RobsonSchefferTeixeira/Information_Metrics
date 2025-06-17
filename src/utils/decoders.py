@@ -44,6 +44,11 @@ class DecoderLearner:
             return None
 
     def _get_decoder_model(self, decoder: str, **kwargs):
+
+        if decoder == 'gaussian_nb_bootstrap':
+            from src.utils.custom_decoders import BootstrapGaussianNB
+            return BootstrapGaussianNB(**kwargs)
+
         if decoder == 'gaussian_nb':
             GaussianNB = self._import_sklearn_classifier('naive_bayes', 'GaussianNB')
             return GaussianNB(**kwargs)
@@ -105,9 +110,12 @@ class DecoderLearner:
         # Step 1: Shuffle label mapping
         unique_labels = np.unique(y)
         shuffled_labels = np.random.permutation(unique_labels)
+        #shuffled_labels = unique_labels.copy()
+
         label_mapping = dict(zip(unique_labels, shuffled_labels))
         inverse_label_mapping = {v: k for k, v in label_mapping.items()}
         y_mapped = np.vectorize(label_mapping.get)(y)
+        #y_mapped = y.copy()
 
         nb_decoders = ['gaussian_nb','bernoulli_nb','multinomial_nb','complement_nb','categorical_nb']
 
@@ -126,6 +134,7 @@ class DecoderLearner:
 
             # Check for 'uniform' before modifying
             if decoder in nb_decoders and decoder_kwargs.get("priors") == "uniform":
+                
                 classes = np.unique(y_train)
                 decoder_kwargs["priors"] = np.ones(len(classes)) / len(classes)
 
@@ -133,7 +142,10 @@ class DecoderLearner:
             model = self._get_decoder_model(decoder, **decoder_kwargs)
             model.fit(X_train, y_train)
             probs = model.predict_proba(X_test)
+            
             y_pred_fold = [model.classes_[self.random_argmax(p)] for p in probs]
+            # y_pred_fold = [model.classes_[np.nanargmax(p)] for p in probs]
+            
             y_pred.append(y_pred_fold)
 
         y_pred = np.concatenate(y_pred)
@@ -193,7 +205,15 @@ class DecoderLearner:
         """
         noise = np.random.normal(loc=0.0, scale=epsilon, size=probabilities.shape)
         noisy_probs = probabilities + noise
-        return np.argmax(noisy_probs)
+        return np.nanargmax(noisy_probs)
+
+
+    
+
+
+
+
+
 
 
     ''' 
@@ -237,49 +257,45 @@ class DecoderLearner:
 
         y_pred = np.concatenate(y_pred)
         return y_pred
-        '''
 
 
+        def run_classifier(self, X, y, kfolds=3):
 
-    '''
+            
+            # Step 1: Generate a random label mapping
+            unique_labels = np.unique(y)
+            shuffled_labels = np.random.permutation(unique_labels)
+            label_mapping = dict(zip(unique_labels, shuffled_labels))
+            inverse_label_mapping = {v: k for k, v in label_mapping.items()}
 
-    def run_classifier(self, X, y, kfolds=3):
+            # Step 2: Apply the mapping to y
+            y_mapped = np.vectorize(label_mapping.get)(y)
 
-        
-        # Step 1: Generate a random label mapping
-        unique_labels = np.unique(y)
-        shuffled_labels = np.random.permutation(unique_labels)
-        label_mapping = dict(zip(unique_labels, shuffled_labels))
-        inverse_label_mapping = {v: k for k, v in label_mapping.items()}
+            # Step 3: Proceed with training and prediction using y_mapped
+            folds_samples = decoder_helper.kfold_split_continuous(y_mapped, kfolds)
+            y_pred = []
 
-        # Step 2: Apply the mapping to y
-        y_mapped = np.vectorize(label_mapping.get)(y)
+            for test_fold in range(kfolds):
+                X_train, X_test, y_train, y_test = decoder_helper.kfold_run(X, y_mapped, folds_samples, test_fold)
 
-        # Step 3: Proceed with training and prediction using y_mapped
-        folds_samples = decoder_helper.kfold_split_continuous(y_mapped, kfolds)
-        y_pred = []
+                unique_classes = np.unique(y_train)
+                priors_in = np.ones(len(unique_classes)) / len(unique_classes)
+                gnb = GaussianNB(priors=priors_in)
+                gnb.fit(X_train, y_train)
+                predict_probability = gnb.predict_proba(X_test)
 
-        for test_fold in range(kfolds):
-            X_train, X_test, y_train, y_test = decoder_helper.kfold_run(X, y_mapped, folds_samples, test_fold)
+                y_pred_fold = []
+                for probs in predict_probability:
+                    selected_class_index = self.random_argmax(probs)
+                    y_pred_fold.append(gnb.classes_[selected_class_index])
 
-            unique_classes = np.unique(y_train)
-            priors_in = np.ones(len(unique_classes)) / len(unique_classes)
-            gnb = GaussianNB(priors=priors_in)
-            gnb.fit(X_train, y_train)
-            predict_probability = gnb.predict_proba(X_test)
+                y_pred.append(y_pred_fold)
 
-            y_pred_fold = []
-            for probs in predict_probability:
-                selected_class_index = self.random_argmax(probs)
-                y_pred_fold.append(gnb.classes_[selected_class_index])
+            # Concatenate predictions from all folds
+            y_pred = np.concatenate(y_pred)
 
-            y_pred.append(y_pred_fold)
+            # Step 4: Restore original labels in predictions
+            y_pred_restored = np.vectorize(inverse_label_mapping.get)(y_pred)
 
-        # Concatenate predictions from all folds
-        y_pred = np.concatenate(y_pred)
-
-        # Step 4: Restore original labels in predictions
-        y_pred_restored = np.vectorize(inverse_label_mapping.get)(y_pred)
-
-        return y_pred_restored.astype(int)
+            return y_pred_restored.astype(int)
     '''

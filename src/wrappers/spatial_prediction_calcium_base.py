@@ -65,7 +65,6 @@ class SpatialPrediction:
 
         self.__dict__['input_parameters'] = kwargs
 
-        
     def main(self, signal_data):
 
         warnings.filterwarnings("ignore", category=RuntimeWarning)
@@ -77,7 +76,6 @@ class SpatialPrediction:
             print(f"File already exists and overwrite is set to False: {full_path}")
             return
             
-
         if DataValidator.is_empty_or_all_nan(signal_data.input_signal) or DataValidator.is_empty_or_all_nan(signal_data.x_coordinates):
             warnings.warn("Signal contains only NaN's or is empty", UserWarning)
             inputdict = np.nan
@@ -113,17 +111,21 @@ class SpatialPrediction:
 
             y_pred = dl.run_classifier(X, y, kfolds = self.num_of_folds, decoder=classifier_name, classifier_params = classifier_kwargs)
 
-            continuous_error,mean_error = self.get_continuous_error(y_pred,signal_data.x_coordinates,signal_data.y_coordinates,
-                            x_center_bins_repeated,y_center_bins_repeated)
+            lookup = self.build_bin_label_to_coord_map(y, signal_data.bin_coordinates)
 
-            spatial_error = self.get_spatial_error(continuous_error,y,x_center_bins,y_center_bins)
-                                
-            spatial_error_smoothed = self.get_smoothed_spatial_error(spatial_error,x_center_bins,y_center_bins, self.map_smoothing_sigma_x, self.map_smoothing_sigma_y)
+            coords_y_pred = np.array([lookup.get(b, np.nan) for b in y_pred])
 
+            continuous_error, mean_error = self.get_continuous_error(coords_y_pred, signal_data.x_coordinates, signal_data.y_coordinates)
 
-            results = self.parallelize_surrogate(X,y,self.num_of_folds,self.classifier_parameters,signal_data.x_coordinates,signal_data.y_coordinates,x_center_bins, y_center_bins,
-                            x_center_bins_repeated, y_center_bins_repeated, signal_data.sampling_rate, self.shift_time,
-                            self.num_cores, self.num_surrogates)
+            spatial_error, spatial_error_smoothed = self.get_spatial_error(continuous_error, signal_data.x_coordinates, x_grid, self.map_smoothing_sigma_x,
+                                signal_data.y_coordinates, y_grid, self.map_smoothing_sigma_y)
+
+            
+            results = self.parallelize_surrogate(X,y,self.num_of_folds,self.classifier_parameters,
+                                                 signal_data.x_coordinates,signal_data.y_coordinates,
+                                                 signal_data.bin_coordinates,
+                                                 x_grid, y_grid,
+                                                 signal_data.sampling_rate, self.shift_time, self.num_cores, self.num_surrogates)
 
             '''
             events_error = []
@@ -204,25 +206,22 @@ class SpatialPrediction:
         
     
 
-    def parallelize_surrogate(self,X,y,kfolds,classifier_parameters, x_coordinates,y_coordinates,x_center_bins, y_center_bins,
-                            x_center_bins_repeated, y_center_bins_repeated, sampling_rate, shift_time,
-                            num_cores, num_surrogates):
+    def parallelize_surrogate(self, X, y, kfolds, classifier_parameters, x_coordinates, y_coordinates, bin_coordinates, x_grid, y_grid,
+                            sampling_rate, shift_time, num_cores, num_surrogates):
         
 
         with tqdm_joblib(tqdm(desc="Processing Surrogates", total=num_surrogates)) as progress_bar:
             results = Parallel(n_jobs=num_cores)(
                 delayed(self.run_classifier_surrogate)
                 (
-                    X, y, kfolds, classifier_parameters, x_coordinates,y_coordinates, x_center_bins, y_center_bins, 
-                    x_center_bins_repeated, y_center_bins_repeated, sampling_rate, shift_time
+                    X, y, kfolds, classifier_parameters, x_coordinates, y_coordinates, bin_coordinates, x_grid, y_grid, sampling_rate, shift_time
                 )
                 for _ in range(num_surrogates)
             )
         return results
 
 
-    def run_classifier_surrogate(self, X, y, kfolds, classifier_parameters, x_coordinates,y_coordinates, x_center_bins, y_center_bins, 
-                                x_center_bins_repeated, y_center_bins_repeated, sampling_rate, shift_time):
+    def run_classifier_surrogate(self, X, y, kfolds, classifier_parameters, x_coordinates, y_coordinates, bin_coordinates, x_grid, y_grid, sampling_rate, shift_time):
         
         classifier_name, classifier_kwargs = next(iter(classifier_parameters.items()))
 
@@ -232,83 +231,143 @@ class SpatialPrediction:
 
         y_pred_shifted = dl.run_classifier(X_shifted, y, kfolds, decoder=classifier_name, classifier_params = classifier_kwargs)
 
+        lookup = self.build_bin_label_to_coord_map(y, bin_coordinates)
+        
+        coords_y_pred_shifted = np.array([lookup.get(b, np.nan) for b in y_pred_shifted])
 
-        continuous_error_shifted,mean_error_shifted = self.get_continuous_error(y_pred_shifted,x_coordinates,y_coordinates,
-                                                                        x_center_bins_repeated,y_center_bins_repeated)
+        continuous_error_shifted,mean_error_shifted = self.get_continuous_error(coords_y_pred_shifted, x_coordinates, y_coordinates)
 
-        spatial_error_shifted = self.get_spatial_error(continuous_error_shifted,y,x_center_bins,y_center_bins)
-
-        return mean_error_shifted,spatial_error_shifted,continuous_error_shifted
+        spatial_error_shifted, spatial_error_smoothed_shifted = self.get_spatial_error(continuous_error_shifted, x_coordinates, x_grid, self.map_smoothing_sigma_x,
+                                y_coordinates, y_grid, self.map_smoothing_sigma_y)
 
 
+        return mean_error_shifted, spatial_error_shifted, continuous_error_shifted
 
-    def get_continuous_error(self, y_pred, x_coordinates, y_coordinates,
-                            x_center_bins_repeated, y_center_bins_repeated):
+
+
+
+    def build_bin_label_to_coord_map(self, position_binned, bin_coordinates):
         """
-        Compute the Euclidean distance error between predicted positions and actual coordinates.
-
-        This function calculates the continuous error as the Euclidean distance between the predicted 
-        positions (`y_pred`) and the actual coordinates (`x_coordinates`, `y_coordinates`). If 
-        `y_coordinates` is None, the function computes the error using only the x-dimension.
+        Build a dictionary mapping bin indices to center coordinates.
 
         Parameters
         ----------
-        y_pred : array-like of int
-            Indices representing predicted bin positions.
-        x_coordinates : array-like
-            Actual x-coordinates corresponding to predictions.
-        y_coordinates : array-like or None
-            Actual y-coordinates corresponding to predictions. If None, only x-dimension is used.
-        x_center_bins_repeated : array-like
-            x-coordinates of the centers of bins, repeated to align with predictions.
-        y_center_bins_repeated : array-like
-            y-coordinates of the centers of bins, repeated to align with predictions.
+        position_binned : np.ndarray
+            Array of integers representing bin labels per sample.
+        bin_coordinates : np.ndarray
+            Array of bin center coordinates.
+            Shape can be (n_samples,) for 1D or (n_samples, 2) for 2D.
+
+        Returns
+        -------
+        dict
+            Dictionary mapping each bin label to its center coordinate(s).
+        """
+        unique_bins = np.unique(position_binned[~np.isnan(position_binned)]).astype(int)
+        lookup = {}
+        for b in unique_bins:
+            coord = bin_coordinates[position_binned == b][0]
+            lookup[b] = coord
+        return lookup
+
+
+    
+    def get_continuous_error(self, coords_y_pred, x_coordinates, y_coordinates):
+        """
+        Compute Euclidean distance errors between predicted and actual coordinates.
+
+        Parameters
+        ----------
+        coords_y_pred : np.ndarray
+            Predicted coordinates per sample. Shape (n_samples,) for 1D or (n_samples, 2) for 2D.
+        x_coordinates : np.ndarray
+            Actual x-coordinates.
+        y_coordinates : np.ndarray or None
+            Actual y-coordinates. If None, computes 1D error.
 
         Returns
         -------
         continuous_error : np.ndarray
-            Array of Euclidean distance errors for each prediction.
+            Euclidean distance errors for each prediction.
         mean_error : float
-            Mean of the Euclidean distance errors, ignoring NaNs.
+            Mean of the errors, ignoring NaNs.
         """
-        diffx = (x_center_bins_repeated[y_pred] - x_coordinates) ** 2
-
-        if y_coordinates is not None:
-            diffy = (y_center_bins_repeated[y_pred] - y_coordinates) ** 2
+        if coords_y_pred.ndim > 1:
+            diffx = (coords_y_pred[:, 0] - x_coordinates) ** 2
+            diffy = (coords_y_pred[:, 1] - y_coordinates) ** 2
         else:
-            diffy = 0  # Only x-dimension error
+            diffx = (coords_y_pred - x_coordinates) ** 2
+            diffy = 0
 
         continuous_error = np.sqrt(diffx + diffy)
-        continuous_error = np.array(continuous_error)
         mean_error = np.nanmean(continuous_error)
-        
         return continuous_error, mean_error
 
 
 
-    def get_spatial_error(self,continuous_error,y,x_center_bins,y_center_bins):
 
-        spatial_error = np.zeros((y_center_bins.shape[0],x_center_bins.shape[0]))*np.nan
-        count = 0
-        for xx in range(spatial_error.shape[1]):
-            for yy in range(spatial_error.shape[0]):
-                y_mask = y == count
-                if np.nansum(y_mask) > 0:
-                    spatial_error[yy,xx] = np.nanmean(continuous_error[y_mask])
-                count += 1
-            
-        return spatial_error
+    def get_spatial_error(self, continuous_error, x_coordinates, x_grid, sigma_x=1.0,
+                    y_coordinates=None, y_grid=None, sigma_y=None):
+        """
+        Computes a spatial error map from decoding errors and applies Gaussian smoothing.
 
-    def get_smoothed_spatial_error(self,spatial_error,x_center_bins,y_center_bins, sigma_x,sigma_y):
+        Parameters
+        ----------
+        continuous_error : np.ndarray
+            Decoding errors for each sample.
+        x_coordinates : np.ndarray
+            X-coordinates of the animal's position.
+        x_grid : np.ndarray
+            Bin edges for the x-dimension.
+        sigma_x : float
+            Smoothing standard deviation in spatial units (x).
+        y_coordinates : np.ndarray, optional
+            Y-coordinates of the animal's position.
+        y_grid : np.ndarray, optional
+            Bin edges for the y-dimension.
+        sigma_y : float, optional
+            Smoothing standard deviation in spatial units (y). Defaults to sigma_x.
 
-        if sigma_y is None:
-            sigma_y = sigma_x
+        Returns
+        -------
+        spatial_error_map : np.ndarray
+            Raw average error map.
+        spatial_error_map_smoothed : np.ndarray
+            Smoothed error map using Gaussian kernel.
+        """
+        warnings.filterwarnings("ignore", category=RuntimeWarning)
 
-        sigma_x_points = smooth.get_sigma_points(sigma_x,x_center_bins)
-        sigma_y_points = smooth.get_sigma_points(sigma_y,y_center_bins)
+        if y_coordinates is None:
+            # 1D mode
+            spatial_error_map = np.full(len(x_grid) - 1, np.nan)
+            for xx in range(len(x_grid) - 1):
+                in_x_bin = (x_coordinates >= x_grid[xx]) & (x_coordinates < x_grid[xx + 1])
+                spatial_error_map[xx] = np.nanmean(continuous_error[in_x_bin])
 
-        kernel, (x_mesh, y_mesh) = smooth.generate_2d_gaussian_kernel(sigma_x_points, sigma_y_points, radius_x=None, radius_y=None, truncate=4.0)
+            sigma_x_points = smooth.get_sigma_points(sigma_x, x_grid)
+            kernel, _ = smooth.generate_1d_gaussian_kernel(sigma_x_points, truncate=4.0)
+            spatial_error_map_smoothed = smooth.gaussian_smooth_1d(spatial_error_map, kernel, handle_nans=False)
 
-        spatial_error_smoothed = smooth.gaussian_smooth_2d(spatial_error, kernel, handle_nans=False)
+        else:
+            # 2D mode
+            if sigma_y is None:
+                sigma_y = sigma_x
 
-        return spatial_error_smoothed
+            spatial_error_map = np.full((len(y_grid) - 1, len(x_grid) - 1), np.nan)
+            for xx in range(len(x_grid) - 1):
+                for yy in range(len(y_grid) - 1):
+                    in_x_bin = (x_coordinates >= x_grid[xx]) & (x_coordinates < x_grid[xx + 1])
+                    in_y_bin = (y_coordinates >= y_grid[yy]) & (y_coordinates < y_grid[yy + 1])
+                    in_bin = in_x_bin & in_y_bin
+                    spatial_error_map[yy, xx] = np.nanmean(continuous_error[in_bin])
+
+            sigma_x_points = smooth.get_sigma_points(sigma_x, x_grid)
+            sigma_y_points = smooth.get_sigma_points(sigma_y, y_grid)
+
+            kernel, _ = smooth.generate_2d_gaussian_kernel(
+                sigma_x_points, sigma_y_points, radius_x=None, radius_y=None, truncate=4.0
+            )
+            spatial_error_map_smoothed = smooth.gaussian_smooth_2d(spatial_error_map, kernel, handle_nans=False)
+
+        return spatial_error_map, spatial_error_map_smoothed
+
