@@ -119,7 +119,6 @@ class SpatialPrediction:
 
             spatial_error, spatial_error_smoothed = self.get_spatial_error(continuous_error, signal_data.x_coordinates, x_grid, self.map_smoothing_sigma_x,
                                 signal_data.y_coordinates, y_grid, self.map_smoothing_sigma_y)
-
             
             results = self.parallelize_surrogate(X,y,self.num_of_folds,self.classifier_parameters,
                                                  signal_data.x_coordinates,signal_data.y_coordinates,
@@ -263,11 +262,15 @@ class SpatialPrediction:
         dict
             Dictionary mapping each bin label to its center coordinate(s).
         """
+
         unique_bins = np.unique(position_binned[~np.isnan(position_binned)]).astype(int)
         lookup = {}
+        is_2d = bin_coordinates.ndim == 2
         for b in unique_bins:
-            coord = bin_coordinates[position_binned == b][0]
+            mask = position_binned == b
+            coord = bin_coordinates[mask,:][0,:].copy() if is_2d else bin_coordinates[mask][0].copy()
             lookup[b] = coord
+                            
         return lookup
 
 

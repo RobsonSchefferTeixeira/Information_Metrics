@@ -105,7 +105,7 @@ class DecoderLearner:
         Run a single decoder with K-fold cross-validation.
         Supports both global kwargs and per-decoder classifier_params.
         """
-        X = self._prepare_data(X)
+        # X = self._prepare_data(X)
 
         # Step 1: Shuffle label mapping
         unique_labels = np.unique(y)
@@ -117,7 +117,7 @@ class DecoderLearner:
         y_mapped = np.vectorize(label_mapping.get)(y)
         #y_mapped = y.copy()
 
-        nb_decoders = ['gaussian_nb','bernoulli_nb','multinomial_nb','complement_nb','categorical_nb']
+        nb_decoders = ['gaussian_nb','complement_nb','categorical_nb']
 
         # Step 2: Prepare k-fold samples
         folds_samples = decoder_helper.kfold_split_continuous(y_mapped, kfolds)

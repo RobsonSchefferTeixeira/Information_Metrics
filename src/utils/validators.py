@@ -389,5 +389,9 @@ class DataValidator:
         signal_data.visits_bins = signal_data.visits_bins[keep_these_frames]
         signal_data.position_binned = signal_data.position_binned[keep_these_frames]
         signal_data.new_visits_times = signal_data.new_visits_times[keep_these_frames]
+        if signal_data.bin_coordinates.ndim == 2:
+            signal_data.bin_coordinates = signal_data.bin_coordinates[keep_these_frames, :]
+        elif signal_data.bin_coordinates.ndim == 1:
+            signal_data.bin_coordinates = signal_data.bin_coordinates[keep_these_frames]
 
     
