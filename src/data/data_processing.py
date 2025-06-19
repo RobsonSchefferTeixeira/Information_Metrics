@@ -68,7 +68,7 @@ class ProcessData:
         self.peaks_y_location = []
 
         for row in signal:
-            if signal_type is 'binary':
+            if signal_type == 'binary':
                 peaks = row == 1
             else:
                 
