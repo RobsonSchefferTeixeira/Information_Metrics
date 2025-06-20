@@ -74,10 +74,14 @@ class PlaceCell:
             return
             
 
-        if DataValidator.is_empty_or_all_nan(signal_data.input_signal) or DataValidator.is_empty_or_all_nan(signal_data.x_coordinates):
-            warnings.warn("Signal contains only NaN's or is empty", UserWarning)
+        if  DataValidator.is_empty_or_all_nan(signal_data.input_signal) or DataValidator.is_empty_or_all_nan(signal_data.x_coordinates):
+            warnings.warn("Signal is constant, contains only NaN's or is empty", UserWarning)
             inputdict = np.nan
-            
+        
+        elif np.allclose(signal_data.input_signal, signal_data.input_signal[0],equal_nan=True):
+            warnings.warn("Signal is constant", UserWarning)
+            inputdict = np.nan
+       
         else:
 
             if signal_data.speed is None:
@@ -228,7 +232,7 @@ class PlaceCell:
             inputdict['x_center_bins'] = x_center_bins
             inputdict['y_center_bins'] = y_center_bins
 
-            inputdict['numb_events'] = signal_data.peaks_idx[0].shape[0]
+            inputdict['numb_events'] = signal_data.numb_events[0]
             inputdict['peaks_x_location'] = signal_data.peaks_x_location[0]
             inputdict['peaks_y_location'] = signal_data.peaks_y_location[0]
             inputdict['events_amplitude'] = signal_data.input_signal[signal_data.peaks_idx[0]]

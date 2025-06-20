@@ -1169,7 +1169,7 @@ def detect_islands(binary_map, min_num_of_bins=4):
     return activity_map_identity
 
 
-def compute_island_centers_of_mass(activity_map_identity, fields_id, activity_map, visits_map, center_bins):
+def compute_island_centers_of_mass(activity_map_identity, field_ids, activity_map, visits_map, center_bins):
     """
     Computes the centers of mass for valid islands and occupancy statistics.
 
@@ -1201,13 +1201,13 @@ def compute_island_centers_of_mass(activity_map_identity, fields_id, activity_ma
     corrected_ids : np.ndarray
         Island map with corrected sequential identifiers.
     """
-    if len(fields_id) == 0:
-        return 0, np.array([np.nan]), np.array([np.nan]), np.nan, np.nan, activity_map_identity
+    if len(field_ids) == 0:
+        return 0, np.array([np.nan]), np.array([np.nan]), np.nan, np.nan
 
 
     islands_com = []
     pixels_above = []
-    for ii in fields_id:
+    for ii in field_ids:
         island_mask = (activity_map_identity == ii)
         com = center_of_mass(island_mask, activity_map, center_bins)
         islands_com.append(com)
@@ -1222,7 +1222,7 @@ def compute_island_centers_of_mass(activity_map_identity, fields_id, activity_ma
     fields_x_max = np.array([c[0] for c in islands_com])
     fields_y_max = np.array([c[1] for c in islands_com])
 
-    num_of_fields = len(fields_id)
+    num_of_fields = len(field_ids)
 
     return num_of_fields, fields_x_max, fields_y_max, pixels_place_cell_absolute, pixels_place_cell_relative
 

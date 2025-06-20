@@ -66,6 +66,7 @@ class ProcessData:
         self.peaks_amplitude = []
         self.peaks_x_location = []
         self.peaks_y_location = []
+        self.numb_events = []
 
         for row in signal:
             if signal_type == 'binary':
@@ -76,7 +77,10 @@ class ProcessData:
                 # peaks = helper.detect_peaks(row,mpd=0.5 * self.sampling_rate,mph=1. * np.nanstd(row))
                 peaks = row_binary == 1
 
-            if np.nansum(peaks) > 0:
+            numb_events = np.nansum(peaks)
+            self.numb_events.append(numb_events)
+
+            if numb_events > 0:
                 self.peaks_idx.append(peaks)
                 self.peaks_amplitude.append(row[peaks])
                 self.peaks_x_location.append(self.x_coordinates[peaks])
@@ -84,6 +88,7 @@ class ProcessData:
                     self.peaks_y_location.append(np.zeros(peaks.shape[0])+np.nan)
                 else:
                     self.peaks_y_location.append(self.y_coordinates[peaks])
+                
             else:
                 self.peaks_idx.append([])
                 self.peaks_amplitude.append([])

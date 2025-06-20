@@ -76,10 +76,14 @@ class SpatialPrediction:
             print(f"File already exists and overwrite is set to False: {full_path}")
             return
             
-        if DataValidator.is_empty_or_all_nan(signal_data.input_signal) or DataValidator.is_empty_or_all_nan(signal_data.x_coordinates):
-            warnings.warn("Signal contains only NaN's or is empty", UserWarning)
+        if  DataValidator.is_empty_or_all_nan(signal_data.input_signal) or DataValidator.is_empty_or_all_nan(signal_data.x_coordinates):
+            warnings.warn("Signal is constant, contains only NaN's or is empty", UserWarning)
             inputdict = np.nan
-
+        
+        elif np.allclose(signal_data.input_signal, signal_data.input_signal[0],equal_nan=True):
+            warnings.warn("Signal is constant", UserWarning)
+            inputdict = np.nan
+       
         else:
             
             if signal_data.speed is None:
