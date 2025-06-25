@@ -73,7 +73,7 @@ class ProcessData:
                 peaks = row == 1
             else:
                 
-                row_binary = pre_process.preprocess_signal(row, self.sampling_rate, signal_type='binary', z_threshold=1, low_cut=0, high_cut=2, order=3) 
+                row_binary = pre_process.preprocess_signal(row, self.sampling_rate, signal_type='binary', z_threshold=2, low_cut=0, high_cut=2, order=3) 
                 # peaks = helper.detect_peaks(row,mpd=0.5 * self.sampling_rate,mph=1. * np.nanstd(row))
                 peaks = row_binary == 1
 
