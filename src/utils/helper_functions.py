@@ -259,6 +259,100 @@ def get_sparsity(spike_counts,occupancy_times):
     return sparsity
 
 
+
+def get_spike_rate_map(spike_times_idx, x_coordinates, x_grid, sampling_rate, sigma_x=1.0,
+                       y_coordinates=None, y_grid=None, sigma_y=None):
+    """
+    Computes a spike rate map (spikes/sec per spatial bin) and applies Gaussian smoothing.
+    Supports both 1D (x only) and 2D (x and y) coordinates.
+
+    Parameters
+    ----------
+    spike_times_idx : array_like
+        1D array of spike time indices (frame indices) OR list/array of such indices.
+    x_coordinates : ndarray
+        1D array of x-coordinates of the animal's position (length = n_timepoints).
+    x_grid : ndarray
+        Bin edges along the x-axis.
+    sampling_rate : float
+        Sampling rate of the tracking signal, in Hz.
+    y_coordinates : ndarray, optional
+        1D array of y-coordinates of the animal's position. If None, function runs in 1D mode.
+    y_grid : ndarray, optional
+        Bin edges along the y-axis. Required if y_coordinates is provided.
+    sigma_x : float
+        Smoothing standard deviation along x-axis, in spatial units (same as x_grid).
+    sigma_y : float, optional
+        Smoothing standard deviation along y-axis, in spatial units (same as y_grid). 
+        If None and y_coordinates is provided, uses sigma_x.
+
+    Returns
+    -------
+    spike_rate_map : ndarray
+        Raw (unsmoothed) spike rate map in Hz.
+    spike_rate_map_smoothed : ndarray
+        Smoothed spike rate map using Gaussian kernel.
+    """
+    warnings.filterwarnings("ignore", category=RuntimeWarning)
+
+    spike_times_idx = np.asarray(spike_times_idx, dtype=int)
+
+    # First get occupancy in seconds
+    position_occupancy = get_occupancy(
+        x_coordinates, x_grid, sampling_rate,
+        y_coordinates=y_coordinates, y_grid=y_grid
+    )
+
+    if y_coordinates is None:
+        # -------- 1D MODE --------
+        spike_counts = np.full(len(x_grid) - 1, np.nan)
+
+        for xx in range(len(x_grid) - 1):
+            in_x_bin = (x_coordinates >= x_grid[xx]) & (x_coordinates < x_grid[xx + 1])
+            I_location = np.where(in_x_bin)[0]
+            spike_counts[xx] = np.nansum(np.in1d(spike_times_idx, I_location))
+
+        # Convert to rate: spikes/sec
+        spike_rate_map = np.divide(
+            spike_counts, position_occupancy,
+            out=np.full_like(spike_counts, np.nan),
+            where=position_occupancy > 0
+        )
+
+        # Smoothing
+        sigma_x_points = smooth.get_sigma_points(sigma_x, x_grid)
+        kernel, _ = smooth.generate_1d_gaussian_kernel(sigma_x_points, truncate=4.0)
+        spike_rate_map_smoothed = smooth.gaussian_smooth_1d(spike_rate_map, kernel, handle_nans=False)
+
+    else:
+        # -------- 2D MODE --------
+        if sigma_y is None:
+            sigma_y = sigma_x
+
+        spike_counts = np.full((len(y_grid) - 1, len(x_grid) - 1), np.nan)
+
+        for xx in range(len(x_grid) - 1):
+            for yy in range(len(y_grid) - 1):
+                in_x_bin = (x_coordinates >= x_grid[xx]) & (x_coordinates < x_grid[xx + 1])
+                in_y_bin = (y_coordinates >= y_grid[yy]) & (y_coordinates < y_grid[yy + 1])
+                I_location = np.where(in_x_bin & in_y_bin)[0]
+                spike_counts[yy, xx] = np.nansum(np.in1d(spike_times_idx, I_location))
+
+        # Convert to rate: spikes/sec
+        spike_rate_map = np.divide(
+            spike_counts, position_occupancy,
+            out=np.full_like(spike_counts, np.nan),
+            where=position_occupancy > 0
+        )
+
+        # Smoothing
+        sigma_x_points = smooth.get_sigma_points(sigma_x, x_grid)
+        sigma_y_points = smooth.get_sigma_points(sigma_y, y_grid)
+        kernel, _ = smooth.generate_2d_gaussian_kernel(sigma_x_points, sigma_y_points, truncate=4.0)
+        spike_rate_map_smoothed = smooth.gaussian_smooth_2d(spike_rate_map, kernel, handle_nans=False)
+
+    return spike_rate_map, spike_rate_map_smoothed
+
 def get_activity_map(signal, x_coordinates, x_grid, sigma_x=1.0, y_coordinates=None, y_grid=None, sigma_y=None):
     """
     Computes a spatial activity map (mean signal per spatial bin) and applies Gaussian smoothing.

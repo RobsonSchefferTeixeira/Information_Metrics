@@ -109,7 +109,7 @@ class PlaceCellBinarized:
 
             signal_data.add_position_time_spent()
 
-            signal_data.add_peaks_detection(self.signal_type)
+            signal_data.add_peaks_detection()
 
             DataValidator.get_valid_timepoints(signal_data, self.min_speed_threshold, self.min_visits, self.min_time_spent)
 
@@ -267,7 +267,7 @@ class PlaceCellBinarized:
     def get_mutual_info_surrogate(self, input_signal, position_binned, sampling_rate, shift_time,
                                   x_coordinates, y_coordinates, x_grid, y_grid, map_smoothing_sigma_x,map_smoothing_sigma_y):
 
-        input_signal_shifted = surrogate.get_signal_surrogate(input_signal, sampling_rate, shift_time, axis = 0)
+        input_signal_shifted = surrogate.circular_random_shift(input_signal, sampling_rate, shift_time, axis = 0)
 
         mutual_info_per_spike_shifted, mutual_info_per_second_shifted = info.get_binarized_spatial_info(input_signal_shifted, position_binned)
 

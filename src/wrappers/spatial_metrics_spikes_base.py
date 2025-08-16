@@ -1,318 +1,267 @@
 import numpy as np
 import os
-from spatial_metrics import helper_functions as hf
-from joblib import Parallel, delayed
+import sys
 import warnings
-from spatial_metrics import surrogate_functions as surrogate
 
-class PlaceCell:
-    def __init__(self,**kwargs):
-           
+from src.utils import helper_functions as hf
+from src.utils import surrogate_functions as surrogate
+from src.utils.validators import ParameterValidator,DataValidator
+from src.utils import information_base as info
+import src.utils.bootstrapped_estimation as be
+
+from tqdm.auto import tqdm
+from tqdm_joblib import tqdm_joblib
+from joblib import Parallel, delayed
+
+
+
+class PlaceCellSpikes:
+    def __init__(self, **kwargs):
+        kwargs.setdefault('signal_type',None)
         kwargs.setdefault('animal_id', None)
         kwargs.setdefault('day', None)
         kwargs.setdefault('neuron', None)
         kwargs.setdefault('trial', None)
         kwargs.setdefault('dataset', None)
-        kwargs.setdefault('sampling_rate', 30.)
-        kwargs.setdefault('min_time_spent', 0.1)
-        kwargs.setdefault('min_visits', 1)
-        kwargs.setdefault('min_speed_threshold', 2.5)
-        kwargs.setdefault('x_bin_size', 1)
-        kwargs.setdefault('y_bin_size', 1)
-        kwargs.setdefault('environment_edges', None)
-        kwargs.setdefault('smoothing_size', 2)
-        kwargs.setdefault('shift_time', 10)
-        kwargs.setdefault('num_cores', 1)
-        kwargs.setdefault('num_surrogates', 200)
         kwargs.setdefault('saving_path', os.getcwd())
         kwargs.setdefault('saving', False)
         kwargs.setdefault('saving_string', 'SpatialMetrics')
-        kwargs.setdefault('percentile_threshold', 95)
+        kwargs.setdefault('overwrite', False)
+        kwargs.setdefault('min_time_spent', 0.1)
+        kwargs.setdefault('min_visits', 1)
+        kwargs.setdefault('min_speed_threshold', 2.5)
+        kwargs.setdefault('speed_smoothing_sigma', 1)
+        kwargs.setdefault('x_bin_size', 1)
+        kwargs.setdefault('y_bin_size', None)
+        kwargs.setdefault('map_smoothing_sigma_x', 2)
+        kwargs.setdefault('map_smoothing_sigma_y', 2)
+        kwargs.setdefault('x_bin_size_info', 2)
+        kwargs.setdefault('y_bin_size_info', 2)
+        kwargs.setdefault('shift_time', 10)
+        kwargs.setdefault('num_cores', 1)
+        kwargs.setdefault('num_surrogates', 200)
         kwargs.setdefault('min_num_of_bins', 4)
-        kwargs.setdefault('detection_threshold', 2)
-        kwargs.setdefault('detection_smoothing_size', 2)
-        kwargs.setdefault('field_detection_method','std_from_field')
+        kwargs.setdefault('threshold',('mean_std',2))
+        kwargs.setdefault('threshold_fraction',0.5)
+        kwargs.setdefault('alpha',0.05)
 
-
-        valid_kwargs = ['animal_id','day','neuron','dataset','trial','sampling_rate',
-                        'min_time_spent','min_visits','min_speed_threshold','smoothing_size',
-                        'x_bin_size','y_bin_size','shift_time','num_cores','percentile_threshold','min_num_of_bins',
-                        'num_surrogates','saving_path','saving','saving_string','environment_edges',
-                        'detection_threshold','detection_smoothing_size','field_detection_method']
+        valid_kwargs = ['signal_type','animal_id', 'day', 'neuron', 'dataset', 'trial',
+                        'min_time_spent', 'min_visits', 'min_speed_threshold','speed_smoothing_sigma',
+                        'map_smoothing_sigma_x','map_smoothing_sigma_y','x_bin_size', 'y_bin_size',
+                        'shift_time', 'num_cores','min_num_of_bins','num_surrogates', 
+                        'saving_path', 'saving', 'saving_string','x_bin_size_info','y_bin_size_info',
+                        'field_detection_method','alpha','overwrite','threshold','threshold_fraction']
 
         for k, v in kwargs.items():
             if k not in valid_kwargs:
                 raise TypeError("Invalid keyword argument %s" % k)
             setattr(self, k, v)
+            
+        ParameterValidator.validate_all(kwargs)
+
         self.__dict__['input_parameters'] = kwargs
-        
-        
-    def main(self,spike_times_idx,time_vector,x_coordinates,y_coordinates):
 
-        if len(spike_times_idx) == 0:
-            warnings.warn("Signal doesn't contain spike times")
+
+    # def main(self,spike_times_idx,time_vector,x_coordinates,y_coordinates):
+    def main(self, signal_data):
+        warnings.filterwarnings("ignore", category=RuntimeWarning)
+        
+        filename = hf.filename_constructor(self.saving_string, self.animal_id, self.dataset, self.day, self.neuron, self.trial)
+        full_path = f"{self.saving_path}/{filename}"
+        # Check if the file exists and handle based on the overwrite flag
+        if os.path.exists(full_path) and not self.overwrite:
+            print(f"File already exists and overwrite is set to False: {full_path}")
+            return
+            
+
+        if  DataValidator.is_empty_or_all_nan(signal_data.input_signal) or DataValidator.is_empty_or_all_nan(signal_data.x_coordinates):
+            warnings.warn("Signal is constant, contains only NaN's or is empty", UserWarning)
             inputdict = np.nan
-            
+        
+        elif np.allclose(signal_data.input_signal, signal_data.input_signal[0],equal_nan=True):
+            warnings.warn("Signal is constant", UserWarning)
+            inputdict = np.nan
+       
         else:
-
-            x_coordinates, y_coordinates = hf.correct_coordinates(x_coordinates, y_coordinates,environment_edges=self.environment_edges)
-
-            speed,speed_smoothed = hf.get_speed(x_coordinates, y_coordinates, time_vector)
-
-            x_grid, y_grid, x_center_bins, y_center_bins, x_center_bins_repeated, y_center_bins_repeated = hf.get_position_grid(
-                x_coordinates, y_coordinates, self.x_bin_size, self.y_bin_size,
-                environment_edges=self.environment_edges)
-
-            position_binned = hf.get_binned_position(x_coordinates, y_coordinates, x_grid, y_grid)
-
-            visits_bins, new_visits_times = hf.get_visits(x_coordinates, y_coordinates, position_binned, x_center_bins, y_center_bins)
-
-            time_spent_inside_bins = hf.get_position_time_spent(position_binned, self.sampling_rate)
-
-            keep_these_frames = self.get_valid_timepoints(speed, visits_bins, time_spent_inside_bins,
-                                               self.min_speed_threshold, self.min_visits, self.min_time_spent)
-
-            x_coordinates_valid = x_coordinates[keep_these_frames].copy()
-            y_coordinates_valid = y_coordinates[keep_these_frames].copy()
-            visits_bins_valid = visits_bins[keep_these_frames].copy()
-            position_binned_valid = position_binned[keep_these_frames].copy()
-            new_visits_times_valid = new_visits_times[keep_these_frames].copy()
-            time_vector_valid = np.linspace(0,keep_these_frames.shape[0]/self.sampling_rate,keep_these_frames.shape[0])
-            speed_valid = speed[keep_these_frames].copy()
-
-            keep_these_spikes = np.array([spike for spike in spike_times_idx if spike in keep_these_frames])
-            spike_times_idx_valid = keep_these_frames.searchsorted(keep_these_spikes)
-
-
-            spike_rate_occupancy = self.get_spike_occupancy(spike_times_idx_valid,x_coordinates_valid,y_coordinates_valid,x_grid,y_grid)
-
-            position_occupancy = hf.get_occupancy(x_coordinates_valid, y_coordinates_valid, x_grid, y_grid, self.sampling_rate)
             
-            speed_occupancy = hf.get_speed_occupancy(speed_valid,x_coordinates_valid, y_coordinates_valid,x_grid, y_grid)
+            if signal_data.speed is None:
+                signal_data.add_speed(self.speed_smoothing_sigma)
+
+            x_grid, y_grid, x_center_bins, y_center_bins, _, _ = hf.get_position_grid(
+                signal_data.x_coordinates, signal_data.y_coordinates, self.x_bin_size, self.y_bin_size,
+                environment_edges=signal_data.environment_edges)
+
+            x_grid_info, y_grid_info, _, _, _, _ = hf.get_position_grid(
+                signal_data.x_coordinates, signal_data.y_coordinates, self.x_bin_size_info, self.y_bin_size_info,
+                environment_edges=signal_data.environment_edges)
+
+            signal_data.add_position_binned(x_grid_info, y_grid_info)
+
+            signal_data.add_visits(x_center_bins, y_center_bins)
+
+            signal_data.add_position_time_spent()
+
+            signal_data.add_peaks_detection()
+
+            DataValidator.get_valid_timepoints(signal_data, self.min_speed_threshold, self.min_visits, self.min_time_spent)
+
+            position_occupancy = hf.get_occupancy(signal_data.x_coordinates,x_grid, signal_data.sampling_rate,signal_data.y_coordinates, y_grid)
             
-            visits_occupancy = hf.get_visits_occupancy(x_coordinates_valid, y_coordinates_valid, new_visits_times_valid, x_grid, y_grid)
+            speed_occupancy = hf.get_speed_occupancy(signal_data.speed,signal_data.x_coordinates,x_grid, signal_data.y_coordinates, y_grid)
+            
+            visits_occupancy = hf.get_visits_occupancy(signal_data.x_coordinates, signal_data.new_visits_times, x_grid, signal_data.y_coordinates, y_grid)
 
-            place_field,place_field_smoothed = self.get_place_field(spike_rate_occupancy,position_occupancy,self.smoothing_size)
+            activity_map, activity_map_smoothed = hf.get_spike_rate_map(signal_data.input_signal, signal_data.x_coordinates, x_grid, signal_data.sampling_rate,
+                                                                            self.map_smoothing_sigma_x, signal_data.y_coordinates, y_grid, self.map_smoothing_sigma_y)
 
-            I_sec_original,I_spk_original = self.get_spatial_metrics(place_field,position_occupancy)
+            mutual_info_per_second_original, mutual_info_per_spike_original = info.get_spike_info_metrics(signal_data.input_signal, signal_data.x_coordinates, x_grid_info, 
+                                                                            signal_data.sampling_rate, self.map_smoothing_sigma_x, signal_data.y_coordinates, y_grid_info, self.map_smoothing_sigma_y)
 
-            results = self.parallelize_surrogate(spike_times_idx_valid,time_vector_valid,x_coordinates_valid,y_coordinates_valid,position_occupancy,
-                              x_grid,y_grid,self.smoothing_size,self.shift_time,self.num_cores,self.num_surrogates)
 
-            I_sec_shifted = []
-            I_spk_shifted = []
-            place_field_shifted = []
-            place_field_smoothed_shifted = []
+            results = self.parallelize_surrogate(signal_data.input_signal, signal_data.time_vector, position_occupancy, signal_data.sampling_rate, self.shift_time,
+                    signal_data.x_coordinates, signal_data.y_coordinates, x_grid, y_grid, self.map_smoothing_sigma_x, self.map_smoothing_sigma_y, x_grid_info, y_grid_info, self.num_cores, self.num_surrogates)
+
+            mutual_info_per_spike_shifted = []
+            mutual_info_per_second_shifted = []
+            activity_map_shifted = []
+            activity_map_smoothed_shifted = []
+
             for perm in range(self.num_surrogates):
-                I_sec_shifted.append(results[perm][0])
-                I_spk_shifted.append(results[perm][1])
-                place_field_shifted.append(results[perm][2])
-                place_field_smoothed_shifted.append(results[perm][3])
-            I_sec_shifted = np.array(I_sec_shifted)
-            I_spk_shifted = np.array(I_spk_shifted)
-            place_field_shifted = np.array(place_field_shifted)
-            place_field_smoothed_shifted = np.array(place_field_smoothed_shifted)
+                mutual_info_per_second_shifted.append(results[perm][0])
+                mutual_info_per_spike_shifted.append(results[perm][1])
+                activity_map_shifted.append(results[perm][2])
+                activity_map_smoothed_shifted.append(results[perm][3])
 
-            I_sec_zscored,I_sec_centered = self.get_mutual_information_zscored(I_sec_original,I_sec_shifted)
-            I_spk_zscored,I_spk_centered = self.get_mutual_information_zscored(I_spk_original,I_spk_shifted)
+            mutual_info_per_spike_shifted = np.array(mutual_info_per_spike_shifted)
+            mutual_info_per_second_shifted = np.array(mutual_info_per_second_shifted)
+            activity_map_shifted = np.array(activity_map_shifted)
+            activity_map_smoothed_shifted = np.array(activity_map_smoothed_shifted)
 
-            
-            
-            if self.field_detection_method == 'random_fields':
-                # num_of_islands, islands_x_max, islands_y_max,pixels_place_cell_absolute,pixels_place_cell_relative,place_field_identity = \
-                # hf.field_coordinates_using_shifted(place_field,place_field_shifted,visits_occupancy,
-                #                                    percentile_threshold=self.percentile_threshold,
-                #                                   min_num_of_bins = self.min_num_of_bins)
+            mutual_info_per_spike_zscored, mutual_info_per_spike_centered = info.get_mutual_information_zscored(mutual_info_per_spike_original, mutual_info_per_spike_shifted)
+            mutual_info_per_second_zscored, mutual_info_per_second_centered = info.get_mutual_information_zscored(mutual_info_per_second_original, mutual_info_per_second_shifted)
+    
+
+            num_of_fields, fields_x_max, fields_y_max, field_ids, pixels_place_cell_absolute, pixels_place_cell_relative, activity_map_identity \
+                = hf.detect_place_fields(activity_map_smoothed, activity_map_smoothed_shifted,
+                                        visits_occupancy,
+                                        (x_center_bins, y_center_bins),
+                                        threshold=self.threshold,
+                                        min_num_of_bins=self.min_num_of_bins,
+                                        threshold_fraction = self.threshold_fraction
+                                        )
+
+            sparsity = hf.get_sparsity(activity_map, position_occupancy)
+
+            mutual_info_per_spike_statistic = be.calculate_p_value(mutual_info_per_spike_original, mutual_info_per_spike_shifted, alternative='greater')
+            mutual_info_per_spike_pvalue = mutual_info_per_spike_statistic.p_value
+
+            mutual_info_per_second_statistic = be.calculate_p_value(mutual_info_per_second_original, mutual_info_per_second_shifted, alternative='greater')
+            mutual_info_per_second_pvalue = mutual_info_per_second_statistic.p_value
+
+            if mutual_info_per_second_pvalue > self.alpha:
+                activity_map_identity = np.zeros(activity_map.shape)*np.nan
+                num_of_fields = 0
+                pixels_place_cell_absolute = np.nan
+                fields_x_max = np.nan
+                fields_y_max = np.nan
+                field_ids = np.nan
+                pixels_place_cell_absolute = np.nan
+                pixels_place_cell_relative = np.nan
                 
-                num_of_islands, islands_x_max, islands_y_max,pixels_place_cell_absolute,pixels_place_cell_relative,place_field_identity = \
-                hf.field_coordinates_using_shifted(place_field_smoothed,place_field_smoothed_shifted,visits_occupancy,x_center_bins, y_center_bins,
-                                                    percentile_threshold=self.percentile_threshold,
-                                                    min_num_of_bins = self.min_num_of_bins)
-                
 
-            elif self.field_detection_method == 'std_from_field':
-                num_of_islands, islands_x_max, islands_y_max,pixels_place_cell_absolute,pixels_place_cell_relative,place_field_identity = \
-                hf.field_coordinates_using_threshold(place_field, visits_occupancy,x_center_bins, y_center_bins,smoothing_size = self.detection_smoothing_size,    
-                                                   field_threshold=self.detection_threshold,
-                                                   min_num_of_bins=self.min_num_of_bins)
-            else:
-                 warnings.warn("No field detection method set", UserWarning)
-                 num_of_islands, islands_x_max, islands_y_max, pixels_place_cell_absolute, pixels_place_cell_relative, place_field_identity = [[] for _ in range(6)]
-
-
-            sparsity = hf.get_sparsity(place_field, position_occupancy)
-
-            x_peaks_location = x_coordinates_valid[spike_times_idx_valid]
-            y_peaks_location = y_coordinates_valid[spike_times_idx_valid]
 
             inputdict = dict()
-            inputdict['spike_rate_occupancy'] = spike_rate_occupancy
-            inputdict['place_field'] = place_field
-            inputdict['place_field_smoothed'] = place_field_smoothed
-            inputdict['place_field_shifted'] = place_field_shifted
-            inputdict['place_field_smoothed_shifted'] = place_field_smoothed_shifted
+            inputdict['activity_map'] = activity_map
+            inputdict['activity_map_smoothed'] = activity_map_smoothed
 
+            inputdict['activity_map_shifted'] = activity_map_shifted
+            inputdict['activity_map_smoothed_shifted'] = activity_map_smoothed_shifted
+            
             inputdict['timespent_map'] = position_occupancy
             inputdict['visits_map'] = visits_occupancy
             inputdict['speed_map'] = speed_occupancy
-            
+
             inputdict['x_grid'] = x_grid
             inputdict['y_grid'] = y_grid
             inputdict['x_center_bins'] = x_center_bins
             inputdict['y_center_bins'] = y_center_bins
-            inputdict['x_peaks_location'] = x_peaks_location
-            inputdict['y_peaks_location'] = y_peaks_location
-            inputdict['numb_events'] = spike_times_idx_valid.shape[0]
-            inputdict['I_sec_original'] = I_sec_original
-            inputdict['I_spk_original'] = I_spk_original
-            inputdict['I_spk_shifted'] = I_spk_shifted
-            inputdict['I_sec_shifted'] = I_sec_shifted
-            inputdict['I_sec_zscored'] = I_sec_zscored
-            inputdict['I_spk_zscored'] = I_spk_zscored
-            inputdict['I_sec_centered'] = I_sec_centered
-            inputdict['I_spk_centered'] = I_spk_centered
-            inputdict['sparsity'] = sparsity
-            inputdict['place_field_identity'] = place_field_identity
-            inputdict['num_of_islands'] = num_of_islands
-            inputdict['islands_x_max'] = islands_x_max
-            inputdict['islands_y_max'] = islands_y_max
+
+            inputdict['numb_events'] = signal_data.peaks_idx[0].shape[0]
+            inputdict['peaks_x_location'] = signal_data.peaks_x_location[0]
+            inputdict['peaks_y_location'] = signal_data.peaks_y_location[0]
+
+            inputdict['activity_map_identity'] = activity_map_identity
+            inputdict['num_of_fields'] = num_of_fields
+            inputdict['fields_x_max'] = fields_x_max
+            inputdict['fields_y_max'] = fields_y_max
+            inputdict['field_ids'] = field_ids
+
             inputdict['place_cell_extension_absolute'] = pixels_place_cell_absolute
             inputdict['place_cell_extension_relative'] = pixels_place_cell_relative
+
             inputdict['sparsity'] = sparsity
+
+            inputdict['mutual_info_per_spike_original'] = mutual_info_per_spike_original
+            inputdict['mutual_info_per_spike_shifted'] = mutual_info_per_spike_shifted
+            inputdict['mutual_info_per_spike_zscored'] = mutual_info_per_spike_zscored
+            inputdict['mutual_info_per_spike_centered'] = mutual_info_per_spike_centered
+            inputdict['mutual_info_per_spike_pvalue'] = mutual_info_per_spike_pvalue
+
+            inputdict['mutual_info_per_second_original'] = mutual_info_per_second_original
+            inputdict['mutual_info_per_second_shifted'] = mutual_info_per_second_shifted
+            inputdict['mutual_info_per_second_zscored'] = mutual_info_per_second_zscored
+            inputdict['mutual_info_per_second_centered'] = mutual_info_per_second_centered
+            inputdict['mutual_info_per_second_pvalue'] = mutual_info_per_second_pvalue
+
             inputdict['input_parameters'] = self.__dict__['input_parameters']
-            
-        filename = hf.filename_constructor(self.saving_string,self.animal_id,self.dataset,self.day,self.neuron,self.trial)
-        
+
+            filename = hf.filename_constructor(self.saving_string, self.animal_id, self.dataset, self.day, 
+                                        self.neuron,self.trial)
+
+
         if self.saving == True:
-            hf.caller_saving(inputdict,filename,self.saving_path)
+            hf.caller_saving(inputdict, filename, self.saving_path, self.overwrite)
             print(filename + ' saved')
+
         else:
-            print('File not saved')
+            print(filename + ' not saved')
+
         return inputdict
 
 
-    def get_mutual_information_zscored(self,mutual_info_original,mutual_info_shifted):
-        mutual_info_centered = mutual_info_original-np.nanmean(mutual_info_shifted)
-        mutual_info_zscored = (mutual_info_original-np.nanmean(mutual_info_shifted))/np.nanstd(mutual_info_shifted)
-        
-        return mutual_info_zscored,mutual_info_centered
-
-
-    def get_valid_timepoints(self,speed, visits_bins, time_spent_inside_bins, min_speed_threshold,min_visits, min_time_spent):
-        keep_frames = np.arange(0,speed.shape[0])
-        # min speed
-        I_speed_thres = speed >= min_speed_threshold
-
-        # min visits
-        I_visits_times_thres = visits_bins >= min_visits
-
-        # min time spent
-        I_time_spent_thres = time_spent_inside_bins >= min_time_spent
-
-        I_keep = I_speed_thres * I_visits_times_thres * I_time_spent_thres
-        return keep_frames[I_keep]
-
-
-    def get_place_field(self,spike_rate_occupancy,position_occupancy,smoothing_size):
-
-        place_field = np.divide(spike_rate_occupancy, position_occupancy, 
-                                out=np.full_like(spike_rate_occupancy, np.nan), 
-                                where=position_occupancy != 0)
-
-        place_field_to_smooth = np.copy(place_field)
-        place_field_to_smooth[np.isnan(place_field_to_smooth)] = 0
-        place_field_smoothed = hf.gaussian_smooth_2d(place_field_to_smooth,smoothing_size)
-
-        return place_field,place_field_smoothed
-
-
-    def get_spiketimes_binarized(self,spike_times_idx,time_vector,sampling_rate):
-        # this way only works when two spikes don't fall in the same bin
-        # spike_timevector = np.zeros(timevector.shape[0])
-        # spike_timevector[spike_times_idx] = 1
-        eps = np.finfo(np.float64).eps
-        time_vector_hist = np.append(time_vector,time_vector[-1] + eps)
-        spike_timevector = np.histogram(time_vector[spike_times_idx],time_vector_hist)[0]
-    
-        # time_vector_hist = np.append(time_vector,time_vector[-1]+(1/sampling_rate))
-        # spike_timevector = np.histogram(time_vector[spike_times_idx],time_vector_hist)[0]
-
-        return spike_timevector
-    
-
-
-    def get_spatial_metrics(self, place_field, position_occupancy):
-        # Create a copy of place_field to avoid modifying the original array
-        place_field_copy = place_field.copy()
-
-        # Set infinite and NaN values to 0 in the copy
-        place_field_copy[np.isinf(place_field_copy) | np.isnan(place_field_copy)] = 0
-        non_zero_vals = place_field_copy > 0  # Ensure we're only considering positive values
-
-        # Compute occupancy ratio
-        noccup_ratio = position_occupancy / np.nansum(position_occupancy)
-        overall_frate = np.nansum(place_field_copy[non_zero_vals] * noccup_ratio[non_zero_vals])
-
-        # Check if overall_frate is zero to avoid division by zero
-        if overall_frate == 0:
-            return np.nan, np.nan  # Return NaNs if there's no valid firing rate
-
-        # Calculate bits per second and bits per spike, avoiding log2(0)
-        I_sec = np.nansum(
-            place_field_copy[non_zero_vals] * noccup_ratio[non_zero_vals] *
-            np.log2(place_field_copy[non_zero_vals] / overall_frate))
-        I_spk = I_sec / overall_frate
-
-        return I_sec, I_spk
 
 
 
-    def get_spike_occupancy(self,spike_times_idx,x_coordinates,y_coordinates,x_grid,y_grid):
-
-        # calculate mean calcium per pixel
-        spike_rate_occupancy = np.nan*np.zeros((y_grid.shape[0]-1,x_grid.shape[0]-1)) 
-        for xx in range(0,x_grid.shape[0]-1):
-            for yy in range(0,y_grid.shape[0]-1):
-
-                check_x_occupancy = np.logical_and(x_coordinates >= x_grid[xx],x_coordinates < (x_grid[xx+1]))
-                check_y_occupancy = np.logical_and(y_coordinates >= y_grid[yy],y_coordinates < (y_grid[yy+1]))
-                I_location = np.where(np.logical_and(check_x_occupancy,check_y_occupancy))[0]
-                spike_rate_occupancy[yy,xx] = np.nansum(np.in1d(spike_times_idx,I_location))
-        return spike_rate_occupancy
-
-
-
-    def parallelize_surrogate(self,spike_times_idx_valid,time_vector_valid,x_coordinates_valid,y_coordinates_valid,position_occupancy_valid,
-                              x_grid,y_grid,smoothing_size,shift_time,num_cores,num_surrogates):
-
-        results = Parallel(n_jobs=num_cores,verbose = 1)(delayed(self.get_spatial_metrics_surrogate)(spike_times_idx_valid,
-                                                                                                    time_vector_valid,
-                                                                                                    x_coordinates_valid,
-                                                                                                    y_coordinates_valid,
-                                                                                                    position_occupancy_valid,
-                                                                                                    x_grid,y_grid,
-                                                                                                    smoothing_size,
-                                                                                                    shift_time)
-
-                                                         for permi in range(num_surrogates))
+    def parallelize_surrogate(self, input_signal, time_vector, position_occupancy, sampling_rate, shift_time,
+                    x_coordinates, y_coordinates, x_grid, y_grid, map_smoothing_sigma_x,map_smoothing_sigma_y, x_grid_info, y_grid_info, num_cores, num_surrogates):
+        with tqdm_joblib(tqdm(desc="Processing Surrogates", total=num_surrogates)) as progress_bar:
+            results = Parallel(n_jobs=num_cores)(
+                delayed(self.get_mutual_info_surrogate)
+                (
+                    input_signal, time_vector, position_occupancy, sampling_rate, shift_time,
+                    x_coordinates, y_coordinates, x_grid, y_grid, map_smoothing_sigma_x,map_smoothing_sigma_y, x_grid_info, y_grid_info
+                                  
+                                                  
+                )
+                for _ in range(num_surrogates)
+            )
         return results
-    
-    def get_spatial_metrics_surrogate(self,spike_times_idx_valid,time_vector_valid,x_coordinates_valid,y_coordinates_valid,
-                                      position_occupancy_valid,x_grid,y_grid,smoothing_size,shift_time):
 
-   
-        time_stamps_shifted = surrogate.get_spikes_surrogate(time_vector_valid[spike_times_idx_valid], time_vector_valid, shift_time)
 
-        spike_times_idx_shifted = hf.find_matching_indexes(time_stamps_shifted, time_vector_valid,error_threshold = time_vector_valid[-1])
-      
+    def get_mutual_info_surrogate(self, input_signal, time_vector, position_occupancy, sampling_rate, shift_time,
+                                  x_coordinates, y_coordinates, x_grid, y_grid, map_smoothing_sigma_x, map_smoothing_sigma_y, x_grid_info, y_grid_info):
 
-        spike_rate_occupancy_shifted = self.get_spike_occupancy(spike_times_idx_shifted,x_coordinates_valid,
-                                                                 y_coordinates_valid,x_grid,y_grid)
+        input_signal_shifted = surrogate.get_spikes_idx_surrogate(input_signal, time_vector, sampling_rate, shift_time)
 
-        place_field_shifted, place_field_smoothed_shifted = self.get_place_field(spike_rate_occupancy_shifted,
-                                                                                   position_occupancy_valid, smoothing_size)
+        activity_map_shifted, activity_map_smoothed_shifted = hf.get_spike_rate_map(input_signal_shifted, x_coordinates, x_grid, sampling_rate,
+                                                                        map_smoothing_sigma_x, y_coordinates, y_grid, map_smoothing_sigma_y)
 
-        I_sec_shifted,I_spk_shifted = self.get_spatial_metrics(place_field_shifted,position_occupancy_valid)
+        I_sec_shifted, I_spk_shifted = info.get_spike_info_metrics(input_signal_shifted, x_coordinates, x_grid_info, sampling_rate, map_smoothing_sigma_x, 
+                                        y_coordinates, y_grid_info, map_smoothing_sigma_y)
 
-        return I_sec_shifted,I_spk_shifted,place_field_shifted,place_field_smoothed_shifted
-    
+
+        return I_sec_shifted, I_spk_shifted, activity_map_shifted, activity_map_smoothed_shifted
+        
+
+
+

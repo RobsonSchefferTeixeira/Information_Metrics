@@ -4,12 +4,11 @@ from src.utils import helper_functions as helper
 from src.utils.validators import DataValidator
 from src.utils import information_base as info
 from src.utils import pre_processing_functions as pre_process
-
 import warnings
 
 class ProcessData:
 
-    def __init__(self, input_signal, x_coordinates, y_coordinates, time_vector, sampling_rate = None, environment_edges = None, speed = None, coordinates_interpolation = False):
+    def __init__(self, input_signal, x_coordinates, y_coordinates, time_vector, signal_type = 'raw', sampling_rate = None, environment_edges = None, speed = None, coordinates_interpolation = False):
         
         self.input_signal = input_signal
         self.x_coordinates = x_coordinates
@@ -18,11 +17,11 @@ class ProcessData:
         self.speed = speed
         self.sampling_rate = sampling_rate
         self.environment_edges = environment_edges
-
+        self.signal_type = signal_type
+        
         if self.sampling_rate is None:
             self.sampling_rate = 1 / np.nanmean(np.diff(self.time_vector))
 
-        
         DataValidator.validate_environment_edges(self)
         DataValidator.initial_setup(self) # Initial Setup and Conversion
         DataValidator.validate_and_correct_shape(self) # Shape Validation and Correction
@@ -32,8 +31,6 @@ class ProcessData:
             self.x_coordinates, self.y_coordinates = helper.correct_lost_tracking(self.x_coordinates, self.y_coordinates, self.time_vector, self.sampling_rate, min_epoch_length=0.5)
         
         DataValidator.filter_invalid_values(self) # NaN/Infinite Value Filtering
-
-
 
     def add_speed(self,speed_smoothing_sigma):
 
@@ -51,16 +48,15 @@ class ProcessData:
     def add_position_time_spent(self):
         self.time_spent_inside_bins = helper.get_position_time_spent(self.position_binned, self.sampling_rate)
 
-    def add_binned_input_signal(self,nbins_cal, signal_type='raw'):
-        if signal_type == 'binary':
+    def add_binned_input_signal(self,nbins_cal):
+        if self.signal_type == 'binary':
             self.input_signal_binned = self.input_signal.copy()
         else:
             self.input_signal_binned = info.get_binned_signal(self.input_signal, nbins_cal)
             
 
-    def add_peaks_detection(self, signal_type):
+    def add_peaks_detection(self):
         signal = self.input_signal.copy()
-        signal = np.atleast_2d(signal)  # Ensure 2D shape for uniform handling
 
         self.peaks_idx = []
         self.peaks_amplitude = []
@@ -68,32 +64,64 @@ class ProcessData:
         self.peaks_y_location = []
         self.numb_events = []
 
-        for row in signal:
-            if signal_type == 'binary':
-                peaks = row == 1
-            else:
+        if self.signal_type == 'spikes':
+
+            # If input_signal is not a list, or the first element is not a list/array, wrap it
+            if not isinstance(signal, list) or not isinstance(signal[0], (list, np.ndarray)):
+                signal = [signal]
                 
-                row_binary = pre_process.preprocess_signal(row, self.sampling_rate, signal_type='binary', z_threshold=2, low_cut=0, high_cut=2, order=3) 
-                # peaks = helper.detect_peaks(row,mpd=0.5 * self.sampling_rate,mph=1. * np.nanstd(row))
-                peaks = row_binary == 1
+            # signal is expected to be a list of arrays/lists of spikes time indices
+            for spikes_idx in signal:
+                numb_events = len(spikes_idx)
+                self.numb_events.append(numb_events)
 
-            numb_events = np.nansum(peaks)
-            self.numb_events.append(numb_events)
-
-            if numb_events > 0:
-                self.peaks_idx.append(peaks)
-                self.peaks_amplitude.append(row[peaks])
-                self.peaks_x_location.append(self.x_coordinates[peaks])
-                if self.y_coordinates is None:
-                    self.peaks_y_location.append(np.zeros(peaks.shape[0])+np.nan)
+                if numb_events > 0:
+                    self.peaks_idx.append(spikes_idx)
+                    self.peaks_amplitude.append(np.ones(numb_events))  # amplitude is always 1
+                    self.peaks_x_location.append(self.x_coordinates[spikes_idx])
+                    if self.y_coordinates is None:
+                        self.peaks_y_location.append(np.full(numb_events, np.nan))
+                    else:
+                        self.peaks_y_location.append(self.y_coordinates[spikes_idx])
                 else:
-                    self.peaks_y_location.append(self.y_coordinates[peaks])
-                
-            else:
-                self.peaks_idx.append([])
-                self.peaks_amplitude.append([])
-                self.peaks_x_location.append([])
-                self.peaks_y_location.append([])
+                    self.peaks_idx.append([])
+                    self.peaks_amplitude.append([])
+                    self.peaks_x_location.append([])
+                    self.peaks_y_location.append([])
+
+        else:
+            signal = np.atleast_2d(signal)  # Ensure 2D shape for uniform handling
+            for row in signal:
+                if self.signal_type == 'binary':
+                    peaks = row == 1
+                else:
+                    row_binary = pre_process.preprocess_signal(
+                        row,
+                        self.sampling_rate,
+                        signal_type='binary',
+                        z_threshold=2,
+                        low_cut=0,
+                        high_cut=2,
+                        order=3
+                    )
+                    peaks = row_binary == 1
+
+                numb_events = np.nansum(peaks)
+                self.numb_events.append(numb_events)
+
+                if numb_events > 0:
+                    self.peaks_idx.append(peaks)
+                    self.peaks_amplitude.append(row[peaks])
+                    self.peaks_x_location.append(self.x_coordinates[peaks])
+                    if self.y_coordinates is None:
+                        self.peaks_y_location.append(np.full(peaks.sum(), np.nan))
+                    else:
+                        self.peaks_y_location.append(self.y_coordinates[peaks])
+                else:
+                    self.peaks_idx.append([])
+                    self.peaks_amplitude.append([])
+                    self.peaks_x_location.append([])
+                    self.peaks_y_location.append([])
 
 
 

@@ -2,7 +2,52 @@ import numpy as np
 from src.utils import smoothing_functions as sf
 from sklearn.feature_selection import mutual_info_classif
 from sklearn.feature_selection import mutual_info_regression
+from src.utils import helper_functions as hf
 import warnings
+
+
+def get_spike_info_metrics(time_stamps_idx, x_coordinates, x_grid, sampling_rate, map_smoothing_sigma_x, 
+                            y_coordinates, y_grid, map_smoothing_sigma_y):
+
+    """Compute spatial information metrics (bits/sec and bits/spike)."""
+    
+    position_occupancy = hf.get_occupancy(x_coordinates, x_grid, sampling_rate, y_coordinates, y_grid)
+    
+    place_field, place_field_smoothed = hf.get_spike_rate_map(time_stamps_idx, x_coordinates, x_grid, sampling_rate,
+                                                                map_smoothing_sigma_x, y_coordinates, y_grid, map_smoothing_sigma_y)
+
+    I_sec, I_spk = get_spike_info_core(place_field, position_occupancy)
+    
+    I_sec_smoothed, I_spk_smoothed = get_spike_info_core(place_field_smoothed, position_occupancy)
+
+
+    return I_sec, I_spk
+
+
+def get_spike_info_core(place_field, position_occupancy):
+    """Compute spatial information metrics (bits/sec and bits/spike)."""
+    
+    # Clean place field: replace inf/NaN with 0
+    pf = np.nan_to_num(place_field, nan=0.0, posinf=0.0, neginf=0.0)
+    
+    # Consider only bins with positive firing rate
+    valid_bins = pf > 0
+
+    # Normalize occupancy to sum to 1
+    occupancy_ratio = position_occupancy / np.nansum(position_occupancy)
+    
+    # Overall mean firing rate (weighted by occupancy)
+    overall_frate = np.nansum(pf[valid_bins] * occupancy_ratio[valid_bins])
+    if overall_frate <= 0:
+        return np.nan, np.nan
+
+    # Compute spatial information per second
+    I_sec = np.nansum(pf[valid_bins] * occupancy_ratio[valid_bins] * np.log2(pf[valid_bins] / overall_frate))
+    
+    # Spatial information per spike
+    I_spk = I_sec / overall_frate
+
+    return I_sec, I_spk
 
 
 ''' 

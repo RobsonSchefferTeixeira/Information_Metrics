@@ -1,31 +1,31 @@
 import numpy as np
 
-def get_spikes_idx_surrogate(time_stamps_idx, time_vector, sampling_rate,shift_time_limit):
+
+def get_spikes_idx_surrogate(time_stamps_idx, time_vector, sampling_rate, shift_time_limit):
     """
-    Generate a surrogate set of spike timestamps by circularly shifting the original timestamps within a time range.
+    Generate a surrogate set of spike indices by circularly shifting the original spike indices.
 
     Parameters:
-        time_stamps (numpy.ndarray): The original spike timestamps.
-        time_vector (numpy.ndarray): The time vector associated with the spike timestamps.
-        shift_time_limit (float): The maximum time range for circular shifting.
+        time_stamps_idx (numpy.ndarray): The original spike indices (positions in time_vector).
+        time_vector (numpy.ndarray): The time vector associated with the data.
+        sampling_rate (float): Sampling rate of the recording.
+        shift_time_limit (float): Maximum time range (in seconds) for circular shifting.
 
     Returns:
-        time_stamps_shifted (numpy.ndarray): The surrogate spike timestamps after circular shifting.
+        numpy.ndarray: Surrogate spike indices after circular shifting.
     """
-    # Generate a random shift within the specified time range
-    shift_this_much = np.random.uniform(-shift_time_limit, shift_time_limit, size=1)
-    # Apply the circular shift to the timestamps
-    time_stamps_shifted = np.round(time_stamps_idx + shift_this_much*sampling_rate).astype(int)
+    
+    # max number of samples to shift
+    max_shift_points = int(np.round(shift_time_limit * sampling_rate))
+    shift_points = np.random.randint(-max_shift_points, max_shift_points + 1)
 
-    # Get the lower and upper time limits from the time vector
-    lower_time_limit = int(np.round(time_vector[0]*sampling_rate))
-    upper_time_limit = int(np.round(time_vector[-1]*sampling_rate))
+    n_points = len(time_vector)
 
-    # Apply circular shifting for timestamps exceeding the time range
-    time_stamps_shifted[time_stamps_shifted <= lower_time_limit] += (upper_time_limit - lower_time_limit)
-    time_stamps_shifted[time_stamps_shifted >= upper_time_limit] -= (upper_time_limit - lower_time_limit)
+    # circular shift
+    shifted_idx = (time_stamps_idx + shift_points) % n_points
 
-    return np.sort(time_stamps_shifted)
+    return np.sort(shifted_idx)
+
     
 
 def get_spikes_surrogate(time_stamps, time_vector, shift_time_limit):
@@ -54,6 +54,32 @@ def get_spikes_surrogate(time_stamps, time_vector, shift_time_limit):
     time_stamps_shifted[time_stamps_shifted >= upper_time_limit] -= (upper_time_limit - lower_time_limit)
 
     return np.sort(time_stamps_shifted)
+
+
+
+def circular_random_shift(input_array, sampling_rate, shift_time, axis=0):
+    """
+    Apply a random circular shift to an input array.
+
+    Parameters:
+        input_array (np.ndarray): Array to shift (1D or ND).
+        sampling_rate (float): Sampling rate in Hz.
+        shift_time (float): Maximum absolute shift (in seconds).
+        axis (int): Axis along which to shift (default=0).
+
+    Returns:
+        np.ndarray: Circularly shifted array.
+    """
+    # Convert seconds to samples
+    max_shift_samples = int(np.round(sampling_rate * shift_time))
+
+    # Draw a random shift between -max and +max
+    shift_samples = np.random.randint(-max_shift_samples, max_shift_samples + 1)
+
+    # Apply circular shift
+    return np.roll(input_array, shift=shift_samples, axis=axis)
+
+
 
 def get_signal_surrogate(input_array, sampling_rate, shift_time, axis=0):
     """

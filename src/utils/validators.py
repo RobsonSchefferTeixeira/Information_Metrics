@@ -198,12 +198,15 @@ class DataValidator:
         if DataValidator.is_empty_or_all_nan(signal_data.time_vector):
             signal_data.time_vector = np.linspace(
                 0,
-                len(signal_data.input_signal) / signal_data.sampling_rate,
-                len(signal_data.input_signal)
+                len(signal_data.x_coordinates) / signal_data.sampling_rate,
+                len(signal_data.x_coordinates)
             )
 
-        # Convert to numpy arrays with float type
-        signal_data.input_signal = np.asarray(signal_data.input_signal, dtype=float)
+        # Convert to numpy arrays with float type (unless it`s spike times)
+        if signal_data.signal_type == 'spikes':
+            signal_data.input_signal = np.asarray(signal_data.input_signal, dtype=int)
+        else:
+            signal_data.input_signal = np.asarray(signal_data.input_signal, dtype=float)
         signal_data.x_coordinates = np.asarray(signal_data.x_coordinates, dtype=float)
         signal_data.time_vector = np.asarray(signal_data.time_vector, dtype=float)
 
@@ -220,10 +223,14 @@ class DataValidator:
         - Determines the expected number of timesteps.
         - Validates that coordinate arrays (x_coordinates, time_vector, and optionally y_coordinates)
         are 1D and have lengths matching the number of timesteps.
+        - If signal_type is 'spikes', then the signal_data must be a list in which the list len corresponds to neurons
         """
+        if signal_data.signal_type == 'spikes':
+            n_timesteps = len(signal_data.x_coordinates)
         # Validate input_signal shape and auto-transpose if needed
-        if signal_data.input_signal.ndim == 1:
+        elif signal_data.input_signal.ndim == 1:
             n_timesteps = len(signal_data.input_signal)
+
         elif signal_data.input_signal.ndim == 2:
             # Auto-transpose if cells > timesteps
             if signal_data.input_signal.shape[0] > signal_data.input_signal.shape[1]:
@@ -258,7 +265,7 @@ class DataValidator:
         NaN and Infinite Value Filtering
 
         - Creates a combined validity mask from x_coordinates, time_vector, input_signal, and y_coordinates (if present).
-        - Uses the mask to filter out any NaN or infinite values from the data arrays.
+        - Skips input_signal checks entirely if signal_type == 'spikes'.
         - Raises a warning if all data points are removed.
         """
         has_y_coords = hasattr(signal_data, 'y_coordinates') and signal_data.y_coordinates is not None
@@ -266,21 +273,23 @@ class DataValidator:
         # Create combined mask from x_coordinates and time_vector
         valid_mask = np.isfinite(signal_data.x_coordinates) & np.isfinite(signal_data.time_vector)
 
-        # Update mask based on input_signal values
-        if signal_data.input_signal.ndim == 1:
-            valid_mask &= np.isfinite(signal_data.input_signal)
-        else:
-            valid_mask &= np.all(np.isfinite(signal_data.input_signal), axis=0)
+        # Only check input_signal if not spikes
+        if signal_data.signal_type != 'spikes':
+            if signal_data.input_signal.ndim == 1:
+                valid_mask &= np.isfinite(signal_data.input_signal)
+            else:
+                valid_mask &= np.all(np.isfinite(signal_data.input_signal), axis=0)
 
         # Update mask with y_coordinates if present
         if has_y_coords:
             valid_mask &= np.isfinite(signal_data.y_coordinates)
 
-        # Apply filtering based on the dimensionality of input_signal
-        if signal_data.input_signal.ndim == 1:
-            signal_data.input_signal = signal_data.input_signal[valid_mask]
-        else:
-            signal_data.input_signal = signal_data.input_signal[:, valid_mask]
+        # Apply filtering
+        if signal_data.signal_type != 'spikes':
+            if signal_data.input_signal.ndim == 1:
+                signal_data.input_signal = signal_data.input_signal[valid_mask]
+            else:
+                signal_data.input_signal = signal_data.input_signal[:, valid_mask]
 
         signal_data.x_coordinates = signal_data.x_coordinates[valid_mask]
         signal_data.time_vector = signal_data.time_vector[valid_mask]
@@ -288,9 +297,12 @@ class DataValidator:
         if has_y_coords:
             signal_data.y_coordinates = signal_data.y_coordinates[valid_mask]
 
-        # Final validation check: Warn if no data is left.
+        # Warn if nothing left
         if len(signal_data.time_vector) == 0:
-            warnings.warn("All data points were removed during validation - check for excessive NaN/inf values",UserWarning)
+            warnings.warn(
+                "All data points were removed during validation - check for excessive NaN/inf values",
+                UserWarning
+            )
 
 
     @staticmethod
@@ -334,14 +346,14 @@ class DataValidator:
                 raise ValueError(f"In environment_edges[{i}], the first value ({min_val}) must be less than the second value ({max_val}).")
 
             value[i] = [min_val, max_val]
-
+    
+    @staticmethod
     def validate_environment_edges(signal_data):
 
         if signal_data.environment_edges is None:
                 
             if signal_data.y_coordinates is None:
                 # 1D tracking
-        
                 x_min = np.nanmin(signal_data.x_coordinates)
                 x_max = np.nanmax(signal_data.x_coordinates)    
                 signal_data.environment_edges = [x_min, x_max]
@@ -357,11 +369,9 @@ class DataValidator:
                 
             DataValidator.parse_environment_edges(signal_data.environment_edges)
 
-    
-
     @staticmethod
     def get_valid_timepoints(signal_data, min_speed_threshold, min_visits, min_time_spent):
-   
+
         # min speed
         I_speed_thres = signal_data.speed >= min_speed_threshold
 
@@ -371,14 +381,36 @@ class DataValidator:
         # min time spent
         I_time_spent_thres = signal_data.time_spent_inside_bins >= min_time_spent
 
-        keep_these_frames = I_speed_thres * I_visits_times_thres * I_time_spent_thres
-            
-        # Handle input_signal (works for both 1D and 2D)
-        if signal_data.input_signal.ndim == 1:
-            signal_data.input_signal = signal_data.input_signal[keep_these_frames]
+        keep_these_frames = I_speed_thres & I_visits_times_thres & I_time_spent_thres
+
+        # Build mapping: old_index -> new_index
+        old_to_new = {old_idx: new_idx for new_idx, old_idx in enumerate(np.where(keep_these_frames)[0])}
+
+        if getattr(signal_data, "signal_type", None) == "spikes":
+            if isinstance(signal_data.input_signal, list):
+                # Multi-neuron case
+                signal_data.input_signal = [
+                    np.array(
+                        [old_to_new[idx] for idx in neuron_spikes if idx in old_to_new],
+                        dtype=int
+                    )
+                    for neuron_spikes in signal_data.input_signal
+                ]
+            else:
+                # Single neuron case
+                signal_data.input_signal = np.array(
+                    [old_to_new[idx] for idx in signal_data.input_signal if idx in old_to_new],
+                    dtype=int
+                )
+
         else:
-            signal_data.input_signal = signal_data.input_signal[:, keep_these_frames]
-                    
+            # Continuous signal handling
+            if signal_data.input_signal.ndim == 1:
+                signal_data.input_signal = signal_data.input_signal[keep_these_frames]
+            else:
+                signal_data.input_signal = signal_data.input_signal[:, keep_these_frames]
+
+        # Apply mask to all other time-aligned arrays
         signal_data.x_coordinates = signal_data.x_coordinates[keep_these_frames]
 
         if signal_data.y_coordinates is not None:
@@ -393,5 +425,3 @@ class DataValidator:
             signal_data.bin_coordinates = signal_data.bin_coordinates[keep_these_frames, :]
         elif signal_data.bin_coordinates.ndim == 1:
             signal_data.bin_coordinates = signal_data.bin_coordinates[keep_these_frames]
-
-    
