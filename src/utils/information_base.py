@@ -5,27 +5,77 @@ from sklearn.feature_selection import mutual_info_regression
 from src.utils import helper_functions as hf
 import warnings
 
-
 def get_spike_info_metrics(time_stamps_idx, x_coordinates, x_grid, sampling_rate, map_smoothing_sigma_x, 
                             y_coordinates, y_grid, map_smoothing_sigma_y):
+    """
+    Compute spatial information metrics (bits/sec and bits/spike) for a neuron's activity.
 
-    """Compute spatial information metrics (bits/sec and bits/spike)."""
+    This function calculates the spatial information measures based on the animal's trajectory 
+    and spike times. It first computes position occupancy and place fields (raw and smoothed), 
+    then derives the information metrics.
+
+    Parameters
+    ----------
+    time_stamps_idx : array-like
+        Indices of spike times relative to the position samples.
+    x_coordinates : array-like
+        X-coordinates of the animal's trajectory.
+    x_grid : array-like
+        Discretized spatial bins along the X-axis.
+    sampling_rate : float
+        Sampling rate of the position signal (Hz).
+    map_smoothing_sigma_x : float
+        Standard deviation of Gaussian smoothing applied along the X dimension.
+    y_coordinates : array-like
+        Y-coordinates of the animal's trajectory.
+    y_grid : array-like
+        Discretized spatial bins along the Y-axis.
+    map_smoothing_sigma_y : float
+        Standard deviation of Gaussian smoothing applied along the Y dimension.
+
+    Returns
+    -------
+    I_sec : float
+        Spatial information in bits per second (from the unsmoothed map).
+    I_spk : float
+        Spatial information in bits per spike (from the unsmoothed map).
+    """
     
     position_occupancy = hf.get_occupancy(x_coordinates, x_grid, sampling_rate, y_coordinates, y_grid)
     
-    place_field, place_field_smoothed = hf.get_spike_rate_map(time_stamps_idx, x_coordinates, x_grid, sampling_rate,
-                                                                map_smoothing_sigma_x, y_coordinates, y_grid, map_smoothing_sigma_y)
+    place_field, place_field_smoothed = hf.get_spike_rate_map(
+        time_stamps_idx, x_coordinates, x_grid, sampling_rate,
+        map_smoothing_sigma_x, y_coordinates, y_grid, map_smoothing_sigma_y
+    )
 
     I_sec, I_spk = get_spike_info_core(place_field, position_occupancy)
     
     I_sec_smoothed, I_spk_smoothed = get_spike_info_core(place_field_smoothed, position_occupancy)
 
-
     return I_sec, I_spk
 
 
 def get_spike_info_core(place_field, position_occupancy):
-    """Compute spatial information metrics (bits/sec and bits/spike)."""
+    """
+    Core computation of spatial information metrics (bits/sec and bits/spike).
+
+    Implements the Skaggs et al. (1993) formulation for spatial information, 
+    using the provided place field and occupancy map.
+
+    Parameters
+    ----------
+    place_field : 2D array-like
+        Spatial firing rate map (Hz) of the neuron.
+    position_occupancy : 2D array-like
+        Occupancy map indicating time spent in each spatial bin.
+
+    Returns
+    -------
+    I_sec : float
+        Spatial information in bits per second.
+    I_spk : float
+        Spatial information in bits per spike.
+    """
     
     # Clean place field: replace inf/NaN with 0
     pf = np.nan_to_num(place_field, nan=0.0, posinf=0.0, neginf=0.0)
@@ -48,6 +98,7 @@ def get_spike_info_core(place_field, position_occupancy):
     I_spk = I_sec / overall_frate
 
     return I_sec, I_spk
+
 
 
 ''' 
