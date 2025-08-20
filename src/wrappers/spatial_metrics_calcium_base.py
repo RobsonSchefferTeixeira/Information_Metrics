@@ -113,9 +113,9 @@ class PlaceCell:
                                                                         signal_data.x_coordinates, x_grid, self.map_smoothing_sigma_x,
                                                                         signal_data.y_coordinates, y_grid, self.map_smoothing_sigma_y)
 
-            signal_data.add_peaks_detection(self.signal_type)
+            signal_data.add_peaks_detection()
             
-            signal_data.add_binned_input_signal(self.nbins_cal,self.signal_type)
+            signal_data.add_binned_input_signal(self.nbins_cal)
 
             if np.all(np.isnan(y_grid_info)):
                 nbins_pos = (x_grid_info.shape[0] - 1)
@@ -203,7 +203,7 @@ class PlaceCell:
             mutual_info_skaggs_statistic = be.calculate_p_value(mutual_info_skaggs_original, mutual_info_skaggs_shifted, alternative='greater')
             mutual_info_skaggs_pvalue = mutual_info_skaggs_statistic.p_value
             
-            if mutual_info_pvalue > self.alpha:
+            if (mutual_info_pvalue > self.alpha) & (mutual_info_classif_pvalue > self.alpha) & (mutual_info_regression_pvalue > self.alpha):
 
                 activity_map_identity = np.zeros(activity_map.shape)*np.nan
                 num_of_fields = 0

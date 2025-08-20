@@ -178,7 +178,7 @@ class PlaceCellBinarized:
             mutual_info_per_second_statistic = be.calculate_p_value(mutual_info_per_second_original, mutual_info_per_second_shifted, alternative='greater')
             mutual_info_per_second_pvalue = mutual_info_per_second_statistic.p_value
 
-            if mutual_info_per_second_pvalue > self.alpha:
+            if (mutual_info_per_second_pvalue > self.alpha) & (mutual_info_per_spike_pvalue > self.alpha):
                 activity_map_identity = np.zeros(activity_map.shape)*np.nan
                 num_of_fields = 0
                 pixels_place_cell_absolute = np.nan

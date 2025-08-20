@@ -101,9 +101,9 @@ class SpatialPrediction:
 
             DataValidator.get_valid_timepoints(signal_data, self.min_speed_threshold, self.min_visits, self.min_time_spent)
 
-            signal_data.add_peaks_detection(self.signal_type)
+            signal_data.add_peaks_detection()
             
-            signal_data.add_binned_input_signal(self.nbins_cal,self.signal_type)
+            signal_data.add_binned_input_signal(self.nbins_cal)
 
             X = helper.ensure_2d_row(signal_data.input_signal.copy()).T
             
