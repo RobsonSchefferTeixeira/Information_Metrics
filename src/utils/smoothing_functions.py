@@ -261,7 +261,7 @@ def gaussian_smooth_1d(input_data, kernel, handle_nans=False):
     # norm_factor = nanconvolve1d(mask.astype(float), kernel, mode='same')
     # Normalize and restore NaNs
     # result = np.divide(smoothed, norm_factor, out=np.full_like(smoothed, np.nan),where=norm_factor > 1e-8)
-    smoothed[nan_mask] = np.nan
+    # smoothed[nan_mask] = np.nan
 
     return smoothed
 
@@ -330,7 +330,7 @@ def gaussian_smooth_2d(matrix, kernel, handle_nans=False):
     # Convolve both data and mask
     smoothed = nanconvolve2d(matrix, kernel, mode='same')
     # kernel_mask = sig.convolve2d(mask.astype(float), kernel, mode='same', boundary='fill')
-    smoothed[nan_mask]= np.nan
+    # smoothed[nan_mask]= np.nan
     return smoothed
 
 
