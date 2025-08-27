@@ -265,7 +265,7 @@ class DataValidator:
         NaN and Infinite Value Filtering
 
         - Creates a combined validity mask from x_coordinates, time_vector, input_signal, and y_coordinates (if present).
-        - Skips input_signal checks entirely if signal_type == 'spikes'.
+        - If signal_type == 'spikes', remaps spike indices to the reduced valid set.
         - Raises a warning if all data points are removed.
         """
         has_y_coords = hasattr(signal_data, 'y_coordinates') and signal_data.y_coordinates is not None
@@ -284,13 +284,28 @@ class DataValidator:
         if has_y_coords:
             valid_mask &= np.isfinite(signal_data.y_coordinates)
 
-        # Apply filtering
-        if signal_data.signal_type != 'spikes':
+        # Build mapping: old_index -> new_index
+        old_to_new = {old_idx: new_idx for new_idx, old_idx in enumerate(np.where(valid_mask)[0])}
+
+        if signal_data.signal_type == 'spikes':
+            if isinstance(signal_data.input_signal, list):
+                # Multi-neuron case
+                filtered_signals = []
+                for neuron_spikes in signal_data.input_signal:
+                    valid_spikes = [old_to_new[idx] for idx in neuron_spikes if idx in old_to_new]
+                    filtered_signals.append(np.array(valid_spikes, dtype=int))
+                signal_data.input_signal = filtered_signals
+            else:
+                valid_spikes = [old_to_new[idx] for idx in signal_data.input_signal if idx in old_to_new]
+                signal_data.input_signal = np.array(valid_spikes, dtype=int)
+        else:
+            # Continuous case
             if signal_data.input_signal.ndim == 1:
                 signal_data.input_signal = signal_data.input_signal[valid_mask]
             else:
                 signal_data.input_signal = signal_data.input_signal[:, valid_mask]
 
+        # Apply filtering to aligned arrays
         signal_data.x_coordinates = signal_data.x_coordinates[valid_mask]
         signal_data.time_vector = signal_data.time_vector[valid_mask]
 
@@ -303,6 +318,7 @@ class DataValidator:
                 "All data points were removed during validation - check for excessive NaN/inf values",
                 UserWarning
             )
+
 
 
     @staticmethod
